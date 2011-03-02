@@ -1,6 +1,9 @@
 /**
  * Defines the graph interface. Mainly the data-structure, and its initialize 
  * and finalize methods.
+ *
+ *  Created on: 2011-02-28
+ *  Author: Abdullah Gharaibeh
  */
 #ifndef TOTEM_GRAPH_H
 #define TOTEM_GRAPH_H
@@ -21,10 +24,10 @@
  * of the edges array refers to a vertex in vertices array.
  */
 typedef struct graph_s {
-    uint32_t*	vertices;	/**< the vertices list. */
-    uint32_t*	edges;		/**< the edges list. */
-    uint32_t*	weights;	/**< stores the weights of the edges. */
-    bool	with_weights;	/**< indicates if edges have weights or not. */
+  uint32_t*	vertices;	/**< the vertices list. */
+  uint32_t*	edges;		/**< the edges list. */
+  uint32_t*	weights;	/**< stores the weights of the edges. */
+  bool	with_weights;	/**< indicates if edges have weights or not. */
 } graph_t;
 
 /**
