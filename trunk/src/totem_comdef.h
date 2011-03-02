@@ -1,5 +1,8 @@
 /**
  *  Common definitions across the modules.
+ *
+ *  Created on: 2011-02-28
+ *  Author: Abdullah Gharaibeh
  */
 
 #ifndef TOTEM_COMDEF_H
@@ -18,25 +21,25 @@
  *  Function return code types.
  */
 typedef enum {
-   SUCCESS = 0, /**< generic success return code. */
-   FAILURE = -1 /**< generic failure return code. */
+  SUCCESS = 0, /**< generic success return code. */
+  FAILURE = -1 /**< generic failure return code. */
 } error_t;
 
 /**
  *  A wrapper that asserts the success of totem function calls
  */
 #define CALL_SAFE(func)				\
-    do {					\
-	error_t err = func;			\
-	assert(err = SUCCESS);			\
-    }while(0)
+  do {						\
+    error_t err = func;				\
+    assert(err = SUCCESS);			\
+  }while(0)
 
 /**
  *  Command line options.
  */
 typedef struct options_s {
-    char* graph_file;
-    bool with_weights;
+  char* graph_file;
+  bool with_weights;
 } options_t;
 
 /**

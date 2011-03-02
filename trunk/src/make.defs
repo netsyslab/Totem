@@ -1,5 +1,8 @@
 #--------------------------------------------------------------------------
 # Common definitions to all internal makefiles
+#
+# Created on: 2011-02-28
+# Author: Abdullah Gharaibeh
 #--------------------------------------------------------------------------
 CUDA_INSTALL_PATH	= /usr/local/cuda
 

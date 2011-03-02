@@ -1,5 +1,8 @@
 /**
  * Main entry of the program. Parses command line options as well.
+ *
+ *  Created on: 2011-02-28
+ *  Author: Abdullah Gharaibeh
  */
 
 // totem includes
@@ -10,8 +13,8 @@
  * Global variable of program options
  */
 PRIVATE options_t options = {
-    NULL,  // graph_file
-    false  // with_weights
+  NULL,  // graph_file
+  false  // with_weights
 };
 
 /**
@@ -20,14 +23,14 @@ PRIVATE options_t options = {
  * @param[in] exit_err exist error
  */
 PRIVATE void display_help(char* exe_name, int exit_err) {    
-    printf("Usage: %s [options] graph_file\n"
-          "\n"
-          "Options\n"
-          "  -h Print this help message\n"
-          "  -w Load edge weights\n",
-          exe_name);
+  printf("Usage: %s [options] graph_file\n"
+	 "\n"
+	 "Options\n"
+	 "  -h Print this help message\n"
+	 "  -w Load edge weights\n",
+	 exe_name);
     
-    exit(exit_err);
+  exit(exit_err);
 }
 
 /**
@@ -37,28 +40,28 @@ PRIVATE void display_help(char* exe_name, int exit_err) {
  */
 PRIVATE void parse_command_line(int argc, char** argv) {
 
-    optarg = NULL;
-    /* template for a new option: 
-       case 'q': new_option_value = atoi(optarg); break; */
-    int ch;
-    while(((ch = getopt(argc, argv, "hw")) != EOF)) {
-	switch  (ch) {
-	case 'h': display_help(argv[0], 0); break;
-	case 'w': options.with_weights = true; break;
-	case '?': 
-	    fprintf(stderr, "unknown option %c\n", optopt);
-	    display_help(argv[0], -1);
-	    break;
-	default: assert(0);
-	};
-    }
+  optarg = NULL;
+  /* template for a new option: 
+     case 'q': new_option_value = atoi(optarg); break; */
+  int ch;
+  while(((ch = getopt(argc, argv, "hw")) != EOF)) {
+    switch  (ch) {
+    case 'h': display_help(argv[0], 0); break;
+    case 'w': options.with_weights = true; break;
+    case '?': 
+      fprintf(stderr, "unknown option %c\n", optopt);
+      display_help(argv[0], -1);
+      break;
+    default: assert(0);
+    };
+  }
 
-    if ((optind != argc - 1)) {
-	fprintf(stderr, "missing arguments!\n");
-	display_help(argv[0], -1);
-    }
+  if ((optind != argc - 1)) {
+    fprintf(stderr, "missing arguments!\n");
+    display_help(argv[0], -1);
+  }
 
-    options.graph_file = argv[optind++];
+  options.graph_file = argv[optind++];
 }
 
 /**
@@ -68,15 +71,15 @@ PRIVATE void parse_command_line(int argc, char** argv) {
  */
 int main(int argc, char** argv) {
 
-    parse_command_line(argc, argv);
+  parse_command_line(argc, argv);
 
-    graph_t* graph;
-    CALL_SAFE(graph_initialize(options.graph_file, options.with_weights, 
-			       &graph));
+  graph_t* graph;
+  CALL_SAFE(graph_initialize(options.graph_file, options.with_weights, 
+			     &graph));
 
-    // invoke the graph algorithm here e.g., bfs(graph, &options);
+  // invoke the graph algorithm here e.g., bfs(graph, &options);
 
-    CALL_SAFE(graph_finalize(graph));
+  CALL_SAFE(graph_finalize(graph));
 
-    return 0;
+  return 0;
 }
