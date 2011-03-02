@@ -1,0 +1,40 @@
+#--------------------------------------------------------------------------
+# Common definitions to all internal makefiles
+#--------------------------------------------------------------------------
+CUDA_INSTALL_PATH	= /usr/local/cuda
+
+LIBDIR		= $(ROOT_DIR)/lib
+OBJDIR		= obj
+
+# set ARCH empty for 32bit architectures
+ARCH		=
+
+# compilers
+CC		= g++
+NVCC		= $(CUDA_INSTALL_PATH)/bin/nvcc
+
+# Compilation and linking flags. Note that OPTFLAGS is used only for *.c files
+OPTFLAGS	= -O3 -fno-strict-aliasing
+CFLAGS		= -g $(OPTFLAGS) -Wall -Wno-format -I$(CUDA_INSTALL_PATH)/include
+LFLAGS		= -lm -lcudart -I. -L$(CUDA_INSTALL_PATH)/lib$(ARCH)
+NVCCFLAGS	= -g -O3 -I. -I$(CUDA_INSTALL_PATH)/include
+
+# source files and their correspnding objects and dependencies
+CSRC	= $(wildcard *.c)
+CUSRC	= $(wildcard *.cu)
+COBJS   = $(CSRC:%.c=$(OBJDIR)/%.o)
+CUOBJS  = $(CUSRC:%.cu=$(OBJDIR)/%.cu_o)
+DEPS    = $(wildcard *.h)
+
+# common commands across make files
+ETAGS_CMD = rm -f TAGS; find . -name '*.c' -o -name '*.h' -o -name '*.cu' | xargs etags
+CLEAN_CMD = rm -f $(OBJDIR)/*.o $(OBJDIR)/*.cu_o *~
+CLEAN_ALL_CMD = rm -rf $(TARGET) $(OBJDIR) *~ TAGS
+
+# Message levels: different message levels can be defined.
+# MSG_LVL must be set to one of the below levels
+MSG_LVL_LOW   = -DMSG_LEVEL=MSG_LVL_LOW      # ALL messages will be printed
+MSG_LVL_HIGH  = -DMSG_LEVEL=MSG_LVL_HIGH     # HIGH priority level messages only
+
+#MSG_LVL = $(MSG_LVL_LOW)
+MSG_LVL = $(MSG_LVL_HIGH)
