@@ -22,12 +22,18 @@
  * for all i in V. Each entry in the vertices array corresponds to the
  * starting index of its adjacency list in the edges array. Each entry
  * of the edges array refers to a vertex in vertices array.
+ * IMPORTANT: vertices without edges have the same index in the vertices array
+ * as the next vertex, hence their number of edges as zero would be calculated
+ * in the same way as every other vertex.
  */
 typedef struct graph_s {
-  uint32_t*	vertices;	/**< the vertices list. */
-  uint32_t*	edges;		/**< the edges list. */
-  uint32_t*	weights;	/**< stores the weights of the edges. */
-  bool	with_weights;	/**< indicates if edges have weights or not. */
+  uint32_t*    vertices;        /**< the vertices list. */
+  uint32_t*    edges;           /**< the edges list. */
+  int32_t*     weights;         /**< stores the weights of the edges. */
+  uint32_t     vertices_count;  /**< number of vertices. */
+  uint32_t     edges_count;     /**< number of edges. */
+  bool         weighted;        /**< indicates if edges have weights or not. */
+  bool         directed;        /**< indicates if the graph is directed. */
 } graph_t;
 
 /**
@@ -40,12 +46,12 @@ typedef struct graph_s {
  * numerical IDs that ranges from 0 to N, where N is the number of 
  * vertices. The vertices are sorted in an increasing order.
  * @param[in] graph_file path to the graph file.
- * @param[in] with_weights a flag to indicate loading edge weights.
+ * @param[in] weighted a flag to indicate loading edge weights.
  * @param[out] graph a reference to allocated graph_t type.
  * @return generic success or failure
  */
-error_t graph_initialize(const char* graph_file, bool with_weights, 
-			 graph_t** graph);
+error_t graph_initialize(const char* graph_file, bool weighted, 
+                         graph_t** graph);
 
 /**
  * Frees allocated buffers within the "graph" reference initialized
