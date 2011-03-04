@@ -14,7 +14,12 @@ fi
 # Input file
 TXT=$1
 
-# Current number of nodes (i.e., the last node added).
+# Compute number of nodes/edges in the input graph and add a header.
+echo "#Nodes: " `grep -v \# $TXT | awk '{ print $1; print $2; }' | sort -nu |\
+   wc -l`
+echo "#Edges: " `grep -v \# $TXT | wc -l`
+
+# Current number of nodes (i.e., the next node id).
 NNODES=0
 
 # Change field separator
