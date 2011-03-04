@@ -32,9 +32,9 @@ echo "#Edges: " `grep -v \# $TXT | wc -l`
 
 # Set the graph direction according to the command line parameter.
 if [ $2 == "-u" ]; then
-    echo "# Undirected"
+    echo "#Undirected"
 else 
-    echo "# Directed"
+    echo "#Directed"
 fi 
 
 # Current number of nodes (i.e., the next node id).
