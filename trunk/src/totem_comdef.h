@@ -133,23 +133,14 @@ inline bool is_numeric(char* str) {
 }
 
 /**
- * Returns the current system time in milliseconds. Note that this function is 
- * meant to be used only by stopwatch_* functions, not directly.
- * @return current time in milliseconds
- */
-inline double get_time_ms() {
-  struct timeval tval;
-  gettimeofday(&tval, NULL);
-  return (tval.tv_sec * 1000 + tval.tv_usec/1000.0);
-}
-
-/**
  * Resets the timer to current system time. Called at the moment to 
  * start timing an operation.
  * @param[in] stopwatch the stopwatch handler
  */
 inline void stopwatch_start(stopwatch_t* stopwatch) {
-  *stopwatch = get_time_ms();
+  struct timeval tval;
+  gettimeofday(&tval, NULL);
+  *stopwatch = (tval.tv_sec * 1000 + tval.tv_usec/1000.0);
 }
 
 /**
@@ -158,7 +149,9 @@ inline void stopwatch_start(stopwatch_t* stopwatch) {
  * @return elapsed time in milliseconds
  */
 inline double stopwatch_elapsed(stopwatch_t* stopwatch) {
-  return (get_time_ms() - *stopwatch);
+  struct timeval tval;
+  gettimeofday(&tval, NULL);
+  return ((tval.tv_sec * 1000 + tval.tv_usec/1000.0) - *stopwatch);
 }
 
 #endif  // TOTEM_COMDEF_H
