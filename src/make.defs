@@ -16,30 +16,30 @@ LIBDIR = $(ROOT_DIR)/lib
 OBJDIR = obj
 
 # ARCH is empty for 32bit architectures, set to 64 for 64bit
-ARCH =
+ARCH = 64
 
 # compilers
-CC		= g++
-NVCC		= $(CUDA_INSTALL_PATH)/bin/nvcc
+CC   = g++
+NVCC = $(CUDA_INSTALL_PATH)/bin/nvcc
 
 # compilation and linking flags. Note that OPTFLAGS is used only for *.c files
-OPTFLAGS	= -O3 -fno-strict-aliasing
-CFLAGS		= -g $(OPTFLAGS) -Wall -Wno-format \
-		  -I$(CUDA_INSTALL_PATH)/include
-LFLAGS		= -lm -lcudart -I. -L$(CUDA_INSTALL_PATH)/lib$(ARCH)
-NVCCFLAGS	= -g -O3 -I. -I$(CUDA_INSTALL_PATH)/include
+OPTFLAGS  = -O3 -fno-strict-aliasing
+CFLAGS    = -g $(OPTFLAGS) -Wall -Wno-format -I$(CUDA_INSTALL_PATH)/include
+LFLAGS    = -lm -lcudart -I. -L$(CUDA_INSTALL_PATH)/lib$(ARCH)
+NVCCFLAGS = -g -O3 -I. -I$(CUDA_INSTALL_PATH)/include  -arch=sm_20
 
 # source files and their correspnding objects and dependencies
 CSRC	= $(wildcard *.c)
 CUSRC	= $(wildcard *.cu)
 COBJS   = $(CSRC:%.c=$(OBJDIR)/%.o)
 CUOBJS  = $(CUSRC:%.cu=$(OBJDIR)/%.cu_o)
-DEPS    = $(wildcard *.h)
+CDEPS   = $(wildcard *.h)
+CUDEPS  = $(wildcard *.cuh)
 
 # common commands across make files
-ETAGS_CMD = rm -f TAGS; find . -name '*.c' -o -name '*.h' -o \
-	    -name '*.cu' | xargs etags
-CLEAN_CMD = rm -f $(OBJDIR)/*.o $(OBJDIR)/*.cu_o *~
+ETAGS_CMD     = rm -f TAGS; find . -name '*.c' -o -name '*.h' -o \
+                  -name '*.cu' | xargs etags
+CLEAN_CMD     = rm -f $(OBJDIR)/*.o $(OBJDIR)/*.cu_o *~
 CLEAN_ALL_CMD = rm -rf $(TARGET) $(OBJDIR) *~ TAGS
 
 # defines compile time features
