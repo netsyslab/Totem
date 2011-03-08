@@ -36,7 +36,7 @@ typedef enum {
   } while(0)
 
 /**
- * Simulates simple exceptions: if the statement is not correct, jump to 
+ * Simulates simple exceptions: if the statement is not correct, jump to
  * label, typically an error label where you could clean up before exit.
  */
 #define CHECK_ERR(stmt, label)                  \
@@ -87,5 +87,28 @@ typedef struct options_s {
  */
 #define PRIVATE static
 
-#endif  // TOTEM_COMDEF_H
+/**
+ * A constant that represents the integer INFINITE quantity. Useful in several
+ * graph algorithms.
+ */
+const uint32_t INFINITE = UINT_MAX;
 
+/**
+ * A macro that determines the number of threads per block passed to a kernel.
+ */
+#define THREADS_PER_BLOCK 1024
+
+/**
+ * Computes the total number of blocks.
+ */
+#define TOTAL_BLOCKS(vertices_count) (vertices_count % THREADS_PER_BLOCK == 0) ?\
+                                      vertices_count / THREADS_PER_BLOCK :\
+                                      vertices_count / THREADS_PER_BLOCK + 1
+
+/**
+ * Computes the thread id while taking into account the block id and dimenstion
+ */
+#define THREAD_GLOBAL_INDEX threadIdx.x + blockDim.x                 \
+                            * (gridDim.x * blockIdx.y + blockIdx.x)
+
+#endif  // TOTEM_COMDEF_H
