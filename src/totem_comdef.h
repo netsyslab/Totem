@@ -17,15 +17,72 @@
 #include <stdio.h>
 #include <stdint.h>
 #include <stdbool.h>
+#include <sys/time.h>
 #include <unistd.h>
 
 /**
- *  Function return code types.
+ *  Function return code types
  */
 typedef enum {
   SUCCESS = 0, /**< generic success return code. */
   FAILURE = -1 /**< generic failure return code. */
 } error_t;
+
+/**
+ * Command line options
+ */
+typedef struct options_s {
+  char* graph_file;
+  bool  weighted;
+} options_t;
+
+/**
+ * Stopwatch (timer) type
+ */
+typedef double stopwatch_t;
+
+/**
+ * Used to define private functions and variables
+ */
+#define PRIVATE static
+
+/**
+ * A constant that represents the integer INFINITE quantity. Useful in several
+ * graph algorithms.
+ */
+const uint32_t INFINITE = UINT_MAX;
+
+/**
+ * A macro that determines the number of threads per block passed to a kernel.
+ */
+#define THREADS_PER_BLOCK 512
+
+/**
+ * A macro that determines the maximum number of blocks. Currently it assumes
+ * that the grid is 1D.
+ */
+#define MAX_BLOCK_COUNT 1024
+
+/**
+ * A macro that determines the maximum number of threads a kernel will be 
+ * configured with.
+ */
+#define MAX_THREAD_COUNT (MAX_BLOCK_COUNT * THREADS_PER_BLOCK)
+
+/**
+ * Computes the total number of blocks. It assumes a 1D grid.
+ */
+#define TOTAL_BLOCKS(vertex_count)               \
+  (((vertex_count) % THREADS_PER_BLOCK == 0) ?   \
+   (vertex_count) / THREADS_PER_BLOCK :          \
+   (vertex_count) / THREADS_PER_BLOCK + 1)
+
+/**
+ * Computes the thread id while taking into account the block id and dimenstion
+ */
+#define THREAD_GLOBAL_INDEX (threadIdx.x + blockDim.x                   \
+                             * (gridDim.x * blockIdx.y + blockIdx.x))
+
 
 /**
  * A wrapper that asserts the success of totem function calls
@@ -76,52 +133,32 @@ inline bool is_numeric(char* str) {
 }
 
 /**
- * Command line options.
+ * Returns the current system time in milliseconds. Note that this function is 
+ * meant to be used only by stopwatch_* functions, not directly.
+ * @return current time in milliseconds
  */
-typedef struct options_s {
-  char* graph_file;
-  bool  weighted;
-} options_t;
+inline double get_time_ms() {
+  struct timeval tval;
+  gettimeofday(&tval, NULL);
+  return (tval.tv_sec * 1000 + tval.tv_usec/1000.0);
+}
 
 /**
- * Used to define private functions and variables
+ * Resets the timer to current system time. Called at the moment to 
+ * start timing an operation.
+ * @param[in] stopwatch the stopwatch handler
  */
-#define PRIVATE static
+inline void stopwatch_start(stopwatch_t* stopwatch) {
+  *stopwatch = get_time_ms();
+}
 
 /**
- * A constant that represents the integer INFINITE quantity. Useful in several
- * graph algorithms.
+ * Returns the elapsed time since the stopwatch started via stopwatch_start
+ * @param[in] stopwatch the stopwatch handler
+ * @return elapsed time in milliseconds
  */
-const uint32_t INFINITE = UINT_MAX;
-
-/**
- * A macro that determines the number of threads per block passed to a kernel.
- */
-#define THREADS_PER_BLOCK 512
-
-/**
- * A macro that determines the maximum number of blocks. Currently it assumes
- * that the grid is just 1D.
- */
-#define MAX_BLOCK_COUNT 1024
-
-/**
- * A macro that determines the maximum number of threads a kernel will be 
- * configured with.
- */
-#define MAX_THREAD_COUNT (MAX_BLOCK_COUNT * THREADS_PER_BLOCK)
-
-/**
- * Computes the total number of blocks. It assumes a 1D grid.
- */
-#define TOTAL_BLOCKS(vertex_count) (((vertex_count) % THREADS_PER_BLOCK == 0) ? \
-                                    (vertex_count) / THREADS_PER_BLOCK : \
-                                    (vertex_count) / THREADS_PER_BLOCK + 1)
-
-/**
- * Computes the thread id while taking into account the block id and dimenstion
- */
-#define THREAD_GLOBAL_INDEX (threadIdx.x + blockDim.x                   \
-                             * (gridDim.x * blockIdx.y + blockIdx.x))
+inline double stopwatch_elapsed(stopwatch_t* stopwatch) {
+  return (get_time_ms() - *stopwatch);
+}
 
 #endif  // TOTEM_COMDEF_H
