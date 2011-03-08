@@ -21,10 +21,10 @@ objects: $(OBJDIR) $(COBJS) $(CUOBJS)
 $(OBJDIR):
 	@if test ! -d $(OBJDIR); then mkdir $(OBJDIR); fi
 
-$(COBJS): $(OBJDIR)/%.o: %.c $(DEPS)
+$(COBJS): $(OBJDIR)/%.o: %.c $(CDEPS)
 	$(CC) $(CFLAGS) $(TOTEM_FEATURES) -c $< -o $@
 
-$(CUOBJS): $(OBJDIR)/%.cu_o: %.cu $(DEPS)
+$(CUOBJS): $(OBJDIR)/%.cu_o: %.cu $(CDEPS) $(CUDEPS)
 	$(NVCC) $(NVCCFLAGS) $(TOTEM_FEATURES) -c $< -o $@
 
 clean:
