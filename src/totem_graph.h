@@ -30,8 +30,8 @@ typedef struct graph_s {
   uint32_t*    vertices;        /**< the vertices list. */
   uint32_t*    edges;           /**< the edges list. */
   int32_t*     weights;         /**< stores the weights of the edges. */
-  uint32_t     vertices_count;  /**< number of vertices. */
-  uint32_t     edges_count;     /**< number of edges. */
+  uint32_t     vertex_count;  /**< number of vertices. */
+  uint32_t     edge_count;     /**< number of edges. */
   bool         weighted;        /**< indicates if edges have weights or not. */
   bool         directed;        /**< indicates if the graph is directed. */
 } graph_t;

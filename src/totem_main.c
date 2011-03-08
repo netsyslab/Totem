@@ -73,7 +73,7 @@ PRIVATE void parse_command_line(int argc, char** argv) {
  * @param[in] graph the graph data structure to print out
  */
 PRIVATE void print_graph(graph_t* graph) {   
-  for (uint32_t vid = 0; vid < graph->vertices_count; vid++) {    
+  for (uint32_t vid = 0; vid < graph->vertex_count; vid++) {    
     int neighbors = graph->vertices[vid + 1] - graph->vertices[vid];
     uint32_t* edges = &(graph->edges[graph->vertices[vid]]);
     for (int i = 0; i < neighbors; i++) {
