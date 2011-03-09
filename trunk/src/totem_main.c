@@ -8,7 +8,6 @@
 // totem includes
 #include "totem_comdef.h"
 #include "totem_graph.h"
-#include "totem_graph_algorithms.h"
 
 /**
  * Global variable of program options
@@ -97,9 +96,7 @@ int main(int argc, char** argv) {
                              &graph));
 
   // invoke the graph algorithm here instead e.g., bfs(graph, &options);
-  //print_graph(graph);
-  float* rank;
-  page_rank(graph, &rank);
+  print_graph(graph);
 
   CALL_SAFE(graph_finalize(graph));
 
