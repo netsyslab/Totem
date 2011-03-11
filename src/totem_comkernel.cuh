@@ -31,4 +31,3 @@ __global__ void memset_device(T* buffer, T value, uint32_t size) {
 }
 
 #endif  // TOTEM_COMKERNEL_CUH
-

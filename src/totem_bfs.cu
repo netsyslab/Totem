@@ -19,8 +19,8 @@
 #include "totem_graph.h"
 #include "totem_mem.h"
 
-// TODO(elizeu): TODO to change the type from uint32_t to id_t for
-// graph->vertices and graph->edges.
+// TODO(elizeu): change the type from uint32_t to id_t for graph->vertices and
+// graph->edges.
 
 /* This comment describes implementation details of the next two functions.
 
@@ -68,7 +68,7 @@ void bfs_kernel(graph_t graph, uint32_t level, bool* finished, uint32_t* cost) {
 // TODO(lauro): Add CHECK_ERR for CUDA functions.
 // TODO(lauro): Return an error_t and have the a yuck out param.
 __host__
-uint32_t* bfs(uint32_t source_id, const graph_t* graph) {
+uint32_t* bfs_gpu(uint32_t source_id, const graph_t* graph) {
   if( (graph == NULL) || (source_id >= graph->vertex_count) ) {
     return NULL;
   } else if( graph->vertex_count == 1 ) {
@@ -108,7 +108,7 @@ uint32_t* bfs(uint32_t source_id, const graph_t* graph) {
   // For the source vertex, initialize cost.
   cudaMemset(&(cost_d[source_id]), 0, sizeof(uint32_t));
 
-  // while the current level have vertices to be processed.
+  // while the current level has vertices to be processed.
   bool finished = false;
   bool* finished_d;
   cudaMalloc((void**) &finished_d, sizeof(bool));
@@ -128,5 +128,40 @@ uint32_t* bfs(uint32_t source_id, const graph_t* graph) {
   cudaMemcpy(cost, cost_d, graph->vertex_count * sizeof(uint32_t),
              cudaMemcpyDeviceToHost);
   cudaFree(cost_d);
+  return cost;
+}
+
+__host__
+uint32_t* bfs_cpu(uint32_t source_id, const graph_t* graph) {
+  if( (graph == NULL) || (source_id >= graph->vertex_count) ) {
+    return NULL;
+  }
+
+  uint32_t* cost = (uint32_t* ) mem_alloc(graph->vertex_count *
+                                          sizeof(uint32_t));
+  // Initialize cost to INFINITE.
+  memset(cost, 0xFF, graph->vertex_count * sizeof(uint32_t));
+  // For the source vertex, initialize cost.
+  cost[source_id] = 0;
+
+  // while the current level has vertices to be processed.
+  bool finished = false;
+  for (uint32_t level = 0; !finished; level++) {
+    finished = true;
+    #ifdef _OPENMP
+    #pragma omp parallel for
+    #endif // _OPENMP
+    for (uint32_t vertex_id = 0; vertex_id < graph->vertex_count; vertex_id++) {
+      if (cost[vertex_id] != level) continue;
+      for (uint32_t i = graph->vertices[vertex_id];
+           i < graph->vertices[vertex_id + 1]; i++) {
+        const uint32_t neighbor_id = graph->edges[i];
+        if (cost[neighbor_id] == INFINITE) {
+          finished = false;
+          cost[neighbor_id] = level + 1;
+        }
+      }
+    }
+  }
   return cost;
 }
