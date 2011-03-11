@@ -46,12 +46,12 @@
  * placed in the outbox buffer. In the next round the inbox and outbox are 
  * swapped, and the message will be accessed in the next round via the
  * inbox buffer. This operation simulates a broadcast because all the neighbors 
- * of vertex v will access the same location (i.e., inbox[v]) to get the messege
+ * of vertex v will access the same location (i.e., inbox[v]) to get the message
  * (i.e., tentative_PageRank_of_v/neighbor_count). In the last round, outbox 
  * will contain the PageRank of each vertex.
  * @param[in] graph the graph to apply page rank on
- * @param[in] inbox messeges broadcasted to vertices
- * @param[in] outbox messeges to be broadcasted in the next round
+ * @param[in] inbox messages broadcasted to vertices
+ * @param[in] outbox messages to be broadcasted in the next round
  */
 __global__ 
 void page_rank_kernel(graph_t graph, float* inbox, float* outbox, 
