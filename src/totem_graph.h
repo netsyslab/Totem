@@ -61,4 +61,22 @@ error_t graph_initialize(const char* graph_file, bool weighted,
  */
 error_t graph_finalize(graph_t* graph);
 
+/**
+ * Implements a GPU version of the simple PageRank algorithm described in 
+ * [Malewicz 2010]. Algorithm details are described in totem_page_rank.cu.
+ * @param[in]  graph the graph to run PageRank on
+ * @param[out] rank the PageRank output array (must be freed via mem_free)
+ * @return generic success or failure
+ */
+error_t page_rank_gpu(graph_t* graph, float** rank);
+
+/**
+ * Implements a CPU version of the simple PageRank algorithm described in 
+ * [Malewicz 2010]. Algorithm details are described in totem_page_rank.cu.
+ * @param[in]  graph the graph to run PageRank on
+ * @param[out] rank the PageRank output array (must be freed via mem_free)
+ * @return generic success or failure
+ */
+error_t page_rank_cpu(graph_t* graph, float** rank);
+
 #endif  // TOTEM_GRAPH_H
