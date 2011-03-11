@@ -20,9 +20,9 @@ Santos-Neto\vspace{3mm}\\
 
 \maketitle
 \begin{abstract}
-The goal of this project is to understand the challenges in porting graph algorithms to hybrid parallel architectures (systems that include both processors optimized for sequential processing and accelerators optimized for massively-parallel processing). The intention is to build a generic graph processing framework on such architectures.
+The goal of this project is to understand the challenges in porting graph algorithms to hybrid massively-parallel architectures (systems that include both processors optimized for sequential processing and accelerators optimized for massively-parallel processing). The intention is to build a generic graph processing framework on such architectures.
 
-To inform the design of the framework, we study a number of graph algorithms such as breadth-first search, single source shortest path and PageRank. We focus on algorithms  that are in the core of many relevant applications such as community detection, \textit{what else?}
+To inform the design of the framework, we study a number of graph algorithms such as breadth-first search, single source shortest path and PageRank. We focus on algorithms that are in the core of many relevant applications such as the analysis of social networks, the web, transportation routes, paths of disease outbreaks and citations among scientific papers.
 
 \end{abstract}
 
@@ -37,10 +37,10 @@ To inform the design of the framework, we study a number of graph algorithms suc
 
 Graphs are everywhere. From the nowadays omnipresent online social networking tools to the structure of fundamental scientific problems, passing through mundane applications such as finding the best car route between two points in a city, graphs are indeed the building block to model and approach several important problems.
 
-Although graphs provide powerful abstractions to approach complex problems, the scale of current graphs call for new computational platforms and techniques that can lead to efficient processing. Previous work investigates the use of massively-parallel processors, particularly GPUs, to accelerate graph computation~\cite{Harish2007, Katz2008, Sungpack2010, dehne2010exploring}. Yet the general challenges of porting algorithms for large-scale graph processing to GPU-based platforms (which are turning into mainstream), especially large multi-GPU systems, are mostly unknown. To this end, this work aims to address the following questions:
+Although graphs provide powerful abstractions to approach complex problems, the scale of current graphs call for new computational platforms and techniques that can lead to efficient processing. Previous work investigates the use of massively-parallel processors, particularly GPUs, to accelerate graph computation~\cite{Harish2007, Katz2008, Sungpack2010, dehne2010exploring}. However, the general challenges of porting algorithms for large-scale graph processing to GPU-based platforms (which are turning into mainstream), especially large multi-GPU systems, are mostly unknown. To this end, this work aims to address the following questions:
 
 \begin{enumerate}
-  \item What are the general challenges in porting algorithms for large scale graph processing to hybrid, GPU-based systems? Can the computational resources offered by such systems be efficiently harnessed by graph algorithms? In other words, given a fixed area or power budget, which is better to use traditional multi-core or hybrid systems?
+  \item What are the general challenges in porting algorithms for large scale graph processing to hybrid, GPU-based systems? Can the computational resources offered by such systems be efficiently harnessed by graph algorithms? In other words, given a fixed area or power budget, which is better to use, traditional multi-core or hybrid systems?
 
   \item If we are to build a GPU-based graph processing framework to simplify the task of implementing graph algorithms on such platforms, what should this framework provide to the developer? Specifically, what would be the parallel processing model (e.g., synchronous bulk processing, PRAM or LogP), the abstractions (e.g., vertex or edge centric) and the high-level interface of a sufficiently expressive, yet performance-efficient framework? 
   
@@ -55,19 +55,16 @@ The next sections present the anticipated opportunities, goals and challenges of
 \label{sec:opp}
 This project is motivated by the fact that current GPUs offer significant peak performance advantages (computation and internal memory bandwidth) compared to traditional multiprocessors. 
 
-Moreover, large-scale graphs are data intensive in nature: graph applications in domains such as social networks, web analysis and bioinformatics process billions of vertices, which suggests an opportunity for high data parallelism. Therefore, these characteristics make such applications suitable for the new generation of massively-parallel computing architectures such as hybrid GPU-based platforms.
-
-\todo{change application focus}
-For example, the genome assembly use case is a data intensive problem that processes billions of short reads. The application involves constructing a De Bruijn Graph and computing an Eulerian Tour~\cite{simpson2009abyss}, both of which have the potential to be processed in parallel~\cite{Cormen2009,Atallah1984}. 
+Moreover, large-scale graphs are data intensive in nature: graph applications in domains such as social networks and web analysis process billions of vertices with little work per vertex, which suggests an opportunity for high data parallelism. Therefore, these characteristics make such applications suitable for the new generation of massively-parallel computing architectures such as hybrid GPU-based platforms.
 
 To realize such opportunities, however, it is necessary to overcome some challenges. First, the large amount of data required by large-scale graphs puts great pressure on two scarce GPU resources: on-board memory and host-device I/O bandwidth. Second, graph problems generally exhibit irregular parallelism~\cite{Kulkarni2009}, and have little locality on memory access patterns (e.g., vertex neighbours may be scattered in memory). Finally, communication between compute resources in a heterogeneous multi-GPU system may lead to performance bottlenecks due to irregular parallelism. These characteristics makes it challenging to exploit GPU architectures, which have strict parallel compute model (i.e., Single Instruction Multiple Data), and rely on regular memory access patterns to achieve good performance.
 
 Considering the opportunities and specific challenges above, the specific goals of this project is threefold:
 
 \begin{enumerate}
-  \item To build an initial design of a graph computing framework  for GPU-based platforms. The framework aims to provide an infrastructure to simplify the task of implementing parallel graph algorithms for large-scale GPU-based systems (e.g., multi-GPU systems and GPU clusters).
-
   \item To understand the challenges of porting graph algorithms to GPUs. Example problems include breadth-first search, shortest path algorithms, PageRank, semi-clustering and bipartite matching.
+  
+  \item To build an initial design of a graph computing framework for GPU-based platforms. The framework aims to provide an infrastructure to simplify the task of implementing parallel graph algorithms for large-scale GPU-based systems (e.g., multi-GPU systems and GPU clusters).
 
   \item To implement and evaluate a number of use case applications such as community detection. \todo{list more applications.}
 \end{enumerate}
@@ -80,15 +77,18 @@ This project spans at least the following areas: graph algorithms, in general, a
 
 Most work on parallel graph algorithms assume a PRAM parallel processing model. \todo{change the example to more relevant algorithms such as BFS, SSSP or PageRank} For example, Atallah~\cite{Atallah1984} proposes an algorithm for finding Eulerian tours in parallel. The algorithm assumes a shared memory model, and works by partitioning the graph into a collection of disjoint tours which are then merged together into a single Euler tour.
 
-\todo{{\bf Graph algorithms on GPUs}}
+{\bf Graph algorithms on GPUs.} Previous work investigates the use of GPUs to accelerate graph computation~\cite{Harish2007, Katz2008, Sungpack2010, dehne2010exploring}. For example, Sungpack et al. ~\cite{Sungpack2010} shows that, in the case of breadth-first search, a single Nvidia Tesla GPU offer up to 2.5x speedup compared to dual socket, quad-core Intel Xeon symmetric multiprocessor on realistic workloads.
+
+However, those works focus on few graph algorithms, mainly breadth-first search, single source shortest path and all pairs shortest path. Moreover, the implementations assume that the graph fits GPU memory, which puts a limitation on the size of graphs that can be processed. Katz et al. ~\cite{Katz2008} implements a hand-crafted version of all pairs shortest path algorithm for mutli-GPU systems. However the approach is tightly coupled with the problem and is not generalizable to other algorithms; also the implementation assumes an adjacency matrix graph representation which has significant space overhead for sparse graphs, the majority of real-world graphs.
 
 {\bf Graph processing frameworks.} The Parallel BGL~\cite{gregor2005parallel} and Pregel~\cite{Malewicz2009} present frameworks to implement distributed graph algorithms. Both frameworks specify generic concepts for designing distributed graph algorithms. The frameworks are based on abstractions that are common among graph algorithms. Examples of such abstractions include vertices, edges, property maps {\em (key-value pairs)}, and mechanisms for data propagation and graph traversal. 
 
 Both PBGL and Pregel assume traditional cluster systems (i.e., nodes connected via network and contain traditional multi-core processors). This work targets, on the other hand, GPU-based systems, which have different computational model and offer different trade-offs and challenges.
 
-\todo{mention that Pregel adopts a BSP model, and our intuition is that this model may serve well the targeted GPU-based platform.}
+\todo{Map-reduce to process graphs?}\\
+\todo{Discuss the BSP model}
 
-\todo{Google stuff? Map-reduce to process graphs?}
+To the best of our knowledge, there is no graph processing framework optimized for hybrid GPU-based platforms. A framework specialized for GPU-based platforms could offer optimizations to minimize communication overhead over the GPU's high-latency I/O channels (e.g., employing compact messaging and graph representations to minimize communication and space footprint); also it could offer graph-specific abstractions that hide the GPU's complex memory model while efficiently leveraging it (e.g., transparently utilizing shared memory). \todo{other differences?}
 
 \section{Methodology}
 \label{sec:methodology}
@@ -104,31 +104,38 @@ Informed by the past steps, the third step will focus on defining building block
 \label{sec:progress}
 \todo{Report on progress to date, preliminary findings, risks you have underestimated, etc.}
 
-To date, we made progress in the following directions (mostly related to the second phase in the methodology):
+To date, our progress to date includes the following:
 
-First, we did additional literature review, which is described in the related work section. Mainly, we looked at efforts on porting graph algorithms to the GPU.
+First, we did additional literature review, which is described in the related work section.
 
-Second, we have a great part of the development infrastructure ready. This includes putting graph file format, graph parser and unit tests.
+Second, a great part of the development infrastructure is ready. This includes a graph file format, graph parser, unit tests, makefiles, code repository and reviews.
 
-Third, and most importantly, we implemented three graph algorithms on the GPU: breadth-first search, single source shortest path and PageRank. \todo{The rest of this section discusses in more detail the implementation?}
+Third, and most importantly, we implemented three graph algorithms on the GPU: breadth-first search, single source shortest path and PageRank. For simplicity, all algorithms assume that the graph fits GPU memory. \todo{The rest of this section discusses in more detail the implementation?}
+
+\todo{\bf{Breadth-First Search.}}
+
+\todo{\bf{Single Source Shortest Path.}}
+
+\todo{\bf{PageRank.}}
 
 {\em Matei: The only substantial comment relates to approach.  Implementations are costly. So I wonder to what degree the use of a simplified execution model could give you some idea about the bounds of the efficiency one could get on a GPU?   (Or the percent of the bottleneck resource your graph parallel algorithm will be able to use?)  This might help you understand the relative speedups provided by GPUs and CPUs (e.g., compred to, let's say one core), and will force you to think about the critical properties of the algorithms you'll try to implement.   I realize what I am suggesting is, with a relatively high probability, a dead-end.  However, if it does go somewhere it will save a lot of  time.
  
 All the rest are minor comments:
  
-Pg1: Goals / challenges: I assume there is an implicit question you want to answer.  Can the computational resources offered by hybrid architectures (the combination between a few fast sequential cores and a large number of SIMD cores) be efficiently harnessed by graph algorithms? Otherwise phrased - given a fixed area or power budget - am I better off with a traditional or with a hybrid architecture? \textbf{Abdullah: I integrated this to the questions in the introduction}
+Pg1: Goals / challenges: I assume there is an implicit question you want to answer.  Can the computational resources offered by hybrid architectures (the combination between a few fast sequential cores and a large number of SIMD cores) be efficiently harnessed by graph algorithms? Otherwise phrased - given a fixed area or power budget - am I better off with a traditional or with a hybrid architecture? \textbf{Abdullah: I integrated this to the questions in the introduction.}
  
 Goals (in section 3): I would de-emphasize the framework - this is too ambitious in my opinion. At this point your goal is a feasibility study. \textbf{Abdullah: I disagree here with Matei, also it is not clear to me whether we can actually do a good enough feasibility study, I think we have enough indication from previous work that graphs on GPU could work.}
- 
-Would a critical look at past implementations of graph algorithms for GPUs be useful?  I guess this is implicit when you say "The second phase is to port simple, yet well known graphs algorithms to GPUs [5, 8, 9, 14])."
+
+Would a critical look at past implementations of graph algorithms for GPUs be useful?  I guess this is implicit when you say "The second phase is to port simple, yet well known graphs algorithms to GPUs [5, 8, 9, 14])." \textbf{Abdullah: we should discuss in the related work section: BSP model in Pregel, virtual warp concept}
  
 Can you provide a clearer delineation for the class of graph problems you are interested in? By scale? By complexity of algorithm? \textbf{Abdullah: traversal algorithms in general?}
 }
 
 \section{Future Work}
 \label{sec:future}
-\todo{the genome assembly related text is dumped here for now, we should clean this up}
-One case study this project focuses on is the construction of De Brujin graphs and the computation of Eulerian tours in such graphs on GPU-based platforms (which integrates commodity processors (CPUs) and Graphics Processing Units (GPUs)). De Brujin graphs are used to model one of the most important bioinformatics procedures named genome assembly, and computing the Eulerian tour is an essential phase in this process.
+\todo{the genome assembly related text is dumped here for now, this should be cleaned up}
+
+\textbf{part of abstraction and introduction}: One case study this project focuses on is the construction of De Brujin graphs and the computation of Eulerian tours in such graphs on GPU-based platforms (which integrates commodity processors (CPUs) and Graphics Processing Units (GPUs)). De Brujin graphs are used to model one of the most important bioinformatics procedures named genome assembly, and computing the Eulerian tour is an essential phase in this process.
 
 One important application this work focuses on is genome sequence assembly: a high-impact, graph-based bioinformatics problem that aims to reconstruct a genome sequence from a large number of short sequence fragments, called reads. The genome assembly use case involves the construction (from the short reads) of a large-scale De Bruijn graph and computing Eulerian Tours~\cite{pevzner2001eulerian, zerbino2008velvet} in such graph.
 
@@ -144,9 +151,9 @@ More formally, let $V={v_1,...,v_n}$ be the set of reads (i.e., short sequences 
 
 One of the challenges presented by new sequencing technologies is that they produce much shorter read sequences compared to old sequencing technologies. Traditional genome assemblers (such as the Celera assembler) were not designed to work with such data characteristics. New assemblers such as Velvet~\cite{Zerbino2008} and Euler~\cite{pevzner2001eulerian} address this challenge by modelling the problem as constructing and traversing a de Bruijn graph of the read sequences. However, those tools are sequential and do not scale in terms of both performance and size (i.e., large mammalian-sized genomes).
 
-Simpson et al.~\cite{simpson2009abyss} developed the ABySS parallel assembler based on MPI. Schatz et al. developed Contrail~\cite{schatz2010high} which is based on the Hadoop map-reduce framework. Both this past work, however, assumes traditional homogeneous cluster based environments.
+\textbf{was part of related work}: Simpson et al.~\cite{simpson2009abyss} developed the ABySS parallel assembler based on MPI. Schatz et al. developed Contrail~\cite{schatz2010high} which is based on the Hadoop map-reduce framework. Both this past work, however, assumes traditional homogeneous cluster based environments.
 
-The third step is to design, implement and analyze an algorithm for the construction of De Brujin graphs, and computing Eulerian tours on GPUs. This is a challenging step as the current literature review already reveals that De Brujin graphs and Eulerian tour paths algorithms require complex implementation to leverage parallel architectures~\cite{Quinn1984,Atallah1984}. To complicate matters further, the parallel architecture assumed in this previous work does not match current hybrid systems (i.e., shared memory parallel machines).
+\textbf{was part of the methodology}: the third step is to design, implement and analyze an algorithm for the construction of De Brujin graphs, and computing Eulerian tours on GPUs. This is a challenging step as the current literature review already reveals that De Brujin graphs and Eulerian tour paths algorithms require complex implementation to leverage parallel architectures~\cite{Quinn1984,Atallah1984}. To complicate matters further, the parallel architecture assumed in this previous work does not match current hybrid systems (i.e., shared memory parallel machines).
 
 \section{Concluding Remarks}
 \label{sec:conclusion}
