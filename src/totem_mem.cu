@@ -1,7 +1,7 @@
 /**
- *  Memory management. The module either allocates pinned or pageable memory.
- *  The default is pageable memory, unless a compile time flag MEMORY=PINNED
- *  is specified to use pinned memory.
+ *  Defines memory management functions. The allocated memory is either pinned 
+ *  or pageable.  The default is pinned memory, unless a compile time flag 
+ *  MEMORY=PAGEABLE is specified to use pageable memory.
  *
  *  Created on: 2011-03-03
  *  Author: Abdullah Gharaibeh
@@ -13,22 +13,21 @@
 #include "cuda.h"
 
 void* mem_alloc(int size) {
-
   void* buf;
-#ifdef FEATURE_PINNED_MEMORY
-  cudaMallocHost(&buf, size);  
-#else
+#ifdef FEATURE_PAGEABLE_MEMORY
   buf = malloc(size);
-#endif
+#else
+  cudaMallocHost(&buf, size);
+#endif // FEATURE_PAGEABLE_MEMORY
 
   assert(buf);
   return buf;
 }
 
 void mem_free(void* buf) {
-#ifdef FEATURE_PINNED_MEMORY
-  cudaFreeHost(buf);
-#else
+#ifdef FEATURE_PAGEABLE_MEMORY
   free(buf);
-#endif
+#else
+  cudaFreeHost(buf);
+#endif // FEATURE_PAGEABLE_MEMORY
 }
