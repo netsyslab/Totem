@@ -208,6 +208,9 @@ error_t page_rank_cpu(graph_t* graph, float** rank) {
     outbox = tmp;
 
     // iterate over all vertices to calculate the ranks for this round
+#ifdef _OPENMP // this is defined if -fopenmp flag is passed to the compiler
+#pragma omp parallel for
+#endif // _OPENMP
     for(uint32_t vid = 0; vid < vertex_count; vid++) {
       // get the neighbors
       uint32_t   neighbors_count  = vertices[vid + 1] - vertices[vid];
