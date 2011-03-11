@@ -53,36 +53,55 @@ typedef double stopwatch_t;
 const uint32_t INFINITE = UINT_MAX;
 
 /**
- * A macro that determines the number of threads per block passed to a kernel.
+ * Determines the maximum number of threads per block.
  */
-#define THREADS_PER_BLOCK 512
+#define MAX_THREADS_PER_BLOCK 512
 
 /**
- * A macro that determines the maximum number of blocks. Currently it assumes
- * that the grid is 1D.
+ * Determines the maximum number of dimensions of a grid block.
  */
-#define MAX_BLOCK_COUNT 1024
+#define MAX_BLOCK_DIMENSION 2
 
 /**
- * A macro that determines the maximum number of threads a kernel will be 
- * configured with.
+ * Determines the maximum number of blocks that fit in a grid dimension.
  */
-#define MAX_THREAD_COUNT (MAX_BLOCK_COUNT * THREADS_PER_BLOCK)
+#define MAX_BLOCK_PER_DIMENSION 1024
 
 /**
- * Computes the total number of blocks. It assumes a 1D grid.
+ * Determines the maximum number of threads a kernel can be configured with.
  */
-#define TOTAL_BLOCKS(vertex_count)               \
-  (((vertex_count) % THREADS_PER_BLOCK == 0) ?   \
-   (vertex_count) / THREADS_PER_BLOCK :          \
-   (vertex_count) / THREADS_PER_BLOCK + 1)
+#define MAX_THREAD_COUNT \
+  MAX_THREADS_PER_BLOCK * pow(MAX_BLOCK_PER_DIMENSION, MAX_BLOCK_DIMENSION)
 
 /**
- * Computes the thread id while taking into account the block id and dimenstion
+ * Computes a kernel configuration based on the number of vertices. 
+ * It assumes a 2D grid. vertex_count is input paramter, while blocks 
+ * and threads_per_block are output of type dim3.
+ */
+#define KERNEL_CONFIGURE(vertex_count, blocks, threads_per_block)       \
+  do {                                                                  \
+    assert(vertex_count <= MAX_THREAD_COUNT);                           \
+    threads_per_block = (vertex_count) >= MAX_THREADS_PER_BLOCK ?       \
+      MAX_THREADS_PER_BLOCK : vertex_count;                             \
+    uint32_t blocks_left = (((vertex_count) % MAX_THREADS_PER_BLOCK == 0) ? \
+                            (vertex_count) / MAX_THREADS_PER_BLOCK :    \
+                            (vertex_count) / MAX_THREADS_PER_BLOCK + 1); \
+    uint32_t x_blocks = (blocks_left >= MAX_BLOCK_PER_DIMENSION) ?      \
+      MAX_BLOCK_PER_DIMENSION : blocks_left;                            \
+    blocks_left = (((blocks_left) % x_blocks == 0) ?                    \
+                   (blocks_left) / x_blocks :                           \
+                   (blocks_left) / x_blocks + 1);                       \
+    uint32_t y_blocks = (blocks_left >= MAX_BLOCK_PER_DIMENSION) ?      \
+      MAX_BLOCK_PER_DIMENSION : blocks_left;                            \
+    dim3 my_blocks(x_blocks, y_blocks);                                 \
+    blocks = my_blocks;                                                 \
+  } while(0)
+
+/**
+ * Computes the linear thread index
  */
 #define THREAD_GLOBAL_INDEX (threadIdx.x + blockDim.x                   \
                              * (gridDim.x * blockIdx.y + blockIdx.x))
-
 
 /**
  * A wrapper that asserts the success of totem function calls
