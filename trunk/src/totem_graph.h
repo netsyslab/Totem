@@ -37,6 +37,20 @@ typedef struct graph_s {
 } graph_t;
 
 /**
+ * Given an undirected, unweighted graph and a source vertex, find the minimum
+ * number of edges needed to reach every vertex V from the source vertex.
+ * Its implementation follows Breadth First Search variation based on
+ * in [Harish07].
+ * @param[in] source_id id of the source vertex
+ * @param[in] graph the graph to perform BFS on
+ * @return array where the indexes are the vertices' ids and the values are the
+ * number of edges needed to reach the vertex. Note that the function gives the
+ * ownership of the array and, thus, the client is responsible for freeing the
+ * memory area.
+*/
+uint32_t* bfs(uint32_t source_id, const graph_t* graph);
+
+/**
  * reads a graph from the given file and builds a graph data type.
  * The function allocates graph data type and the buffers within it.
  * We assume the following regarding the graph file format: each line 
