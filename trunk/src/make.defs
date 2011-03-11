@@ -24,9 +24,11 @@ NVCC = $(CUDA_INSTALL_PATH)/bin/nvcc
 
 # compilation and linking flags. Note that OPTFLAGS is used only for *.c files
 OPTFLAGS  = -O3 -fno-strict-aliasing
-CFLAGS    = -g $(OPTFLAGS) -Wall -Wno-format -I$(CUDA_INSTALL_PATH)/include
-LFLAGS    = -lm -lcudart -I. -L$(CUDA_INSTALL_PATH)/lib$(ARCH)
-NVCCFLAGS = -g -O3 -I. -I$(CUDA_INSTALL_PATH)/include  -arch=sm_20
+CFLAGS    = -g -fopenmp $(OPTFLAGS) -Wall -Wno-format \
+            -I$(CUDA_INSTALL_PATH)/include
+LFLAGS    = -fopenmp -lm -lcudart -I. -L$(CUDA_INSTALL_PATH)/lib$(ARCH)
+NVCCFLAGS = -g -Xcompiler -fopenmp -O3 -I. \
+            -I$(CUDA_INSTALL_PATH)/include  -arch=sm_20
 
 # source files and their correspnding objects and dependencies
 CSRC	= $(wildcard *.c)
@@ -44,6 +46,6 @@ CLEAN_ALL_CMD = rm -rf $(TARGET) $(OBJDIR) *~ TAGS
 
 # defines compile time features
 TOTEM_FEATURES =
-ifeq ($(MEMORY), PINNED)
-TOTEM_FEATURES += -DFEATURE_PINNED_MEMORY
+ifeq ($(MEMORY), PAGEABLE)
+TOTEM_FEATURES += -DFEATURE_PAGEABLE_MEMORY
 endif
