@@ -1,6 +1,7 @@
 \documentclass{acm_proc_article-sp}[12pt]
 \usepackage{cite}
 \usepackage[english]{babel}
+\usepackage{listings}
 
 \title{Totem: Massively-Parallel Graph Processing Framework}
 \numberofauthors{1}
@@ -110,13 +111,16 @@ First, we did additional literature review, which is described in the related wo
 
 Second, a great part of the development infrastructure is ready. This includes a graph file format, graph parser, unit tests, makefiles, code repository and reviews.
 
-Third, and most importantly, we implemented three graph algorithms on the GPU: breadth-first search, single source shortest path and PageRank. For simplicity, all algorithms assume that the graph fits GPU memory. \todo{The rest of this section discusses in more detail the implementation?}
+Third, and most importantly, we implemented three graph algorithms on the GPU: breadth-first search, single source shortest path and PageRank. The rest of this section discusses the graph data structure we used and the implementation of each of the aforementioned algorithms. Note that for all algorithms we assume that the graph fits GPU memory.
+
+\textbf{Graph data structure.} Figure \todo{XXX} shows the graph data structure used in the algorithms. A graph G(V,E) is represented as an adjacency list by two arrays: vertices and edges. The vertices array stores for each vertex the start position in the edges array of a vertex's outgoing edges. The edges array stores the destination vertices of the outgoing edges. Note that the length of the edges array is equal to the number of edges, while the vertices array length is equal to the number of vertices plus one, where the last element stores the length of the  edges array. This is the same data structure used in other related work ~\cite{Harish2007, Sungpack2010}.
 
 \todo{\bf{Breadth-First Search.}}
 
 \todo{\bf{Single Source Shortest Path.}}
 
 \todo{\bf{PageRank.}}
+
 
 {\em Matei: The only substantial comment relates to approach.  Implementations are costly. So I wonder to what degree the use of a simplified execution model could give you some idea about the bounds of the efficiency one could get on a GPU?   (Or the percent of the bottleneck resource your graph parallel algorithm will be able to use?)  This might help you understand the relative speedups provided by GPUs and CPUs (e.g., compred to, let's say one core), and will force you to think about the critical properties of the algorithms you'll try to implement.   I realize what I am suggesting is, with a relatively high probability, a dead-end.  However, if it does go somewhere it will save a lot of  time.
  
