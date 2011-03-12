@@ -158,14 +158,14 @@ error_t graph_initialize(const char* graph_file, bool weighted,
     CHECK_ERR((token = strtok(line, delimiters)) != NULL, err_format_clean);
     CHECK_ERR(is_numeric(token), err_format_clean);
     uint64_t token_num  = atoll(token);
-    CHECK_ERR((token_num > ID_MAX), err_id_overflow);
+    CHECK_ERR((token_num < ID_MAX), err_id_overflow);
     id_t src_id = token_num;
 
     // second, the destination node
     CHECK_ERR((token = strtok(NULL, delimiters)) != NULL, err_format_clean);
     CHECK_ERR(is_numeric(token), err_format_clean);
     token_num  = atoll(token);
-    CHECK_ERR(token_num > ID_MAX, err_id_overflow);
+    CHECK_ERR(token_num < ID_MAX, err_id_overflow);
     id_t dst_id = token_num;
 
     // third, get the weight if any
@@ -227,7 +227,7 @@ error_t graph_initialize(const char* graph_file, bool weighted,
   graph_finalize(mygraph);
   goto err;
  err_id_overflow:
-  fprintf(stderr, "The type used for vertex ids does not support the range of"
+  fprintf(stderr, "The type used for vertex ids does not support the range of "
           "values in this file.\n");
  err_format_clean:
   graph_finalize(mygraph);
