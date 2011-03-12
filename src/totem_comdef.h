@@ -11,6 +11,7 @@
 // system includes
 #include <assert.h>
 #include <ctype.h>
+#include <float.h>
 #include <limits.h>
 #include <stdlib.h>
 #include <string.h>
@@ -47,12 +48,6 @@ typedef double stopwatch_t;
 #define PRIVATE static
 
 /**
- * A constant that represents the integer INFINITE quantity. Useful in several
- * graph algorithms.
- */
-const uint32_t INFINITE = UINT_MAX;
-
-/**
  * Determines the maximum number of threads per block.
  */
 #define MAX_THREADS_PER_BLOCK 512
@@ -74,8 +69,8 @@ const uint32_t INFINITE = UINT_MAX;
   MAX_THREADS_PER_BLOCK * pow(MAX_BLOCK_PER_DIMENSION, MAX_BLOCK_DIMENSION)
 
 /**
- * Computes a kernel configuration based on the number of vertices. 
- * It assumes a 2D grid. vertex_count is input paramter, while blocks 
+ * Computes a kernel configuration based on the number of vertices.
+ * It assumes a 2D grid. vertex_count is input paramter, while blocks
  * and threads_per_block are output of type dim3.
  */
 #define KERNEL_CONFIGURE(vertex_count, blocks, threads_per_block)       \
@@ -152,7 +147,7 @@ inline bool is_numeric(char* str) {
 }
 
 /**
- * Resets the timer to current system time. Called at the moment to 
+ * Resets the timer to current system time. Called at the moment to
  * start timing an operation.
  * @param[in] stopwatch the stopwatch handler
  */
