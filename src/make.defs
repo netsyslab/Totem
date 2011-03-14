@@ -3,6 +3,7 @@
 #
 # Features (e.g., make MEMORY="PINNED"): 
 #   MEMORY=PINNED   // enables using pinned instead of pageable memory
+#   MP=NO           // disables OpenMP 
 #
 # Created on: 2011-02-28
 # Author: Abdullah Gharaibeh
@@ -24,11 +25,15 @@ NVCC = $(CUDA_INSTALL_PATH)/bin/nvcc
 
 # compilation and linking flags. Note that OPTFLAGS is used only for *.c files
 OPTFLAGS  = -O3 -fno-strict-aliasing
-CFLAGS    = -g -fopenmp $(OPTFLAGS) -Wall -Wno-format \
+OPENMP    = -fopenmp
+ifeq ($(MP), NO)
+OPENMP    = 
+endif
+CFLAGS    = -g $(OPENMP) $(OPTFLAGS) -Wall -Wno-format \
             -I$(CUDA_INSTALL_PATH)/include -D__STDC_LIMIT_MACROS
-LFLAGS    = -fopenmp -lm -lcudart -I. -L$(CUDA_INSTALL_PATH)/lib$(ARCH)
-NVCCFLAGS = -g -Xcompiler -fopenmp -O3 -I. \
-            -I$(CUDA_INSTALL_PATH)/include  -arch=sm_20 -D__STDC_LIMIT_MACROS
+LFLAGS    =  -lm $(OPENMP) -lcudart -I. -L$(CUDA_INSTALL_PATH)/lib$(ARCH)
+NVCCFLAGS = --ptxas-options=-v -g -Xcompiler "$(OPENMP)" -O3 -I. \
+            -I$(CUDA_INSTALL_PATH)/include  -arch=sm_20 -D__STDC_LIMIT_MACROS \
 
 # source files and their correspnding objects and dependencies
 CSRC	= $(wildcard *.c)
