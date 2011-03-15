@@ -14,6 +14,12 @@
  * the values arriving into sum and sets its own tentative PageRank to 
  * ((1 - DAMPING_FACTOR) / vertex_count + DAMPING_FACTOR * sum).
  *
+ * TODO (abdullah): The implementation assumes that the edges array in the graph
+ *                  data structure are incoming edges. The implementation should
+ *                  be consistent with the description of the graph data 
+ *                  structure which assumes the edges array stores outgoing 
+ *                  edges.
+ * 
  *  Created on: 2011-03-06
  *  Author: Abdullah Gharaibeh
  */
@@ -22,6 +28,8 @@
 #include "totem_graph.h"
 #include "totem_mem.h"
 
+// TODO(abdullah): The following two values should be a parameter in the entry 
+//                 function to enable more flexibility and experimentation.
 /**
  * Used to define the number of rounds: a static convergance condition 
  * for PageRank
@@ -58,82 +66,78 @@ void page_rank_kernel(graph_t graph, float* inbox, float* outbox,
                       bool last_round) {
 
   // get the thread's linear index
-  uint32_t my_index = THREAD_GLOBAL_INDEX;
-  
-  // get direct access to graph members
-  uint32_t  vertex_count = graph.vertex_count;
-  uint32_t* vertices     = graph.vertices;
-  uint32_t* edges        = graph.edges;
-
-  if (my_index >= vertex_count) {
-    return;
-  }
-                                                                               
-  // get the neighbors
-  uint32_t  neighbors_count = vertices[my_index + 1] - vertices[my_index];
-  uint32_t* neighbors       = &(edges[vertices[my_index]]);
+  id_t vertex_id = THREAD_GLOBAL_INDEX;
+  if (vertex_id >= graph.vertex_count) return;
 
   // calculate the sum of all neighbors' rank
   double sum = 0;
-  for (uint32_t i = 0; i < neighbors_count; i++) {
-    uint32_t neighbor = neighbors[i];
+  for (uint64_t i = graph.vertices[vertex_id]; 
+       i < graph.vertices[vertex_id + 1]; i++) {
+    const id_t neighbor = graph.edges[i];
     sum += inbox[neighbor];
   }
   
   // calculate my rank
   float my_rank = 
-    ((1 - DAMPING_FACTOR) / (double)vertex_count) + (DAMPING_FACTOR * sum);
-  outbox[my_index] = last_round? my_rank: my_rank / neighbors_count;
+    ((1 - DAMPING_FACTOR) / graph.vertex_count) + (DAMPING_FACTOR * sum);
+  outbox[vertex_id] = last_round? my_rank: my_rank / 
+    (graph.vertices[vertex_id + 1] - graph.vertices[vertex_id]);
 }
 
-
-error_t page_rank_gpu(graph_t* graph, float** rank) {
-  
+error_t page_rank_gpu(graph_t* graph, float** rank) {  
   /* had to define them at the beginning to avoid a compilation problem with 
      goto-label error handling mechanism */
   dim3 blocks; 
   dim3 threads_per_block;
 
   // will be passed to the kernel
-  graph_t graph_d;  
+  graph_t graph_d;
   memcpy(&graph_d, graph, sizeof(graph_t));
 
-  uint32_t vertex_count = graph->vertex_count;
-  uint32_t edge_count   = graph->edge_count;
-
   // allocate vertices and edges device buffers and move them to the device
-  CHECK_ERR(cudaMalloc((void**)&graph_d.vertices, (vertex_count + 1) *
-                       sizeof(uint32_t)) == cudaSuccess, err);
-  CHECK_ERR(cudaMalloc((void**)&graph_d.edges, edge_count * 
-                       sizeof(uint32_t)) == cudaSuccess, err_free_vertices);
+  CHECK_ERR(cudaMalloc((void**)&graph_d.vertices, (graph->vertex_count + 1) * 
+                       sizeof(id_t)) == cudaSuccess, err);
+  CHECK_ERR(cudaMalloc((void**)&graph_d.edges, graph->edge_count * 
+                       sizeof(id_t)) == cudaSuccess, err_free_vertices);
 
   CHECK_ERR(cudaMemcpy(graph_d.vertices, graph->vertices, 
-                       (vertex_count + 1) * sizeof(uint32_t), 
+                       (graph->vertex_count + 1) * sizeof(id_t), 
                        cudaMemcpyHostToDevice) == cudaSuccess, 
             err_free_edges);
   CHECK_ERR(cudaMemcpy(graph_d.edges, graph->edges, 
-                       edge_count * sizeof(uint32_t),
+                       graph->edge_count * sizeof(id_t),
                        cudaMemcpyHostToDevice) == cudaSuccess, 
             err_free_edges);
 
   // allocate inbox and outbox device buffers
   float *inbox_d;
-  CHECK_ERR(cudaMalloc((void**)&inbox_d, vertex_count * 
+  CHECK_ERR(cudaMalloc((void**)&inbox_d, graph->vertex_count * 
                        sizeof(float)) == cudaSuccess, err_free_edges);
   float *outbox_d;
-  CHECK_ERR(cudaMalloc((void**)&outbox_d, vertex_count * 
+  CHECK_ERR(cudaMalloc((void**)&outbox_d, graph->vertex_count * 
                        sizeof(float)) == cudaSuccess, err_free_inbox);
 
   /* set the number of blocks, TODO(abdullah) handle the case when 
      vertex_count is larger than number of threads. */
-  assert(vertex_count <= MAX_THREAD_COUNT);
-  KERNEL_CONFIGURE(vertex_count, blocks, threads_per_block);
+  assert(graph->vertex_count <= MAX_THREAD_COUNT);
+  KERNEL_CONFIGURE(graph->vertex_count, blocks, threads_per_block);
   
-  // initialize the rank of each vertex 
+  // initialize the rank of each vertex
+  // TODO (elizeu, abdullah): A more realistic version of PageRank could be 
+  //                          easily implemented as follows:
+  //                          1. Have a kernel that determines the in-degree of
+  //                             each vertex (i.e., the number of occurrences of
+  //                             each vertex id in the edges array).
+  //                          2. Divide the in-degree by edge_count and set this
+  //                             as the initial rank.
+
+  //                          The rationale behind this is that vertices with 
+  //                          higher in-degree are more likely to be visited by 
+  //                          the random surfer.
   float initial_value;
-  initial_value = 1/(float)vertex_count;
+  initial_value = 1 / (float)graph->vertex_count;
   memset_device<<<blocks, threads_per_block>>>
-    (outbox_d, initial_value, vertex_count);
+    (outbox_d, initial_value, graph->vertex_count);
   CHECK_ERR(cudaGetLastError() == cudaSuccess, err_free_outbox);
 
   uint32_t round;
@@ -155,8 +159,8 @@ error_t page_rank_gpu(graph_t* graph, float** rank) {
 
   // copy back the final result from the outbox
   float* my_rank;
-  my_rank = (float*)mem_alloc(vertex_count * sizeof(float));
-  CHECK_ERR(cudaMemcpy(my_rank, outbox_d, vertex_count * sizeof(float),
+  my_rank = (float*)mem_alloc(graph->vertex_count * sizeof(float));
+  CHECK_ERR(cudaMemcpy(my_rank, outbox_d, graph->vertex_count * sizeof(float),
                        cudaMemcpyDeviceToHost) == cudaSuccess, err_free_all);
 
   // we are done! set the output and clean up
@@ -183,52 +187,55 @@ error_t page_rank_gpu(graph_t* graph, float** rank) {
 }
 
 error_t page_rank_cpu(graph_t* graph, float** rank) {
-
-  // get direct access to graph members
-  uint32_t  vertex_count = graph->vertex_count;
-  uint32_t* vertices     = graph->vertices;
-  uint32_t* edges        = graph->edges;
-
   // allocate buffers
-  float* inbox = (float*)mem_alloc(vertex_count * sizeof(float));
-  float* outbox = (float*)mem_alloc(vertex_count * sizeof(float));
+  float* inbox = (float*)mem_alloc(graph->vertex_count * sizeof(float));
+  float* outbox = (float*)mem_alloc(graph->vertex_count * sizeof(float));
   
+  // TODO (elizeu, abdullah): A more realistic version of PageRank could be 
+  //                          easily implemented as follows:
+  //                          1. Have a kernel that determines the in-degree of
+  //                             each vertex (i.e., the number of occurrences of
+  //                             each vertex id in the edges array).
+  //                          2. Divide the in-degree by edge_count and set this
+  //                             as the initial rank.
+
+  //                          The rationale behind this is that vertices with 
+  //                          higher in-degree are more likely to be visited by 
+  //                          the random surfer.
   // initialize the rank of each vertex
   float initial_value;
-  initial_value = 1/(float)vertex_count;
-  for (uint32_t vid = 0; vid < vertex_count; vid++) {
-    outbox[vid] = initial_value;
+  initial_value = 1 / (float)graph->vertex_count;
+  for (id_t vertex_id = 0; vertex_id < graph->vertex_count; vertex_id++) {
+    outbox[vertex_id] = initial_value;
   }
 
-  for (uint32_t round = 0; round < PAGE_RANK_ROUNDS; round++) {
-
+  for (int round = 0; round < PAGE_RANK_ROUNDS; round++) {
     // swap the inbox and outbox pointers (simulates passing messages!)
     float* tmp = inbox;
-    inbox = outbox;
-    outbox = tmp;
+    inbox      = outbox;
+    outbox     = tmp;
 
     // iterate over all vertices to calculate the ranks for this round
 #ifdef _OPENMP // this is defined if -fopenmp flag is passed to the compiler
 #pragma omp parallel for
 #endif // _OPENMP
-    for(uint32_t vid = 0; vid < vertex_count; vid++) {
-      // get the neighbors
-      uint32_t   neighbors_count  = vertices[vid + 1] - vertices[vid];
-      uint32_t*  neighbors        = &(edges[vertices[vid]]);
-
+    for(id_t vertex_id = 0; vertex_id < graph->vertex_count; vertex_id++) {
       // calculate the sum of all neighbors' rank
       double sum = 0;
-      for (uint32_t i = 0; i < neighbors_count; i++) {
-        uint32_t neighbor  = neighbors[i];
-        sum               += inbox[neighbor];
+      for (uint64_t i = graph->vertices[vertex_id];
+           i < graph->vertices[vertex_id + 1]; i++) {
+        id_t neighbor  = graph->edges[i];
+        sum += inbox[neighbor];
       }
 
       // calculate my rank
+      uint64_t neighbors_count = 
+        graph->vertices[vertex_id + 1] - graph->vertices[vertex_id];
       float my_rank = 
-        ((1 - DAMPING_FACTOR) / vertex_count) + (DAMPING_FACTOR * sum);
-      outbox[vid] = 
+        ((1 - DAMPING_FACTOR) / graph->vertex_count) + (DAMPING_FACTOR * sum);
+      outbox[vertex_id] = 
         (round == (PAGE_RANK_ROUNDS - 1)) ? my_rank : my_rank / neighbors_count;
-    }   
+    }
   }
 
   // we are done! set the output and clean up.
