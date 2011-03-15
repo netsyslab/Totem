@@ -211,7 +211,7 @@ error_t dijkstra(graph_t *graph, id_t source_id,
   bool* has_true_d;
   CHECK_ERR(cudaMalloc((void **)&has_true_d, sizeof(bool)) == cudaSuccess,
             err_free_has_true);
-  CHECK_ERR(cudaMemset(has_true_d, 0, sizeof(bool)) == cudaSuccess,
+  CHECK_ERR(cudaMemset(has_true_d, false, sizeof(bool)) == cudaSuccess,
             err_free_has_true);
 
   while (has_true) {
@@ -219,7 +219,6 @@ error_t dijkstra(graph_t *graph, id_t source_id,
       (graph_d, changed_d, distances_d, new_distances_d, mutex_d);
     dijkstra_final_kernel<<<block_count, threads_per_block>>>
       (graph_d, changed_d, distances_d, new_distances_d);
-    has_true = false;
     has_true_kernel<<<block_count, threads_per_block>>>
       (changed_d, graph_d.vertex_count, has_true_d);
     CHECK_ERR(cudaMemcpy(&has_true, has_true_d, sizeof(bool),
