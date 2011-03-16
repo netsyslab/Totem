@@ -38,7 +38,6 @@ void has_true_kernel(bool* array, uint32_t size, bool* result) {
   }
 }
 
-
 /**
  * Computes the new distances for each neighbor in the graph.
  * @param[in] graph the input graph used to compute the distances
@@ -89,7 +88,6 @@ void dijkstra_kernel(graph_t graph, bool* to_update, weight_t* distances,
   } // for
 }
 
-
 /**
  * Make the new distances permanent if the new distances are smaller than
  * current distances.
@@ -113,21 +111,8 @@ void dijkstra_final_kernel(graph_t graph, bool* to_update, weight_t* distances,
   new_distances[vertex_id] = distances[vertex_id];
 }
 
-
-/**
- * Given a weighted graph \f[G = (V, E, w)\f and a source vertex \f$v\inV\f$,
- * Dijkstra's algorithm computes the distance from \f$v\f$ to every other
- * vertex
- * in a directed, weighted graph, where the edges have non-negative weights
- * (i.e., \f$\forall (u,v) \in E, w(u,v) \leq 0\f$).
- *
- * @param[in] graph an instance of the graph structure
- * @param[in] source_id vertex id for the source
- * @param[out] shortest_distances the length of the computed shortest paths
- * @return a flag indicating whether the operation succeeded or not.
- */
-error_t dijkstra(graph_t *graph, id_t source_id,
-                 weight_t** shortest_distances) {
+error_t dijkstra_gpu(graph_t *graph, id_t source_id,
+                     weight_t** shortest_distances) {
   // Copy the input graph to pass it to the kernel.
   graph_t graph_d = *graph;
 
