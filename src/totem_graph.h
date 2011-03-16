@@ -72,34 +72,6 @@ typedef struct graph_s {
 } graph_t;
 
 /**
- * Given an undirected, unweighted graph and a source vertex, find the minimum
- * number of edges needed to reach every vertex V from the source vertex.
- * Its implementation follows Breadth First Search variation based on
- * in [Harish07] using GPU.
- * @param[in] source_id id of the source vertex
- * @param[in] graph the graph to perform BFS on
- * @return array where the indexes are the vertices' ids and the values are the
- * number of edges needed to reach the vertex. Note that the function gives the
- * ownership of the array and, thus, the client is responsible for freeing the
- * memory area.
-*/
-uint32_t* bfs_gpu(uint32_t source_id, const graph_t* graph);
-
-/**
- * Given an undirected, unweighted graph and a source vertex, find the minimum
- * number of edges needed to reach every vertex V from the source vertex.
- * Its implementation follows Breadth First Search variation based on
- * in [Harish07] using CPU.
- * @param[in] source_id id of the source vertex
- * @param[in] graph the graph to perform BFS on
- * @return array where the indexes are the vertices' ids and the values are the
- * number of edges needed to reach the vertex. Note that the function gives the
- * ownership of the array and, thus, the client is responsible for freeing the
- * memory area.
-*/
-uint32_t* bfs(uint32_t source_id, const graph_t* graph);
-
-/**
  * reads a graph from the given file and builds a graph data type.
  * The function allocates graph data type and the buffers within it.
  * We assume the following regarding the graph file format: each line
@@ -141,5 +113,48 @@ error_t page_rank_gpu(graph_t* graph, float** rank);
  * @return generic success or failure
  */
 error_t page_rank_cpu(graph_t* graph, float** rank);
+
+/**
+ * Given an undirected, unweighted graph and a source vertex, find the minimum
+ * number of edges needed to reach every vertex V from the source vertex.
+ * Its implementation follows Breadth First Search variation based on
+ * in [Harish07] using GPU.
+ * @param[in] source_id id of the source vertex
+ * @param[in] graph the graph to perform BFS on
+ * @return array where the indexes are the vertices' ids and the values are the
+ * number of edges needed to reach the vertex. Note that the function gives the
+ * ownership of the array and, thus, the client is responsible for freeing the
+ * memory area.
+*/
+uint32_t* bfs_gpu(uint32_t source_id, const graph_t* graph);
+
+/**
+ * Given an undirected, unweighted graph and a source vertex, find the minimum
+ * number of edges needed to reach every vertex V from the source vertex.
+ * Its implementation follows Breadth First Search variation based on
+ * in [Harish07] using CPU.
+ * @param[in] source_id id of the source vertex
+ * @param[in] graph the graph to perform BFS on
+ * @return array where the indexes are the vertices' ids and the values are the
+ * number of edges needed to reach the vertex. Note that the function gives the
+ * ownership of the array and, thus, the client is responsible for freeing the
+ * memory area.
+*/
+uint32_t* bfs_cpu(uint32_t source_id, const graph_t* graph);
+
+/**
+ * Given a weighted graph \f[G = (V, E, w)\f and a source vertex \f$v\inV\f$,
+ * Dijkstra's algorithm computes the distance from \f$v\f$ to every other
+ * vertex
+ * in a directed, weighted graph, where the edges have non-negative weights
+ * (i.e., \f$\forall (u,v) \in E, w(u,v) \leq 0\f$).
+ *
+ * @param[in] graph an instance of the graph structure
+ * @param[in] source_id vertex id for the source
+ * @param[out] shortest_distances the length of the computed shortest paths
+ * @return a flag indicating whether the operation succeeded or not.
+ */
+error_t dijkstra_gpu(graph_t *graph, id_t source_id,
+                     weight_t** shortest_distances);
 
 #endif  // TOTEM_GRAPH_H
