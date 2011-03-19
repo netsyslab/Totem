@@ -1,0 +1,10 @@
+The assumptions is that unit tests have the following naming format:
+totem_[test_name]_unittest.cc 
+Based on this, running make only will generate a single all.test binary that
+compile and link all tests together.
+
+If you want to compile a single test:
+make TEST=test_name.
+
+No need to modify the makefile to add new tests, just follow the file naming
+convention.
