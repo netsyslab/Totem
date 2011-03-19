@@ -29,7 +29,7 @@
  graph in levels; once a level is visited it is not visited again.
  The BFS frontier corresponds to all the nodes being processed at the current
  level.
- Each thread process a vertex (in the following text these terms are used in a
+ Each thread process a vertex (in the following text these terms are used
  interchangeably). An integer array, cost_d, stores the minimal number of edges
  from the source vertex to each vertex. The cost for vertices that have not been
  visited yet is INFINITE. In each iteration, each vertex checks if it belongs to

@@ -8,6 +8,7 @@
 // totem includes
 #include "totem_comdef.h"
 #include "totem_graph.h"
+#include "totem_mem.h"
 
 /**
  * Global variable of program options
@@ -72,7 +73,14 @@ PRIVATE void parse_command_line(int argc, char** argv) {
  * prints out a graph in totem format (written to test the parser)
  * @param[in] graph the graph data structure to print out
  */
-PRIVATE void print_graph(graph_t* graph) {   
+void print_graph(graph_t* graph) {
+
+  printf("#Nodes:%d\n#Edges:%d\n", graph->vertex_count, graph->edge_count);
+  if (graph->directed) {
+    printf("#Directed\n");
+  } else {
+    printf("#Undirected\n");
+  }
   for (uint32_t vid = 0; vid < graph->vertex_count; vid++) {    
     int neighbors = graph->vertices[vid + 1] - graph->vertices[vid];
     uint32_t* edges = &(graph->edges[graph->vertices[vid]]);
@@ -96,7 +104,34 @@ int main(int argc, char** argv) {
                              &graph));
 
   // invoke the graph algorithm here instead e.g., bfs(graph, &options);
-  print_graph(graph);
+  //print_graph(graph);
+
+  error_t err;
+  stopwatch_t stopwatch;
+
+  int rounds = 1;
+  while (rounds--) {
+    stopwatch_start(&stopwatch);
+    float* rank_cpu = NULL;
+    err = page_rank_cpu(graph, &rank_cpu);
+    assert(err == SUCCESS);
+    printf("%f\t", stopwatch_elapsed(&stopwatch));
+    
+    stopwatch_start(&stopwatch);
+    float* rank = NULL;
+    err = page_rank_gpu(graph, &rank);
+    assert(err == SUCCESS);
+    printf("%f\n", stopwatch_elapsed(&stopwatch));
+
+    for (uint32_t i = 0; i < graph->vertex_count; i++) {
+      if (rank[i] != rank_cpu[i]) {
+        printf("%d %f %f\n", i, rank[i], rank_cpu[i]);
+        assert(0);
+      }
+    }
+    mem_free(rank_cpu);
+    mem_free(rank);
+  }
 
   CALL_SAFE(graph_finalize(graph));
 

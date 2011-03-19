@@ -10,14 +10,24 @@
 #
 #--------------------------------------------------------------------------
 
+# Command line options
+# defines totem's compile time features
+TOTEM_FEATURES =
+ifeq ($(MEMORY), PAGEABLE)
+TOTEM_FEATURES += -DFEATURE_PAGEABLE_MEMORY
+endif
+# OpenMP support, default is enabled
+OPENMP    = -fopenmp
+ifeq ($(MP), NO)
+OPENMP    = 
+endif
+# Architecture to compile for (TODO: (abdullah): make this automatic)
+ARCH = 64 
 
-
+# directory definitions
 CUDA_INSTALL_PATH = /usr/local/cuda
 LIBDIR = $(ROOT_DIR)/lib
 OBJDIR = obj
-
-# ARCH is empty for 32bit architectures, set to 64 for 64bit
-ARCH = 64 
 
 # compilers
 CC   = g++
@@ -25,32 +35,22 @@ NVCC = $(CUDA_INSTALL_PATH)/bin/nvcc
 
 # compilation and linking flags. Note that OPTFLAGS is used only for *.c files
 OPTFLAGS  = -O3 -fno-strict-aliasing
-OPENMP    = -fopenmp
-ifeq ($(MP), NO)
-OPENMP    = 
-endif
-CFLAGS    = -g $(OPENMP) $(OPTFLAGS) -Wall -Wno-format \
-            -I$(CUDA_INSTALL_PATH)/include -D__STDC_LIMIT_MACROS
+CCFLAGS    = -g $(OPENMP) $(OPTFLAGS) -Wall -Wno-format \
+             -I$(CUDA_INSTALL_PATH)/include -D__STDC_LIMIT_MACROS
 LFLAGS    =  -lm $(OPENMP) -lcudart -I. -L$(CUDA_INSTALL_PATH)/lib$(ARCH)
 NVCCFLAGS = --ptxas-options=-v -g -Xcompiler "$(OPENMP)" -O3 -I. \
             -I$(CUDA_INSTALL_PATH)/include  -arch=sm_20 -D__STDC_LIMIT_MACROS \
 
 # source files and their correspnding objects and dependencies
-CSRC	= $(wildcard *.c)
+CCSRC	= $(wildcard *.cc)
 CUSRC	= $(wildcard *.cu)
-COBJS   = $(CSRC:%.c=$(OBJDIR)/%.o)
+CCOBJS  = $(CCSRC:%.cc=$(OBJDIR)/%.o)
 CUOBJS  = $(CUSRC:%.cu=$(OBJDIR)/%.cu_o)
-CDEPS   = $(wildcard *.h)
+CCDEPS  = $(wildcard *.h)
 CUDEPS  = $(wildcard *.cuh)
 
 # common commands across make files
 ETAGS_CMD     = rm -f TAGS; find . -name '*.c' -o -name '*.h' -o \
-                  -name '*.cu' | xargs etags
+                -name '*.cu' | xargs etags
 CLEAN_CMD     = rm -f $(OBJDIR)/*.o $(OBJDIR)/*.cu_o *~
 CLEAN_ALL_CMD = rm -rf $(TARGET) $(OBJDIR) *~ TAGS
-
-# defines compile time features
-TOTEM_FEATURES =
-ifeq ($(MEMORY), PAGEABLE)
-TOTEM_FEATURES += -DFEATURE_PAGEABLE_MEMORY
-endif
