@@ -23,25 +23,19 @@
 // graph->edges.
 
 /* This comment describes implementation details of the next two functions.
-
  Modified from [Harish07].
  Breadth First Search
  This implementation uses level synchronization. BFS traverses the
  graph in levels; once a level is visited it is not visited again.
  The BFS frontier corresponds to all the nodes being processed at the current
  level.
- Each thread process a vertex (and in the following text the terms are used
- in a similar way).
- Two boolean arrays, frontier and visited of size |V| stores the BFS frontier
- and the visited vertices. An integer array, cost, stores the minimal number
- of edges of each vertex from the source vertex S. In each iteration, each
- vertex looks at its entry in the frontier array. If true, it fetches its cost
- from the cost array and updates all the costs of its neighbors if more than
- its own cost plus one. The vertex removes its own entry from the frontier
- array and adds to the visited array. It also adds its neighbors to the
- frontier array if the neighbor is not already visited. This process is
- repeated until the frontier is empty (i.e., it does not contain any vertex to
- be processed).
+ Each thread process a vertex (in the following text these terms are used in a
+ interchangeably). An integer array, cost_d, stores the minimal number of edges
+ from the source vertex to each vertex. The cost for vertices that have not been
+ visited yet is INFINITE. In each iteration, each vertex checks if it belongs to
+ the current level by verifying its own cost. If it does, it updates its not yet
+ visited neighbors. If the cost of, at least, one neighbor is updated, the
+ variable finished_d is set to false and there will be another iteration.
  */
 __global__
 void bfs_kernel(graph_t graph, uint32_t level, bool* finished, uint32_t* cost) {
