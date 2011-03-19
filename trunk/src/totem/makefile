@@ -4,7 +4,7 @@
 # Created on: 2011-02-28
 # Author: Abdullah Gharaibeh
 #--------------------------------------------------------------------------
-include make.defs
+include ../make.defs
 
 TARGET = graph
 
@@ -14,15 +14,15 @@ all: $(TARGET)
 
 $(TARGET): objects
 	@printf "\nLinking %s ...\n" $(TARGET)
-	$(CC) -o $@ $(COBJS) $(CUOBJS) $(LFLAGS)
+	$(CC) -o $@ $(CCOBJS) $(CUOBJS) $(LFLAGS)
 
-objects: $(OBJDIR) $(COBJS) $(CUOBJS)
+objects: $(OBJDIR) $(CCOBJS) $(CUOBJS)
 
 $(OBJDIR):
 	@if test ! -d $(OBJDIR); then mkdir $(OBJDIR); fi
 
-$(COBJS): $(OBJDIR)/%.o: %.c $(CDEPS)
-	$(CC) $(CFLAGS) $(TOTEM_FEATURES) -c $< -o $@
+$(CCOBJS): $(OBJDIR)/%.o: %.cc $(CCDEPS)
+	$(CC) $(CCFLAGS) $(TOTEM_FEATURES) -c $< -o $@
 
 $(CUOBJS): $(OBJDIR)/%.cu_o: %.cu $(CDEPS) $(CUDEPS)
 	$(NVCC) $(NVCCFLAGS) $(TOTEM_FEATURES) -c $< -o $@
