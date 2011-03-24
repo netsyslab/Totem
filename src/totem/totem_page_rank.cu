@@ -84,10 +84,20 @@ void page_rank_kernel(graph_t graph, float* inbox, float* outbox,
     (graph.vertices[vertex_id + 1] - graph.vertices[vertex_id]);
 }
 
-error_t page_rank_gpu(graph_t* graph, float** rank) {  
+error_t page_rank_gpu(graph_t* graph, float** rank) {
+  if (graph == NULL) {
+    return FAILURE;
+  } else if (graph->vertex_count == 0) {
+    return FAILURE;
+  } else if (graph->vertex_count == 1) {
+    *rank = (float*)mem_alloc(sizeof(float));
+    *rank[0] = (float)1.0;
+    return SUCCESS;
+  }
+
   /* had to define them at the beginning to avoid a compilation problem with 
      goto-label error handling mechanism */
-  dim3 blocks; 
+  dim3 blocks;
   dim3 threads_per_block;
 
   // will be passed to the kernel
@@ -187,6 +197,17 @@ error_t page_rank_gpu(graph_t* graph, float** rank) {
 }
 
 error_t page_rank_cpu(graph_t* graph, float** rank) {
+
+  if (graph == NULL) {
+    return FAILURE;
+  } else if (graph->vertex_count == 0) {
+    return FAILURE;
+  } else if (graph->vertex_count == 1) {
+    *rank = (float*)mem_alloc(sizeof(float));
+    *rank[0] = (float)1.0;
+    return SUCCESS;
+  }
+
   // allocate buffers
   float* inbox = (float*)mem_alloc(graph->vertex_count * sizeof(float));
   float* outbox = (float*)mem_alloc(graph->vertex_count * sizeof(float));
