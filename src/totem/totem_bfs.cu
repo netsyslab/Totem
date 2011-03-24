@@ -19,9 +19,6 @@
 #include "totem_graph.h"
 #include "totem_mem.h"
 
-// TODO(elizeu): change the type from uint32_t to id_t for graph->vertices and
-// graph->edges.
-
 /* This comment describes implementation details of the next two functions.
  Modified from [Harish07].
  Breadth First Search
@@ -46,9 +43,9 @@ void bfs_kernel(graph_t graph, uint32_t level, bool* finished, uint32_t* cost) {
   // TODO(lauro, abdullah): one optimization is to load the neighbors ids to
   // shared memory to facilitate  coalesced memory access.
   // for all neighbors of vertex_id
-  for (uint32_t i = graph.vertices[vertex_id];
+  for (id_t i = graph.vertices[vertex_id];
        i < graph.vertices[vertex_id + 1]; i++) {
-    const uint32_t neighbor_id = graph.edges[i];
+    const id_t neighbor_id = graph.edges[i];
     if (cost[neighbor_id] == INFINITE) {
       // Threads may update finished and the same position in the cost array
       // concurrently. It does not affect correctness since all
@@ -59,79 +56,108 @@ void bfs_kernel(graph_t graph, uint32_t level, bool* finished, uint32_t* cost) {
   } // for
 }
 
-// TODO(lauro): Add CHECK_ERR for CUDA functions.
-// TODO(lauro): Return an error_t and have the a yuck out param.
 __host__
-uint32_t* bfs_gpu(uint32_t source_id, const graph_t* graph) {
-  if( (graph == NULL) || (source_id >= graph->vertex_count) ) {
-    return NULL;
-  } else if( graph->vertex_count == 1 ) {
-    uint32_t* cost = (uint32_t*) mem_alloc(sizeof(uint32_t));
-    cost[0] = 0;
-    return cost;
+error_t bfs_gpu(id_t source_id, const graph_t* graph, uint32_t** cost) {
+  if((graph == NULL) || (source_id >= graph->vertex_count)) {
+    *cost = NULL;
+    return FAILURE;
+  } else if(graph->vertex_count == 1) {
+    *cost = (uint32_t*) mem_alloc(sizeof(uint32_t));
+    *cost[0] = 0;
+    return SUCCESS;
   }
   // TODO(lauro): More optimizations can be performed here. For example, if
   // there is no edge. It can return the cost array initialize as INFINITE.
 
-  // Create graph on GPU memory.
-  // TODO(lauro): Move to some utility library. We will often need this.
-  graph_t graph_d = *graph;
-  cudaMalloc((void**) &(graph_d.vertices),
-             (graph->vertex_count + 1) * sizeof(uint32_t));
-  cudaMalloc((void**) &(graph_d.edges),
-             graph->edge_count * sizeof(uint32_t));
-  cudaMemcpy(graph_d.vertices, graph->vertices,
-            (graph->vertex_count + 1)  * sizeof(uint32_t),
-             cudaMemcpyHostToDevice);
-  cudaMemcpy(graph_d.edges, graph->edges, graph->edge_count * sizeof(uint32_t),
-             cudaMemcpyHostToDevice);
-
-  // TODO(lauro) Next three lines are not directly related to this function and
+  // TODO(lauro) Next four lines are not directly related to this function and
   // should have a better location.
   dim3 blocks;
   dim3 threads_per_block;
   KERNEL_CONFIGURE(graph->vertex_count, blocks, threads_per_block);
+  //TODO(abdullah, lauro) handle the case (vertex_count > number of threads).
+  assert(graph->vertex_count <= MAX_THREAD_COUNT);
+
+  // Create graph on GPU memory.
+  // TODO(lauro): Move to some utility library. We will often need this.
+  graph_t graph_d = *graph;
+  CHECK_ERR(cudaMalloc((void**) &(graph_d.vertices),
+                       (graph->vertex_count + 1) * sizeof(id_t)) == cudaSuccess,
+            err);
+  CHECK_ERR(cudaMalloc((void**) &(graph_d.edges),
+                       graph->edge_count * sizeof(id_t)) == cudaSuccess,
+            err_free_vertices);
+  CHECK_ERR(cudaMemcpy(graph_d.vertices, graph->vertices,
+                       (graph->vertex_count + 1) * sizeof(id_t),
+                       cudaMemcpyHostToDevice) == cudaSuccess,
+            err_free_edges_vertices);
+  CHECK_ERR(cudaMemcpy(graph_d.edges, graph->edges,
+                       graph->edge_count * sizeof(id_t),
+                       cudaMemcpyHostToDevice) == cudaSuccess,
+            err_free_edges_vertices);
 
   // Create cost array only on GPU.
   uint32_t* cost_d;
-  cudaMalloc((void**) &cost_d, graph->vertex_count * sizeof(uint32_t));
+  CHECK_ERR(cudaMalloc((void**) &cost_d,
+                       graph->vertex_count * sizeof(uint32_t)) == cudaSuccess,
+            err_free_edges_vertices);
   // Initialize cost to INFINITE.
   memset_device<<<blocks, threads_per_block>>>(cost_d, INFINITE,
                                                graph->vertex_count);
 
   // For the source vertex, initialize cost.
-  cudaMemset(&(cost_d[source_id]), 0, sizeof(uint32_t));
+  CHECK_ERR(cudaMemset(&(cost_d[source_id]), 0, sizeof(uint32_t))
+            == cudaSuccess, err_free_cost_d_edges_vertices);
 
   // while the current level has vertices to be processed.
-  bool finished = false;
+  // {} used to limit scope and avoid problems with error handles.
   bool* finished_d;
-  cudaMalloc((void**) &finished_d, sizeof(bool));
+  {bool finished = false;
+  CHECK_ERR(cudaMalloc((void**) &finished_d, sizeof(bool)) == cudaSuccess,
+            err_free_cost_d_edges_vertices);
   for (uint32_t level = 0; !finished; level++) {
-    cudaMemset(finished_d, true, 1);
+    CHECK_ERR(cudaMemset(finished_d, true, 1) == cudaSuccess, err_free_all);
     // for each vertex V in parallel do
     bfs_kernel<<<blocks, threads_per_block>>>(graph_d, level, finished_d,
                                               cost_d);
-    cudaMemcpy(&finished, finished_d, sizeof(bool), cudaMemcpyDeviceToHost);
-  }
+    CHECK_ERR(cudaMemcpy(&finished, finished_d, sizeof(bool),
+                         cudaMemcpyDeviceToHost) == cudaSuccess,
+              err_free_all);
+  }}
+
+  *cost = (uint32_t*) mem_alloc(graph->vertex_count * sizeof(uint32_t));
+  CHECK_ERR(cudaMemcpy(*cost, cost_d, graph->vertex_count * sizeof(uint32_t),
+            cudaMemcpyDeviceToHost) == cudaSuccess, err_free_all);
 
   cudaFree(graph_d.vertices);
   cudaFree(graph_d.edges);
-
-  uint32_t* cost = (uint32_t*) mem_alloc(graph->vertex_count *
-                                         sizeof(uint32_t));
-  cudaMemcpy(cost, cost_d, graph->vertex_count * sizeof(uint32_t),
-             cudaMemcpyDeviceToHost);
   cudaFree(cost_d);
-  return cost;
+  return SUCCESS;
+
+  // error handlers
+  err_free_all:
+    cudaFree(finished_d);
+  err_free_cost_d_edges_vertices:
+    cudaFree(cost_d);
+  err_free_edges_vertices:
+   cudaFree(graph_d.edges);
+  err_free_vertices:
+   cudaFree(graph_d.vertices);
+  err:
+    printf("%d\n", cudaGetLastError());
+    *cost = NULL;
+    return FAILURE;
 }
 
+// TODO(lauro): change implementation to obey the same interface of bfs_gpu.
+// TODO(elizeu, lauro): change the type from uint32_t to id_t for
+// graph->vertices and graph->edges.
 __host__
 uint32_t* bfs_cpu(uint32_t source_id, const graph_t* graph) {
-  if( (graph == NULL) || (source_id >= graph->vertex_count) ) {
+  if((graph == NULL) || (source_id >= graph->vertex_count)) {
     return NULL;
   }
 
-  uint32_t* cost = (uint32_t* ) mem_alloc(graph->vertex_count *
+  uint32_t* cost = (uint32_t*) mem_alloc(graph->vertex_count *
                                           sizeof(uint32_t));
   // Initialize cost to INFINITE.
   memset(cost, 0xFF, graph->vertex_count * sizeof(uint32_t));

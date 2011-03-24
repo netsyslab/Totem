@@ -126,7 +126,7 @@ error_t page_rank_cpu(graph_t* graph, float** rank);
  * ownership of the array and, thus, the client is responsible for freeing the
  * memory area.
 */
-uint32_t* bfs_gpu(uint32_t source_id, const graph_t* graph);
+error_t bfs_gpu(uint32_t source_id, const graph_t* graph, uint32_t** cost);
 
 /**
  * Given an undirected, unweighted graph and a source vertex, find the minimum
@@ -135,12 +135,13 @@ uint32_t* bfs_gpu(uint32_t source_id, const graph_t* graph);
  * in [Harish07] using CPU.
  * @param[in] source_id id of the source vertex
  * @param[in] graph the graph to perform BFS on
- * @return array where the indexes are the vertices' ids and the values are the
- * number of edges needed to reach the vertex. Note that the function gives the
- * ownership of the array and, thus, the client is responsible for freeing the
- * memory area.
+ * @param[out] cost array where the indexes are the vertices' ids and the values
+ * are the number of edges needed to reach the vertex. Note that the function
+ * gives the ownership of the array and, thus, the client is responsible for
+ * freeing the memory area.
+ * @return a flag indicating whether the operation succeeded or not.
 */
-uint32_t* bfs_cpu(uint32_t source_id, const graph_t* graph);
+error_t bfs_cpu(uint32_t source_id, const graph_t* graph, uint32_t* cost);
 
 /**
  * Given a weighted graph \f[G = (V, E, w)\f and a source vertex \f$v\inV\f$,
