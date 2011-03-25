@@ -101,28 +101,13 @@ error_t page_rank_gpu(graph_t* graph, float** rank) {
   dim3 threads_per_block;
 
   // will be passed to the kernel
-  graph_t graph_d;
-  memcpy(&graph_d, graph, sizeof(graph_t));
-
-  // allocate vertices and edges device buffers and move them to the device
-  CHECK_ERR(cudaMalloc((void**)&graph_d.vertices, (graph->vertex_count + 1) * 
-                       sizeof(id_t)) == cudaSuccess, err);
-  CHECK_ERR(cudaMalloc((void**)&graph_d.edges, graph->edge_count * 
-                       sizeof(id_t)) == cudaSuccess, err_free_vertices);
-
-  CHECK_ERR(cudaMemcpy(graph_d.vertices, graph->vertices, 
-                       (graph->vertex_count + 1) * sizeof(id_t), 
-                       cudaMemcpyHostToDevice) == cudaSuccess, 
-            err_free_edges);
-  CHECK_ERR(cudaMemcpy(graph_d.edges, graph->edges, 
-                       graph->edge_count * sizeof(id_t),
-                       cudaMemcpyHostToDevice) == cudaSuccess, 
-            err_free_edges);
+  graph_t* graph_d;
+  CHECK_ERR(graph_initialize_device(graph, &graph_d) == SUCCESS, err);
 
   // allocate inbox and outbox device buffers
   float *inbox_d;
   CHECK_ERR(cudaMalloc((void**)&inbox_d, graph->vertex_count * 
-                       sizeof(float)) == cudaSuccess, err_free_edges);
+                       sizeof(float)) == cudaSuccess, err_free_graph_d);
   float *outbox_d;
   CHECK_ERR(cudaMalloc((void**)&outbox_d, graph->vertex_count * 
                        sizeof(float)) == cudaSuccess, err_free_inbox);
@@ -160,7 +145,7 @@ error_t page_rank_gpu(graph_t* graph, float** rank) {
     // call the kernel
     bool last_round = (round == (PAGE_RANK_ROUNDS - 1));
     page_rank_kernel<<<blocks, threads_per_block>>>
-      (graph_d, inbox_d, outbox_d, last_round);
+      (*graph_d, inbox_d, outbox_d, last_round);
     CHECK_ERR(cudaGetLastError() == cudaSuccess, err_free_outbox);
     
     cudaThreadSynchronize();
@@ -177,8 +162,7 @@ error_t page_rank_gpu(graph_t* graph, float** rank) {
   *rank = my_rank;  
   cudaFree(outbox_d);
   cudaFree(inbox_d);
-  cudaFree(graph_d.edges);
-  cudaFree(graph_d.vertices);
+  graph_finalize_device(graph_d);
   return SUCCESS;
 
   // error handlers
@@ -187,10 +171,8 @@ error_t page_rank_gpu(graph_t* graph, float** rank) {
   cudaFree(outbox_d);
  err_free_inbox:
   cudaFree(inbox_d);
- err_free_edges:
-  cudaFree(graph_d.edges);
- err_free_vertices:
-  cudaFree(graph_d.vertices);
+ err_free_graph_d:
+  graph_finalize_device(graph_d);
  err:
   printf("%d\n", cudaGetLastError());
   return FAILURE;
