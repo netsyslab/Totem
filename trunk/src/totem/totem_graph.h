@@ -141,7 +141,7 @@ error_t bfs_gpu(uint32_t source_id, const graph_t* graph, uint32_t** cost);
  * freeing the memory area.
  * @return a flag indicating whether the operation succeeded or not.
 */
-error_t bfs_cpu(uint32_t source_id, const graph_t* graph, uint32_t* cost);
+error_t bfs_cpu(id_t source_id, const graph_t* graph, uint32_t** cost);
 
 /**
  * Given a weighted graph \f[G = (V, E, w)\f and a source vertex \f$v\inV\f$,
