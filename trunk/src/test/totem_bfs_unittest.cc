@@ -73,6 +73,46 @@ TEST_P(BFSTest, SingleNode) {
   graph_finalize(graph);
 }
 
+// Tests BFS for graphs with node and no edges.
+TEST_P(BFSTest, EmptyEdges) {
+  graph_t* graph;
+  graph_initialize(DATA_FOLDER("disconnected_1000_nodes.totem"), false, &graph);
+
+  // First vertex as source
+  id_t source = 0;
+  uint32_t* cost;
+  EXPECT_EQ(SUCCESS, bfs(source, graph, &cost));
+  EXPECT_FALSE(NULL == cost);
+  EXPECT_EQ((uint32_t)0, cost[source]);
+  for(id_t vertex = source + 1; vertex < graph->vertex_count; vertex++){
+    EXPECT_EQ(INFINITE, cost[vertex]);
+  }
+  mem_free(cost);
+
+  // Last vertex as source
+  source = graph->vertex_count - 1;
+  EXPECT_EQ(SUCCESS, bfs(source, graph, &cost));
+  EXPECT_EQ((uint32_t)0, cost[source]);
+  for(id_t vertex = source; vertex < graph->vertex_count - 1; vertex++){
+    EXPECT_EQ(INFINITE, cost[vertex]);
+  }
+  mem_free(cost);
+
+  // A vertex in the middle as source
+  source = 199;
+  EXPECT_EQ(SUCCESS, bfs(source, graph, &cost));
+  for(id_t vertex = 0; vertex < graph->vertex_count; vertex++) {
+    EXPECT_EQ((vertex == source) ? (uint32_t)0 : INFINITE, cost[vertex]);
+  }
+  mem_free(cost);
+
+  // Non existent vertex source
+  EXPECT_EQ(FAILURE, bfs(graph->vertex_count, graph, &cost));
+  EXPECT_EQ(NULL, cost);
+
+  graph_finalize(graph);
+}
+
 // Tests BFS for a chain of 1000 nodes.
 TEST_P(BFSTest, Chain) {
   graph_t* graph;
@@ -140,7 +180,48 @@ TEST_P(BFSTest, CompleteGraph) {
   source = 199;
   EXPECT_EQ(SUCCESS, bfs(source, graph, &cost));
   for(id_t vertex = 0; vertex < graph->vertex_count; vertex++) {
-    EXPECT_EQ((uint32_t)((source == vertex)?0:1), cost[vertex]);
+    EXPECT_EQ((uint32_t)((source == vertex) ? 0 : 1), cost[vertex]);
+  }
+  mem_free(cost);
+
+  // Non existent vertex source
+  EXPECT_EQ(FAILURE, bfs(graph->vertex_count, graph, &cost));
+  EXPECT_EQ(NULL, cost);
+
+  graph_finalize(graph);
+}
+
+// Tests BFS for a complete graph of 1000 nodes.
+TEST_P(BFSTest, Star) {
+  graph_t* graph;
+  graph_initialize(DATA_FOLDER("star_1000_nodes.totem"), false, &graph);
+
+  // First vertex as source
+  id_t source = 0;
+  uint32_t* cost;
+  EXPECT_EQ(SUCCESS, bfs(source, graph, &cost));
+  EXPECT_EQ((uint32_t)0, cost[source]);
+  for(id_t vertex = source + 1; vertex < graph->vertex_count; vertex++){
+    EXPECT_EQ((uint32_t)1, cost[vertex]);
+  }
+  mem_free(cost);
+
+  // Last vertex as source
+  source = graph->vertex_count - 1;
+  EXPECT_EQ(SUCCESS, bfs(source, graph, &cost));
+  EXPECT_EQ((uint32_t)0, cost[source]);
+  EXPECT_EQ((uint32_t)1, cost[0]);
+  for(id_t vertex = 1; vertex < source - 1; vertex++) {
+    EXPECT_EQ((uint32_t)2, cost[vertex]);
+  }
+  mem_free(cost);
+
+  // A vertex source in the middle
+  source = 199;
+  EXPECT_EQ(SUCCESS, bfs(source, graph, &cost));
+  EXPECT_EQ((uint32_t)1, cost[0]);
+  for(id_t vertex = 1; vertex < graph->vertex_count; vertex++) {
+    EXPECT_EQ((uint32_t)((source == vertex) ? 0 : 2), cost[vertex]);
   }
   mem_free(cost);
 
@@ -152,7 +233,6 @@ TEST_P(BFSTest, CompleteGraph) {
 }
 
 // TODO(lauro): Add test cases for not well defined structures.
-// TODO(lauro): Add test cases for non-empty vertex set and empty edge set.
 
 // From Google documentation:
 // In order to run value-parameterized tests, we need to instantiate them,
