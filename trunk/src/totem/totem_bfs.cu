@@ -79,46 +79,32 @@ error_t bfs_gpu(id_t source_id, const graph_t* graph, uint32_t** cost) {
   assert(graph->vertex_count <= MAX_THREAD_COUNT);
 
   // Create graph on GPU memory.
-  // TODO(lauro): Move to some utility library. We will often need this.
-  graph_t graph_d = *graph;
-  CHECK_ERR(cudaMalloc((void**) &(graph_d.vertices),
-                       (graph->vertex_count + 1) * sizeof(id_t)) == cudaSuccess,
-            err);
-  CHECK_ERR(cudaMalloc((void**) &(graph_d.edges),
-                       graph->edge_count * sizeof(id_t)) == cudaSuccess,
-            err_free_vertices);
-  CHECK_ERR(cudaMemcpy(graph_d.vertices, graph->vertices,
-                       (graph->vertex_count + 1) * sizeof(id_t),
-                       cudaMemcpyHostToDevice) == cudaSuccess,
-            err_free_edges_vertices);
-  CHECK_ERR(cudaMemcpy(graph_d.edges, graph->edges,
-                       graph->edge_count * sizeof(id_t),
-                       cudaMemcpyHostToDevice) == cudaSuccess,
-            err_free_edges_vertices);
+  graph_t* graph_d;
+  CHECK_ERR(graph_initialize_device(graph, &graph_d) == SUCCESS, err);
 
   // Create cost array only on GPU.
   uint32_t* cost_d;
   CHECK_ERR(cudaMalloc((void**) &cost_d,
                        graph->vertex_count * sizeof(uint32_t)) == cudaSuccess,
-            err_free_edges_vertices);
+            err_free_graph_d);
   // Initialize cost to INFINITE.
   memset_device<<<blocks, threads_per_block>>>(cost_d, INFINITE,
                                                graph->vertex_count);
 
   // For the source vertex, initialize cost.
   CHECK_ERR(cudaMemset(&(cost_d[source_id]), 0, sizeof(uint32_t))
-            == cudaSuccess, err_free_cost_d_edges_vertices);
+            == cudaSuccess, err_free_cost_d_graph_d);
 
   // while the current level has vertices to be processed.
   // {} used to limit scope and avoid problems with error handles.
   bool* finished_d;
   {bool finished = false;
   CHECK_ERR(cudaMalloc((void**) &finished_d, sizeof(bool)) == cudaSuccess,
-            err_free_cost_d_edges_vertices);
+            err_free_cost_d_graph_d);
   for (uint32_t level = 0; !finished; level++) {
     CHECK_ERR(cudaMemset(finished_d, true, 1) == cudaSuccess, err_free_all);
     // for each vertex V in parallel do
-    bfs_kernel<<<blocks, threads_per_block>>>(graph_d, level, finished_d,
+    bfs_kernel<<<blocks, threads_per_block>>>(*graph_d, level, finished_d,
                                               cost_d);
     CHECK_ERR(cudaMemcpy(&finished, finished_d, sizeof(bool),
                          cudaMemcpyDeviceToHost) == cudaSuccess,
@@ -129,20 +115,17 @@ error_t bfs_gpu(id_t source_id, const graph_t* graph, uint32_t** cost) {
   CHECK_ERR(cudaMemcpy(*cost, cost_d, graph->vertex_count * sizeof(uint32_t),
             cudaMemcpyDeviceToHost) == cudaSuccess, err_free_all);
 
-  cudaFree(graph_d.vertices);
-  cudaFree(graph_d.edges);
+  graph_finalize_device(graph_d);
   cudaFree(cost_d);
   return SUCCESS;
 
   // error handlers
   err_free_all:
     cudaFree(finished_d);
-  err_free_cost_d_edges_vertices:
+  err_free_cost_d_graph_d:
     cudaFree(cost_d);
-  err_free_edges_vertices:
-   cudaFree(graph_d.edges);
-  err_free_vertices:
-   cudaFree(graph_d.vertices);
+  err_free_graph_d:
+    graph_finalize_device(graph_d);
   err:
   // TODO(lauro, abdullah): This msg is useless. Unless it comes directly to err
   // it always prints cudaFree errors and not the actual error code.
