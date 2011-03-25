@@ -9,25 +9,48 @@
 // totem includes
 #include "totem_common_unittest.h"
 
+#if GTEST_HAS_PARAM_TEST
+
+using ::testing::TestWithParam;
+using ::testing::Values;
+
+// The following implementation relies on TestWithParam<BFSFunction> to test
+// the two versions of PageRank implemented: CPU and GPU.
+// Details on how to use TestWithParam<T> can be found at:
+// totem_bfs_unittest.cc and
+// http://code.google.com/p/googletest/source/browse/trunk/samples/sample7_unittest.cc
+
+typedef error_t(*PageRankFunction)(graph_t*, float**);
+
+class PageRankTest : public TestWithParam<PageRankFunction> {
+ public:
+  virtual void SetUp() {
+    page_rank = GetParam();
+  }
+
+ protected:
+  PageRankFunction page_rank;
+};
+
 // Tests PageRank for empty graphs.
-TEST(PageRankTest, Empty) {
+TEST_P(PageRankTest, Empty) {
   graph_t graph;
   graph.directed = false;
   graph.vertex_count = 0;
   graph.edge_count = 0;
 
   float* rank = NULL;
-  EXPECT_EQ(FAILURE, page_rank_cpu(&graph, &rank));
+  EXPECT_EQ(FAILURE, page_rank(&graph, &rank));
 }
 
 // Tests PageRank for single node graphs.
-TEST(PageRankTest, SingleNode) {
+TEST_P(PageRankTest, SingleNode) {
   graph_t* graph;
-  EXPECT_EQ(SUCCESS, graph_initialize(DATA_FOLDER("single_node.totem"), 
+  EXPECT_EQ(SUCCESS, graph_initialize(DATA_FOLDER("single_node.totem"),
                                       false, &graph));
 
   float* rank = NULL;
-  EXPECT_EQ(SUCCESS, page_rank_cpu(graph, &rank));
+  EXPECT_EQ(SUCCESS, page_rank(graph, &rank));
   EXPECT_FALSE(rank == NULL);
   EXPECT_EQ(1, rank[0]);
   mem_free(rank);
@@ -36,13 +59,13 @@ TEST(PageRankTest, SingleNode) {
 }
 
 // Tests PageRank for a chain of 1000 nodes.
-TEST(PageRankTest, Chain) {
+TEST_P(PageRankTest, Chain) {
   graph_t* graph;
   EXPECT_EQ(SUCCESS, graph_initialize(DATA_FOLDER("chain_1000_nodes.totem"),
                                       false, &graph));
 
   float* rank = NULL;
-  EXPECT_EQ(SUCCESS, page_rank_cpu(graph, &rank));
+  EXPECT_EQ(SUCCESS, page_rank(graph, &rank));
   EXPECT_FALSE(rank == NULL);
   for(id_t vertex = 0; vertex < graph->vertex_count/2; vertex++){
     EXPECT_EQ(rank[vertex], rank[graph->vertex_count - vertex - 1]);
@@ -53,14 +76,14 @@ TEST(PageRankTest, Chain) {
 }
 
 // Tests PageRank for a complete graph of 300 nodes.
-TEST(PageRankTest, CompleteGraph) {
+TEST_P(PageRankTest, CompleteGraph) {
   graph_t* graph;
-  EXPECT_EQ(SUCCESS, 
-            graph_initialize(DATA_FOLDER("complete_graph_300_nodes.totem"), 
+  EXPECT_EQ(SUCCESS,
+            graph_initialize(DATA_FOLDER("complete_graph_300_nodes.totem"),
                              false, &graph));
 
   float* rank = NULL;
-  EXPECT_EQ(SUCCESS, page_rank_cpu(graph, &rank));
+  EXPECT_EQ(SUCCESS, page_rank(graph, &rank));
   EXPECT_FALSE(rank == NULL);
   for(id_t vertex = 0; vertex < graph->vertex_count; vertex++){
     EXPECT_EQ(rank[0], rank[vertex]);
@@ -71,14 +94,14 @@ TEST(PageRankTest, CompleteGraph) {
 }
 
 // Tests PageRank for a complete graph of 300 nodes.
-TEST(PageRankTest, Star) {
+TEST_P(PageRankTest, Star) {
   graph_t* graph;
-  EXPECT_EQ(SUCCESS, 
-            graph_initialize(DATA_FOLDER("star_1000_nodes.totem"), 
+  EXPECT_EQ(SUCCESS,
+            graph_initialize(DATA_FOLDER("star_1000_nodes.totem"),
                              false, &graph));
 
   float* rank = NULL;
-  EXPECT_EQ(SUCCESS, page_rank_cpu(graph, &rank));
+  EXPECT_EQ(SUCCESS, page_rank(graph, &rank));
   EXPECT_FALSE(rank == NULL);
   for(id_t vertex = 1; vertex < graph->vertex_count; vertex++){
     EXPECT_EQ(rank[1], rank[vertex]);
@@ -90,3 +113,19 @@ TEST(PageRankTest, Star) {
 }
 
 // TODO(abdullah): Add test cases for not well defined structures.
+// TODO(abdullah,lauro): Add test cases for non-empty vertex set and empty edge
+// set.
+
+// Values() receives a list of parameters and the framework will execute the
+// whole set of tests PageRankTest for each element of Values()
+INSTANTIATE_TEST_CASE_P(PageRankGPUAndCPUTest, PageRankTest,
+                        Values(&page_rank_gpu,&page_rank_cpu));
+
+#else
+
+// From Google documentation:
+// Google Test may not support value-parameterized tests with some
+// compilers. This dummy test keeps gtest_main linked in.
+TEST_P(DummyTest, ValueParameterizedTestsAreNotSupportedOnThisPlatform) {}
+
+#endif  // GTEST_HAS_PARAM_TEST
