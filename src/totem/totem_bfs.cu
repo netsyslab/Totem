@@ -58,6 +58,7 @@ void bfs_kernel(graph_t graph, uint32_t level, bool* finished, uint32_t* cost) {
 
 __host__
 error_t bfs_gpu(id_t source_id, const graph_t* graph, uint32_t** cost) {
+  // TODO(lauro,abdullah): Factor out a validate graph function.
   if((graph == NULL) || (source_id >= graph->vertex_count)) {
     *cost = NULL;
     return FAILURE;
@@ -143,22 +144,22 @@ error_t bfs_gpu(id_t source_id, const graph_t* graph, uint32_t** cost) {
   err_free_vertices:
    cudaFree(graph_d.vertices);
   err:
+  // TODO(lauro, abdullah): This msg is useless. Unless it comes directly to err
+  // it always prints cudaFree errors and not the actual error code.
     printf("%d\n", cudaGetLastError());
     *cost = NULL;
     return FAILURE;
 }
 
-// TODO(lauro): change implementation to obey the same interface of bfs_gpu.
-// TODO(elizeu, lauro): change the type from uint32_t to id_t for
-// graph->vertices and graph->edges.
 __host__
-uint32_t* bfs_cpu(uint32_t source_id, const graph_t* graph) {
+error_t bfs_cpu(id_t source_id, const graph_t* graph, uint32_t** cost_ret) {
   if((graph == NULL) || (source_id >= graph->vertex_count)) {
-    return NULL;
+    *cost_ret = NULL;
+    return FAILURE;
   }
 
   uint32_t* cost = (uint32_t*) mem_alloc(graph->vertex_count *
-                                          sizeof(uint32_t));
+                                         sizeof(uint32_t));
   // Initialize cost to INFINITE.
   memset(cost, 0xFF, graph->vertex_count * sizeof(uint32_t));
   // For the source vertex, initialize cost.
@@ -171,11 +172,11 @@ uint32_t* bfs_cpu(uint32_t source_id, const graph_t* graph) {
     #ifdef _OPENMP
     #pragma omp parallel for
     #endif // _OPENMP
-    for (uint32_t vertex_id = 0; vertex_id < graph->vertex_count; vertex_id++) {
+    for (id_t vertex_id = 0; vertex_id < graph->vertex_count; vertex_id++) {
       if (cost[vertex_id] != level) continue;
-      for (uint32_t i = graph->vertices[vertex_id];
+      for (id_t i = graph->vertices[vertex_id];
            i < graph->vertices[vertex_id + 1]; i++) {
-        const uint32_t neighbor_id = graph->edges[i];
+        const id_t neighbor_id = graph->edges[i];
         if (cost[neighbor_id] == INFINITE) {
           finished = false;
           cost[neighbor_id] = level + 1;
@@ -183,5 +184,6 @@ uint32_t* bfs_cpu(uint32_t source_id, const graph_t* graph) {
       }
     }
   }
-  return cost;
+  *cost_ret = cost;
+  return SUCCESS;
 }
