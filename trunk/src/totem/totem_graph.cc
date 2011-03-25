@@ -121,7 +121,7 @@ error_t graph_initialize(const char* graph_file, bool weighted,
   id_t edge_index       = 0;
   uint64_t vertex_count = 0;
   uint64_t edge_count   = 0;
-  graph_t* mygraph      = NULL;
+  graph_t* my_graph      = NULL;
   bool     directed     = true;
 
   // logistics for parsing
@@ -138,11 +138,11 @@ error_t graph_initialize(const char* graph_file, bool weighted,
 
   /* allocate graph buffers, we allocate an extra slot in the vertices array to
      make it easy to calculate the number of neighbors of the last vertex. */
-  mygraph           = (graph_t*)malloc(sizeof(graph_t));
-  assert(mygraph);
-  mygraph->vertices = (id_t*)mem_alloc((vertex_count + 1) * sizeof(id_t));
-  mygraph->edges    = (id_t*)mem_alloc(edge_count * sizeof(id_t));
-  mygraph->weights  = weighted ?
+  my_graph           = (graph_t*)calloc(1, sizeof(graph_t));
+  assert(my_graph);
+  my_graph->vertices = (id_t*)mem_alloc((vertex_count + 1) * sizeof(id_t));
+  my_graph->edges    = (id_t*)mem_alloc(edge_count * sizeof(id_t));
+  my_graph->weights  = weighted ?
     (weight_t*)mem_alloc(edge_count * sizeof(weight_t)) : NULL;
 
   // read line by line to create the graph
@@ -188,15 +188,15 @@ error_t graph_initialize(const char* graph_file, bool weighted,
          be calculated in the same way as every other vertex. hence the
          following loop. */
       while (vertex_index <= src_id) {
-        mygraph->vertices[vertex_index++] = edge_index;
+        my_graph->vertices[vertex_index++] = edge_index;
       }
     }
 
     // add the edge and its weight if any
     CHECK_ERR((edge_index < edge_count), err_format_clean);
-    mygraph->edges[edge_index] = dst_id;
+    my_graph->edges[edge_index] = dst_id;
     if (weighted) {
-      mygraph->weights[edge_index] = weight;
+      my_graph->weights[edge_index] = weight;
     }
     edge_index++;
   }
@@ -207,30 +207,30 @@ error_t graph_initialize(const char* graph_file, bool weighted,
 
   // make sure we set the vertices that do not exist at the end
   while (vertex_index <= vertex_count) {
-    mygraph->vertices[vertex_index++] = edge_index;
+    my_graph->vertices[vertex_index++] = edge_index;
   }
 
   /* set the rest of the members of the graph data structure.
      TODO(abdullah): verify that the graph is actually undirected if true */
-  mygraph->vertex_count = vertex_count;
-  mygraph->edge_count   = edge_count;
-  mygraph->directed     = directed;
-  mygraph->weighted     = weighted;
+  my_graph->vertex_count = vertex_count;
+  my_graph->edge_count   = edge_count;
+  my_graph->directed     = directed;
+  my_graph->weighted     = weighted;
 
   // we are done, set the output parameter and return
-  *graph = mygraph;
+  *graph = my_graph;
   return SUCCESS;
 
   // error handling
  err_openfile:
   fprintf(stderr, "Can't open file %s\n", graph_file);
-  graph_finalize(mygraph);
+  graph_finalize(my_graph);
   goto err;
  err_id_overflow:
   fprintf(stderr, "The type used for vertex ids does not support the range of "
           "values in this file.\n");
  err_format_clean:
-  graph_finalize(mygraph);
+  graph_finalize(my_graph);
   fprintf(stderr, "Incorrect file format at line number %d, check the file "
           "format described in totem_graph.h\n", line_number);
  err:
@@ -239,16 +239,11 @@ error_t graph_initialize(const char* graph_file, bool weighted,
 
 error_t graph_finalize(graph_t* graph) {
   assert(graph);
-  assert(graph->vertices);
-  assert(graph->edges);
 
   // those buffers are allocated via mem_alloc
-  mem_free(graph->vertices);
-  mem_free(graph->edges);
-  if (graph->weighted) {
-    assert(graph->weights);
-    mem_free(graph->weights);
-  }
+  if (graph->vertex_count != 0) mem_free(graph->vertices);
+  if (graph->edge_count != 0) mem_free(graph->edges);
+  if (graph->weighted && graph->edge_count != 0) mem_free(graph->weights);
 
   // this is always allocated via malloc
   free(graph);
