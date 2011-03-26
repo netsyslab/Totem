@@ -62,13 +62,13 @@ PRIVATE error_t parse_metadata(FILE* file_handler, uint64_t* vertex_count,
   */
   while (metadata_lines--) {
     // get the line
-    CHECK_ERR(fgets(line, sizeof(line), file_handler) != NULL, err_format);
+    CHK(fgets(line, sizeof(line), file_handler) != NULL, err_format);
 
     // must be a comment
-    CHECK_ERR(line[0] == '#', err_format);
+    CHK(line[0] == '#', err_format);
 
     // first token is one of the keywords. start after the # (hence +1)
-    CHECK_ERR((token = strtok(line + 1, delimiters)) != NULL, err_format);
+    CHK((token = strtok(line + 1, delimiters)) != NULL, err_format);
     to_upper(token);
 
     int keyword;
@@ -78,15 +78,15 @@ PRIVATE error_t parse_metadata(FILE* file_handler, uint64_t* vertex_count,
         break;
       }
     }
-    CHECK_ERR(keyword != KEYWORD_COUNT, err_format);
+    CHK(keyword != KEYWORD_COUNT, err_format);
 
     // take action based on the keyword
     switch (keyword) {
       case NODES:
       case EDGES:
         // the second token is the value
-        CHECK_ERR((token = strtok(NULL, delimiters)) != NULL, err_format);
-        CHECK_ERR(is_numeric(token), err_format);
+        CHK((token = strtok(NULL, delimiters)) != NULL, err_format);
+        CHK(is_numeric(token), err_format);
         if (keyword == NODES) *vertex_count = atoi(token);
         else *edge_count = atoi(token);
         break;
@@ -102,7 +102,7 @@ PRIVATE error_t parse_metadata(FILE* file_handler, uint64_t* vertex_count,
     }
   }
 
-  CHECK_ERR(keywords_found[NODES] && keywords_found[EDGES], err_format);
+  CHK(keywords_found[NODES] && keywords_found[EDGES], err_format);
 
   return SUCCESS;
 
@@ -131,10 +131,10 @@ error_t graph_initialize(const char* graph_file, bool weighted,
 
   assert(graph_file);
   FILE* file_handler = fopen(graph_file, "r");
-  CHECK_ERR(file_handler != NULL, err_openfile);
+  CHK(file_handler != NULL, err_openfile);
 
-  CHECK_ERR(parse_metadata(file_handler, &vertex_count,
-                           &edge_count, &directed) == SUCCESS, err);
+  CHK(parse_metadata(file_handler, &vertex_count,
+                     &edge_count, &directed) == SUCCESS, err);
 
   /* allocate graph buffers, we allocate an extra slot in the vertices array to
      make it easy to calculate the number of neighbors of the last vertex. */
@@ -155,24 +155,24 @@ error_t graph_initialize(const char* graph_file, bool weighted,
       continue;
 
     // start tokenizing: first, the source node
-    CHECK_ERR((token = strtok(line, delimiters)) != NULL, err_format_clean);
-    CHECK_ERR(is_numeric(token), err_format_clean);
+    CHK((token = strtok(line, delimiters)) != NULL, err_format_clean);
+    CHK(is_numeric(token), err_format_clean);
     uint64_t token_num  = atoll(token);
-    CHECK_ERR((token_num < ID_MAX), err_id_overflow);
+    CHK((token_num < ID_MAX), err_id_overflow);
     id_t src_id = token_num;
 
     // second, the destination node
-    CHECK_ERR((token = strtok(NULL, delimiters)) != NULL, err_format_clean);
-    CHECK_ERR(is_numeric(token), err_format_clean);
+    CHK((token = strtok(NULL, delimiters)) != NULL, err_format_clean);
+    CHK(is_numeric(token), err_format_clean);
     token_num  = atoll(token);
-    CHECK_ERR(token_num < ID_MAX, err_id_overflow);
+    CHK(token_num < ID_MAX, err_id_overflow);
     id_t dst_id = token_num;
 
     // third, get the weight if any
     weight_t weight = DEFAULT_EDGE_WEIGHT;
     if (weighted && ((token = strtok(NULL, delimiters)) != NULL)) {
       // TODO(abdullah): isnumeric returns false for negatives, fix this.
-      //CHECK_ERR(is_numeric(token), err_format_clean);
+      //CHK(is_numeric(token), err_format_clean);
       weight = (weight_t)atof(token);
     }
 
@@ -180,8 +180,8 @@ error_t graph_initialize(const char* graph_file, bool weighted,
       // add new vertex
 
       // vertices must be in increasing order and less than the maximum count
-      CHECK_ERR(((src_id >= vertex_index) && (src_id < vertex_count)),
-                err_format_clean);
+      CHK(((src_id >= vertex_index) && (src_id < vertex_count)),
+          err_format_clean);
 
       /* IMPORTANT: vertices without edges have the same index in the vertices
          array as their next vertex, hence their number of edges as zero would
@@ -193,7 +193,7 @@ error_t graph_initialize(const char* graph_file, bool weighted,
     }
 
     // add the edge and its weight if any
-    CHECK_ERR((edge_index < edge_count), err_format_clean);
+    CHK((edge_index < edge_count), err_format_clean);
     my_graph->edges[edge_index] = dst_id;
     if (weighted) {
       my_graph->weights[edge_index] = weight;
@@ -202,8 +202,8 @@ error_t graph_initialize(const char* graph_file, bool weighted,
   }
   fclose(file_handler);
 
-  CHECK_ERR((vertex_index <= vertex_count), err_format_clean);
-  CHECK_ERR((edge_index == edge_count), err_format_clean);
+  CHK((vertex_index <= vertex_count), err_format_clean);
+  CHK((edge_index == edge_count), err_format_clean);
 
   // make sure we set the vertices that do not exist at the end
   while (vertex_index <= vertex_count) {

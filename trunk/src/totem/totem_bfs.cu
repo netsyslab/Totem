@@ -80,40 +80,42 @@ error_t bfs_gpu(id_t source_id, const graph_t* graph, uint32_t** cost) {
 
   // Create graph on GPU memory.
   graph_t* graph_d;
-  CHECK_ERR(graph_initialize_device(graph, &graph_d) == SUCCESS, err);
+  CHK_SUCCESS(graph_initialize_device(graph, &graph_d), err);
 
   // Create cost array only on GPU.
   uint32_t* cost_d;
-  CHECK_ERR(cudaMalloc((void**) &cost_d,
-                       graph->vertex_count * sizeof(uint32_t)) == cudaSuccess,
-            err_free_graph_d);
+  CHK_CU_SUCCESS(cudaMalloc((void**) &cost_d,
+                            graph->vertex_count * sizeof(uint32_t)),
+                 err_free_graph_d);
+
   // Initialize cost to INFINITE.
   memset_device<<<blocks, threads_per_block>>>(cost_d, INFINITE,
                                                graph->vertex_count);
 
   // For the source vertex, initialize cost.
-  CHECK_ERR(cudaMemset(&(cost_d[source_id]), 0, sizeof(uint32_t))
-            == cudaSuccess, err_free_cost_d_graph_d);
+  CHK_CU_SUCCESS(cudaMemset(&(cost_d[source_id]), 0, sizeof(uint32_t)),
+                 err_free_cost_d_graph_d);
 
   // while the current level has vertices to be processed.
   // {} used to limit scope and avoid problems with error handles.
   bool* finished_d;
   {bool finished = false;
-  CHECK_ERR(cudaMalloc((void**) &finished_d, sizeof(bool)) == cudaSuccess,
-            err_free_cost_d_graph_d);
+  CHK_CU_SUCCESS(cudaMalloc((void**) &finished_d, sizeof(bool)),
+                 err_free_cost_d_graph_d);
+
   for (uint32_t level = 0; !finished; level++) {
-    CHECK_ERR(cudaMemset(finished_d, true, 1) == cudaSuccess, err_free_all);
+    CHK_CU_SUCCESS(cudaMemset(finished_d, true, 1), err_free_all);
     // for each vertex V in parallel do
     bfs_kernel<<<blocks, threads_per_block>>>(*graph_d, level, finished_d,
                                               cost_d);
-    CHECK_ERR(cudaMemcpy(&finished, finished_d, sizeof(bool),
-                         cudaMemcpyDeviceToHost) == cudaSuccess,
-              err_free_all);
+    CHK_CU_SUCCESS(cudaMemcpy(&finished, finished_d, sizeof(bool),
+                              cudaMemcpyDeviceToHost), err_free_all);
   }}
 
   *cost = (uint32_t*) mem_alloc(graph->vertex_count * sizeof(uint32_t));
-  CHECK_ERR(cudaMemcpy(*cost, cost_d, graph->vertex_count * sizeof(uint32_t),
-            cudaMemcpyDeviceToHost) == cudaSuccess, err_free_all);
+  CHK_CU_SUCCESS(cudaMemcpy(*cost, cost_d, graph->vertex_count * 
+                            sizeof(uint32_t), cudaMemcpyDeviceToHost),
+                 err_free_all);
 
   graph_finalize_device(graph_d);
   cudaFree(cost_d);

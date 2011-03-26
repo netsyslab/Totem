@@ -111,11 +111,21 @@ typedef double stopwatch_t;
  * Simulates simple exceptions: if the statement is not correct, jump to
  * label, typically an error label where you could clean up before exit.
  */
-#define CHECK_ERR(stmt, label)                  \
+#define CHK(stmt, label)                        \
   do {                                          \
     if (!(stmt))                                \
       goto label;                               \
   } while(0)
+
+/**
+ * Check if return value of stmt is SUCCESS, jump to label if not.
+ */
+#define CHK_SUCCESS(stmt, label) CHK((stmt) == SUCCESS, label)
+
+/**
+ * Check if return value of stmt is cudaSuccess, jump to label if not.
+ */
+#define CHK_CU_SUCCESS(stmt, label) CHK((stmt) == cudaSuccess, label)
 
 /**
  * Converts the string to upper case

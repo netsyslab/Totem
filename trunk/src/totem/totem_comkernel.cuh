@@ -56,33 +56,31 @@ inline error_t graph_initialize_device(const graph_t* graph_h,
 
   /* Allocate vertices, edges and weights device buffers and move them to
      the device. */
-  CHECK_ERR(cudaMalloc((void**)&(*graph_d)->vertices,
-                       (graph_h->vertex_count + 1) *
-                       sizeof(id_t)) == cudaSuccess, err);
-  CHECK_ERR(cudaMalloc((void**)&(*graph_d)->edges, graph_h->edge_count *
-                       sizeof(id_t)) == cudaSuccess, err_free_vertices);
+  CHK_CU_SUCCESS(cudaMalloc((void**)&(*graph_d)->vertices,
+                            (graph_h->vertex_count + 1) *
+                            sizeof(id_t)), err);
+  CHK_CU_SUCCESS(cudaMalloc((void**)&(*graph_d)->edges, graph_h->edge_count *
+                            sizeof(id_t)), err_free_vertices);
   if (graph_h->weighted) {
-    CHECK_ERR(cudaMalloc((void**)&(*graph_d)->weights, graph_h->edge_count *
-                         sizeof(weight_t)) == cudaSuccess, err_free_edges);
+    CHK_CU_SUCCESS(cudaMalloc((void**)&(*graph_d)->weights, 
+                              graph_h->edge_count * sizeof(weight_t)), 
+                   err_free_edges);
   }
-
-  CHECK_ERR(cudaMemcpy((*graph_d)->vertices, graph_h->vertices,
-                       (graph_h->vertex_count + 1) * sizeof(id_t),
-                       cudaMemcpyHostToDevice) == cudaSuccess,
-            err_free_weights);
-  CHECK_ERR(cudaMemcpy((*graph_d)->edges, graph_h->edges,
-                       graph_h->edge_count * sizeof(id_t),
-                       cudaMemcpyHostToDevice) == cudaSuccess,
-            err_free_weights);
+  
+  CHK_CU_SUCCESS(cudaMemcpy((*graph_d)->vertices, graph_h->vertices,
+                            (graph_h->vertex_count + 1) * sizeof(id_t),
+                            cudaMemcpyHostToDevice), err_free_weights);
+  CHK_CU_SUCCESS(cudaMemcpy((*graph_d)->edges, graph_h->edges,
+                            graph_h->edge_count * sizeof(id_t),
+                            cudaMemcpyHostToDevice), err_free_weights);
   if (graph_h->weighted) {
-  CHECK_ERR(cudaMemcpy((*graph_d)->weights, graph_h->weights,
-                       graph_h->edge_count * sizeof(weight_t),
-                       cudaMemcpyHostToDevice) == cudaSuccess,
-            err_free_weights);
+    CHK_CU_SUCCESS(cudaMemcpy((*graph_d)->weights, graph_h->weights,
+                              graph_h->edge_count * sizeof(weight_t),
+                              cudaMemcpyHostToDevice), err_free_weights);
   }
-
+  
   return SUCCESS;
-
+  
  err_free_weights:
   if ((*graph_d)->weighted) cudaFree((*graph_d)->weights);
  err_free_edges:

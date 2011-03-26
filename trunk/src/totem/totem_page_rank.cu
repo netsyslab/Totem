@@ -102,15 +102,15 @@ error_t page_rank_gpu(graph_t* graph, float** rank) {
 
   // will be passed to the kernel
   graph_t* graph_d;
-  CHECK_ERR(graph_initialize_device(graph, &graph_d) == SUCCESS, err);
+  CHK_SUCCESS(graph_initialize_device(graph, &graph_d), err);
 
   // allocate inbox and outbox device buffers
   float *inbox_d;
-  CHECK_ERR(cudaMalloc((void**)&inbox_d, graph->vertex_count *
-                       sizeof(float)) == cudaSuccess, err_free_graph_d);
+  CHK_CU_SUCCESS(cudaMalloc((void**)&inbox_d, graph->vertex_count * 
+                       sizeof(float)), err_free_graph_d);
   float *outbox_d;
-  CHECK_ERR(cudaMalloc((void**)&outbox_d, graph->vertex_count *
-                       sizeof(float)) == cudaSuccess, err_free_inbox);
+  CHK_CU_SUCCESS(cudaMalloc((void**)&outbox_d, graph->vertex_count * 
+                       sizeof(float)), err_free_inbox);
 
   /* set the number of blocks, TODO(abdullah) handle the case when
      vertex_count is larger than number of threads. */
@@ -133,7 +133,7 @@ error_t page_rank_gpu(graph_t* graph, float** rank) {
   initial_value = 1 / (float)graph->vertex_count;
   memset_device<<<blocks, threads_per_block>>>
     (outbox_d, initial_value, graph->vertex_count);
-  CHECK_ERR(cudaGetLastError() == cudaSuccess, err_free_outbox);
+  CHK_CU_SUCCESS(cudaGetLastError(), err_free_outbox);
 
   for (uint32_t round = 0; round < PAGE_RANK_ROUNDS; round++) {
     // swap the inbox and outbox pointers (simulates passing messages)
@@ -145,17 +145,18 @@ error_t page_rank_gpu(graph_t* graph, float** rank) {
     bool last_round = (round == (PAGE_RANK_ROUNDS - 1));
     page_rank_kernel<<<blocks, threads_per_block>>>
       (*graph_d, inbox_d, outbox_d, last_round);
-    CHECK_ERR(cudaGetLastError() == cudaSuccess, err_free_outbox);
+    CHK_CU_SUCCESS(cudaGetLastError(), err_free_outbox);
 
     cudaThreadSynchronize();
-    CHECK_ERR(cudaGetLastError() == cudaSuccess, err_free_outbox);
+    CHK_CU_SUCCESS(cudaGetLastError(), err_free_outbox);
   }
 
   // copy back the final result from the outbox
   float* my_rank;
   my_rank = (float*)mem_alloc(graph->vertex_count * sizeof(float));
-  CHECK_ERR(cudaMemcpy(my_rank, outbox_d, graph->vertex_count * sizeof(float),
-                       cudaMemcpyDeviceToHost) == cudaSuccess, err_free_all);
+  CHK_CU_SUCCESS(cudaMemcpy(my_rank, outbox_d, graph->vertex_count * 
+                            sizeof(float), cudaMemcpyDeviceToHost), 
+                 err_free_all);
 
   // we are done! set the output and clean up
   *rank = my_rank;
