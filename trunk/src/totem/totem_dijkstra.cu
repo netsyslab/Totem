@@ -30,7 +30,8 @@
 __global__
 void has_true_kernel(bool* array, uint32_t size, bool* result) {
   const id_t vertex_id = THREAD_GLOBAL_INDEX;
-  if (vertex_id >= size) {
+  *result = false;
+  if (vertex_id >= size) {    
     return;
   }
   if (array[vertex_id]) {
@@ -113,58 +114,56 @@ void dijkstra_final_kernel(graph_t graph, bool* to_update, weight_t* distances,
 
 error_t dijkstra_gpu(graph_t *graph, id_t source_id,
                      weight_t** shortest_distances) {
-  // Copy the input graph to pass it to the kernel.
-  graph_t graph_d = *graph;
+  // Validate input parameters
+  if ((graph == NULL) || !graph->weighted
+      || (source_id >= graph->vertex_count)) {
+    *shortest_distances = NULL;
+    return FAILURE;
+  } else if(graph->vertex_count == 1) {
+    *shortest_distances = (weight_t*)mem_alloc(sizeof(weight_t));
+    (*shortest_distances)[0] = 0;
+    return SUCCESS;
+  }
+
+  // Check whether the graph has vertices, but an empty edge set.
+  if ((graph->vertex_count > 0) && (graph->edge_count == 0)) {
+    *shortest_distances =
+      (weight_t*)mem_alloc(graph->vertex_count * sizeof(weight_t));
+    for (id_t node_id = 0; node_id < graph->vertex_count; node_id++) {
+      (*shortest_distances)[node_id] = WEIGHT_MAX;
+    }
+    (*shortest_distances)[source_id] =  (weight_t)0.0;
+    return SUCCESS;
+  }
 
   // Kernel configuration parameters.
   dim3 block_count;
   dim3 threads_per_block;
 
+  graph_t* graph_d;
   // Allocate and transfer the vertex array to the device.
-  CHK_CU_SUCCESS(cudaMalloc((void **)&graph_d.vertices, 
-                            (graph_d.vertex_count + 1) * sizeof(id_t)), err);
-  CHK_CU_SUCCESS(cudaMemcpy(graph_d.vertices, graph->vertices,
-                            (graph_d.vertex_count + 1) * sizeof(id_t),
-                            cudaMemcpyHostToDevice),
-                 err_free_vertices);
-
-  // Allocate the edges array and transfer the input data to the GPU.
-  CHK_CU_SUCCESS(cudaMalloc((void **)&(graph_d.edges),
-                            graph_d.edge_count * sizeof(id_t)),
-                 err_free_vertices);
-  CHK_CU_SUCCESS(cudaMemcpy(graph_d.edges, graph->edges, graph_d.edge_count * 
-                            sizeof(id_t), cudaMemcpyHostToDevice), 
-                 err_free_edges);
-
-  // Create an array with weights on the GPU.
-  CHK_CU_SUCCESS(cudaMalloc((void **)&graph_d.weights, graph_d.edge_count * 
-                            sizeof(weight_t)), err_free_edges);
-
-  // Transfer the array of weights to the GPU.
-  CHK_CU_SUCCESS(cudaMemcpy(graph_d.weights, graph->weights, 
-                            graph_d.edge_count * sizeof(weight_t), 
-                            cudaMemcpyHostToDevice), err_free_weights);
+  CHK_SUCCESS(graph_initialize_device(graph, &graph_d), err);
 
   // The distance array from the source vertex to every nother in the graph.
   weight_t* distances_d;
   CHK_CU_SUCCESS(cudaMalloc((void **)&distances_d,
-                       graph_d.vertex_count * sizeof(weight_t)),
-            err_free_weights);
+                       graph_d->vertex_count * sizeof(weight_t)),
+            err_free_graph);
 
   // An array that contains the newly computed array of distances.
   weight_t* new_distances_d;
   CHK_CU_SUCCESS(cudaMalloc((void **)&new_distances_d,
-                       graph_d.vertex_count * sizeof(weight_t)),
+                       graph_d->vertex_count * sizeof(weight_t)),
             err_free_distances);
 
   // An entry in this array indicate whether the corresponding vertex should
   // try to compute new distances.
   bool* changed_d;
-  CHK_CU_SUCCESS(cudaMalloc((void **)&changed_d, graph_d.vertex_count
+  CHK_CU_SUCCESS(cudaMalloc((void **)&changed_d, graph_d->vertex_count
                        * sizeof(bool)), err_free_new_distances);
 
   // Compute the number of blocks.
-  KERNEL_CONFIGURE(graph_d.vertex_count, block_count, threads_per_block);
+  KERNEL_CONFIGURE(graph_d->vertex_count, block_count, threads_per_block);
 
   // Initialize the mutex used in the kernel to avoid the race condition.
   // TODO(elizeu): We may want to move this feature into a separate file if
@@ -173,14 +172,14 @@ error_t dijkstra_gpu(graph_t *graph, id_t source_id,
   uint32_t* mutex_d;
   CHK_CU_SUCCESS(cudaMalloc((void **)&mutex_d, sizeof(uint32_t)),
             err_free_new_distances);
-  CHK_CU_SUCCESS(cudaMemset(mutex_d, 0, sizeof(uint32_t)),
+  CHK_CU_SUCCESS(cudaMemset(mutex_d, 1, sizeof(uint32_t)),
             err_free_mutex);
 
   // Set all distances to infinite.
   memset_device<<<block_count, threads_per_block>>>(distances_d, WEIGHT_MAX,
-                                                    graph_d.vertex_count);
+                                                    graph_d->vertex_count);
   memset_device<<<block_count, threads_per_block>>>(new_distances_d, WEIGHT_MAX,
-                                                    graph_d.vertex_count);
+                                                    graph_d->vertex_count);
 
   // Set the distance to the source to zero.
   CHK_CU_SUCCESS(cudaMemset(&(distances_d[source_id]), (weight_t)0, sizeof(weight_t))
@@ -201,11 +200,11 @@ error_t dijkstra_gpu(graph_t *graph, id_t source_id,
 
   while (has_true) {
     dijkstra_kernel<<<block_count, threads_per_block>>>
-      (graph_d, changed_d, distances_d, new_distances_d, mutex_d);
+      (*graph_d, changed_d, distances_d, new_distances_d, mutex_d);
     dijkstra_final_kernel<<<block_count, threads_per_block>>>
-      (graph_d, changed_d, distances_d, new_distances_d);
+      (*graph_d, changed_d, distances_d, new_distances_d);
     has_true_kernel<<<block_count, threads_per_block>>>
-      (changed_d, graph_d.vertex_count, has_true_d);
+      (changed_d, graph_d->vertex_count, has_true_d);
     CHK_CU_SUCCESS(cudaMemcpy(&has_true, has_true_d, sizeof(bool),
                          cudaMemcpyDeviceToHost),
                          err_free_has_true);
@@ -214,20 +213,18 @@ error_t dijkstra_gpu(graph_t *graph, id_t source_id,
   // Copy the pointer to the output parameter
   weight_t* local_shortest_distances;
   local_shortest_distances =
-    (weight_t*)mem_alloc(graph_d.vertex_count * sizeof(weight_t));
+    (weight_t*)mem_alloc(graph_d->vertex_count * sizeof(weight_t));
   CHK_CU_SUCCESS(cudaMemcpy(local_shortest_distances, distances_d,
-                       graph_d.vertex_count * sizeof(weight_t),
+                       graph_d->vertex_count * sizeof(weight_t),
                        cudaMemcpyDeviceToHost),
                        err_free_has_true);
   *shortest_distances = local_shortest_distances;
 
   // Release the allocated memory
+  graph_finalize_device(graph_d);
   cudaFree(distances_d);
   cudaFree(changed_d);
   cudaFree(mutex_d);
-  cudaFree(graph_d.vertices);
-  cudaFree(graph_d.edges);
-  cudaFree(graph_d.weights);
   cudaFree(new_distances_d);
 
   return SUCCESS;
@@ -241,13 +238,11 @@ error_t dijkstra_gpu(graph_t *graph, id_t source_id,
     cudaFree(new_distances_d);
   err_free_distances:
     cudaFree(distances_d);
-  err_free_weights:
-    cudaFree(graph_d.weights);
-  err_free_edges:
-    cudaFree(graph_d.edges);
-  err_free_vertices:
-    cudaFree(graph_d.vertices);
+  err_free_graph:
+    graph_finalize_device(graph_d);
   err:
     printf("%d\n", cudaGetLastError());
     return FAILURE;
 }
+
+// TODO(elizeu): Implement dijkstra_cpu().
