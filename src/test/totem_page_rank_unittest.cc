@@ -14,8 +14,8 @@
 using ::testing::TestWithParam;
 using ::testing::Values;
 
-// The following implementation relies on TestWithParam<BFSFunction> to test
-// the two versions of PageRank implemented: CPU and GPU.
+// The following implementation relies on TestWithParam<PageRankFunction> to
+// test the two versions of PageRank implemented: CPU and GPU.
 // Details on how to use TestWithParam<T> can be found at:
 // totem_bfs_unittest.cc and
 // http://code.google.com/p/googletest/source/browse/trunk/samples/sample7_unittest.cc
