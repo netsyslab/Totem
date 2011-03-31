@@ -144,18 +144,32 @@ error_t bfs_gpu(uint32_t source_id, const graph_t* graph, uint32_t** cost);
 error_t bfs_cpu(id_t source_id, const graph_t* graph, uint32_t** cost);
 
 /**
- * Given a weighted graph \f[G = (V, E, w)\f and a source vertex \f$v\inV\f$,
+ * Given a weighted graph \f$G = (V, E, w)\f$ and a source vertex \f$v\inV\f$,
  * Dijkstra's algorithm computes the distance from \f$v\f$ to every other
- * vertex
- * in a directed, weighted graph, where the edges have non-negative weights
- * (i.e., \f$\forall (u,v) \in E, w(u,v) \leq 0\f$).
+ * vertex in a directed, weighted graph, where the edges have non-negative
+ * weights (i.e., \f$\forall (u,v) \in E, w(u,v) \leq 0\f$).
  *
  * @param[in] graph an instance of the graph structure
  * @param[in] source_id vertex id for the source
  * @param[out] shortest_distances the length of the computed shortest paths
  * @return a flag indicating whether the operation succeeded or not.
  */
-error_t dijkstra_gpu(graph_t *graph, id_t source_id,
+error_t dijkstra_gpu(graph_t* graph, id_t source_id,
+                     weight_t** shortest_distances);
+
+
+/**
+ * Given a weighted graph \f$G = (V, E, w)\f$ and a source vertex \f$v\inV\f$,
+ * Dijkstra's algorithm computes the distance from \f$v\f$ to every other
+ * vertex in a directed, weighted graph, where the edges have non-negative
+ * weights (i.e., \f$\forall (u,v) \in E, w(u,v) \leq 0\f$).
+ *
+ * @param[in] graph an instance of the graph structure
+ * @param[in] source_id vertex id for the source
+ * @param[out] shortest_distances the length of the computed shortest paths
+ * @return a flag indicating whether the operation succeeded or not.
+ */
+error_t dijkstra_cpu(graph_t* graph, id_t source_id,
                      weight_t** shortest_distances);
 
 #endif  // TOTEM_GRAPH_H
