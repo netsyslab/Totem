@@ -115,7 +115,7 @@ TEST_P(DijkstraTest, Chain) {
   // Last vertex as source
   source = graph->vertex_count - 1;
   EXPECT_EQ(SUCCESS, dijkstra(graph, source, &short_distances));
-  for(id_t vertex_id = source; vertex_id < graph->vertex_count; vertex_id++){
+  for(id_t vertex_id = 0; vertex_id < graph->vertex_count; vertex_id++){
     EXPECT_EQ(source - vertex_id, short_distances[vertex_id]);
   }
   mem_free(short_distances);
@@ -202,10 +202,8 @@ TEST_P(DijkstraTest, Complete) {
 
 // TODO(elizeu): Add irregular topology graphs.
 
-// TODO(elizeu, lauro): Once CPU implementation is done, the its function
-// pointer to Values()
 INSTANTIATE_TEST_CASE_P(DijkstraGPUAndCPUTest, DijkstraTest,
-                        Values(&dijkstra_gpu));
+                        Values(&dijkstra_gpu, &dijkstra_cpu));
 
 #else
 

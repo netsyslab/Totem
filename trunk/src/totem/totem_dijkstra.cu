@@ -13,7 +13,6 @@
 
 // system includes
 #include <cuda.h>
-#include <float.h>
 
 // totem includes
 #include "totem_comdef.h"
@@ -76,13 +75,13 @@ void dijkstra_kernel(graph_t graph, bool* to_update, weight_t* distances,
   weight_t vertex_distance = distances[vertex_id];
   for (id_t i = 0; i < neighbor_count; i++) {
     id_t neighbor_id = neighbors[i];
-    weight_t* new_distance = &(new_distances[neighbor_id]);
     weight_t current_distance = vertex_distance + weights[neighbor_id];
     // TODO(elizeu): This mutex is inefficient, as it serializes all threads.
     //               One approach to solve this is to have one mutex per vertex
     //               that indicates whether the position in the new_distance
     //               array regarding that vertex is locked or open.
     while(!atomicCAS(mutex, 1, 0));
+    weight_t* new_distance = &(new_distances[neighbor_id]);
     *new_distance = (*new_distance < current_distance ? *new_distance
                                                       : current_distance);
     atomicCAS(mutex, 0, 1);
@@ -112,8 +111,9 @@ void dijkstra_final_kernel(graph_t graph, bool* to_update, weight_t* distances,
   new_distances[vertex_id] = distances[vertex_id];
 }
 
-error_t dijkstra_gpu(graph_t *graph, id_t source_id,
+error_t dijkstra_gpu(graph_t* graph, id_t source_id,
                      weight_t** shortest_distances) {
+  // TODO(elizeu): Move input validations to a common separate function.
   // Validate input parameters
   if ((graph == NULL) || !graph->weighted
       || (source_id >= graph->vertex_count)) {
@@ -171,9 +171,10 @@ error_t dijkstra_gpu(graph_t *graph, id_t source_id,
   //               become common.
   uint32_t* mutex_d;
   CHK_CU_SUCCESS(cudaMalloc((void **)&mutex_d, sizeof(uint32_t)),
-            err_free_new_distances);
-  CHK_CU_SUCCESS(cudaMemset(mutex_d, 1, sizeof(uint32_t)),
-            err_free_mutex);
+                 err_free_new_distances);
+
+  // Initialize the mutex.
+  CHK_CU_SUCCESS(cudaMemset(mutex_d, 1, sizeof(uint32_t)), err_free_mutex);
 
   // Set all distances to infinite.
   memset_device<<<block_count, threads_per_block>>>(distances_d, WEIGHT_MAX,
@@ -182,12 +183,12 @@ error_t dijkstra_gpu(graph_t *graph, id_t source_id,
                                                     graph_d->vertex_count);
 
   // Set the distance to the source to zero.
-  CHK_CU_SUCCESS(cudaMemset(&(distances_d[source_id]), (weight_t)0, sizeof(weight_t))
-           ,  err_free_mutex);
+  CHK_CU_SUCCESS(cudaMemset(&(distances_d[source_id]), (weight_t)0,
+                 sizeof(weight_t)), err_free_mutex);
 
   // Activate the source vertex to compute distances.
-  CHK_CU_SUCCESS(cudaMemset(&(changed_d[source_id]), true, sizeof(bool))
-           , err_free_mutex);
+  CHK_CU_SUCCESS(cudaMemset(&(changed_d[source_id]), true, sizeof(bool)),
+                 err_free_mutex);
 
   // Compute the distances update
   bool has_true;
@@ -245,4 +246,89 @@ error_t dijkstra_gpu(graph_t *graph, id_t source_id,
     return FAILURE;
 }
 
-// TODO(elizeu): Implement dijkstra_cpu().
+__host__
+error_t dijkstra_cpu(graph_t* graph, id_t source_id,
+                     weight_t** shortest_distances) {
+  // Validate input parameters
+  if ((graph == NULL) || !graph->weighted
+      || (source_id >= graph->vertex_count)) {
+    *shortest_distances = NULL;
+    return FAILURE;
+  } else if (graph->vertex_count == 1) {
+    *shortest_distances = (weight_t*)mem_alloc(sizeof(weight_t));
+    (*shortest_distances)[0] = 0;
+    return SUCCESS;
+  }
+
+  // Initialize the shortest_distances to infinite  
+  *shortest_distances =
+    (weight_t*)mem_alloc(graph->vertex_count * sizeof(weight_t));
+
+  // An entry in this array indicate whether the corresponding vertex should
+  // try to update the current distances.
+  bool* to_update = (bool *)mem_alloc(graph->vertex_count * sizeof(bool));
+
+  for (id_t vertex_id = 0; vertex_id < graph->vertex_count; vertex_id++) {
+    (*shortest_distances)[vertex_id] = WEIGHT_MAX;
+    to_update[vertex_id] = false;
+  }
+  (*shortest_distances)[source_id] =  (weight_t)0.0;
+  to_update[source_id] = true;
+
+  // Check whether the graph has vertices, but an empty edge set.
+  if ((graph->vertex_count > 0) && (graph->edge_count == 0)) {
+    mem_free(to_update);
+    return SUCCESS;
+  }
+
+  // get direct access to graph members
+  id_t  vertex_count = graph->vertex_count;
+  id_t* vertices     = graph->vertices;
+  id_t* edges        = graph->edges;
+  weight_t* weights  = graph->weights;
+
+  // Allocate the mutex array.
+  int* mutex = (int *)mem_alloc(vertex_count * sizeof(int));
+  memset(mutex, 0x00, vertex_count);
+
+  bool changed = true;
+  while (changed) {
+    changed = false;
+
+    #ifdef _OPENMP
+    #pragma omp parallel for
+    #endif // _OPENMP
+    for (id_t vertex_id = 0; vertex_id < vertex_count; vertex_id++) {
+      if (!to_update[vertex_id]) {
+        continue;
+      }
+      to_update[vertex_id] = false;
+
+      id_t* neighbors = &edges[vertices[vertex_id]];
+      uint64_t neighbor_count = vertices[vertex_id + 1] - vertices[vertex_id];
+      //weight_t vertex_distance = (*shortest_distances)[vertex_id];
+
+      for (id_t i = 0; i < neighbor_count; i++) {
+        id_t neighbor_id = neighbors[i];
+        // TODO(elizeu): This global lock may be inefficient. One approach to
+        //               solve this is to have one lock per vertex.
+        #ifdef _OPENMP
+        #pragma omp critical (mutex[neighbor_id])
+        {
+        #endif // _OPENMP
+        weight_t current_distance =
+            (*shortest_distances)[vertex_id] + weights[neighbor_id];
+        if ((*shortest_distances)[neighbor_id] > current_distance) {
+          (*shortest_distances)[neighbor_id] = current_distance;
+          to_update[neighbor_id] = true;
+          changed = true;
+        }
+        #ifdef _OPENMP
+        } // critical
+        #endif // _OPENMP
+      } // for
+    } // for
+  } // while
+  return SUCCESS;
+}
+
