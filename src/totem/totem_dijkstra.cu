@@ -287,9 +287,8 @@ error_t dijkstra_cpu(graph_t* graph, id_t source_id,
   id_t* edges        = graph->edges;
   weight_t* weights  = graph->weights;
 
-  // Allocate the mutex array.
-  int* mutex = (int *)mem_alloc(vertex_count * sizeof(int));
-  memset(mutex, 0x00, vertex_count);
+  // Initialize the mutex.
+  int mutex = 0;
 
   bool changed = true;
   while (changed) {
@@ -306,14 +305,13 @@ error_t dijkstra_cpu(graph_t* graph, id_t source_id,
 
       id_t* neighbors = &edges[vertices[vertex_id]];
       uint64_t neighbor_count = vertices[vertex_id + 1] - vertices[vertex_id];
-      //weight_t vertex_distance = (*shortest_distances)[vertex_id];
 
       for (id_t i = 0; i < neighbor_count; i++) {
         id_t neighbor_id = neighbors[i];
         // TODO(elizeu): This global lock may be inefficient. One approach to
         //               solve this is to have one lock per vertex.
         #ifdef _OPENMP
-        #pragma omp critical (mutex[neighbor_id])
+        #pragma omp critical (mutex)
         {
         #endif // _OPENMP
         weight_t current_distance =
