@@ -242,7 +242,6 @@ error_t dijkstra_gpu(graph_t* graph, id_t source_id,
   err_free_graph:
     graph_finalize_device(graph_d);
   err:
-    printf("%d\n", cudaGetLastError());
     return FAILURE;
 }
 
