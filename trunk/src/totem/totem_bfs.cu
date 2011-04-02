@@ -1,7 +1,7 @@
 /* TODO(lauro,abdullah,elizeu): Add license.
  *
  * This file contains an implementation of the breadth-first search (BFS) graph
- * search algorithm based as described in [Harish07].
+ * search algorithm based on description in [Harish07].
  * [Harish07] P. Harish and P. Narayanan, "Accelerating large graph algorithms
  *   on the GPU using CUDA," in High Performance Computing - HiPC 2007,
  *   LNCS v. 4873, ch. 21, doi: http://dx.doi.org/10.1007/978-3-540-77220-0_21
@@ -113,7 +113,7 @@ error_t bfs_gpu(id_t source_id, const graph_t* graph, uint32_t** cost) {
   }}
 
   *cost = (uint32_t*) mem_alloc(graph->vertex_count * sizeof(uint32_t));
-  CHK_CU_SUCCESS(cudaMemcpy(*cost, cost_d, graph->vertex_count * 
+  CHK_CU_SUCCESS(cudaMemcpy(*cost, cost_d, graph->vertex_count *
                             sizeof(uint32_t), cudaMemcpyDeviceToHost),
                  err_free_all);
 
