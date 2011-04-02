@@ -129,9 +129,6 @@ error_t bfs_gpu(id_t source_id, const graph_t* graph, uint32_t** cost) {
   err_free_graph_d:
     graph_finalize_device(graph_d);
   err:
-  // TODO(lauro, abdullah): This msg is useless. Unless it comes directly to err
-  // it always prints cudaFree errors and not the actual error code.
-    printf("%d\n", cudaGetLastError());
     *cost = NULL;
     return FAILURE;
 }

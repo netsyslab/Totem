@@ -123,9 +123,18 @@ typedef double stopwatch_t;
 #define CHK_SUCCESS(stmt, label) CHK((stmt) == SUCCESS, label)
 
 /**
- * Check if return value of stmt is cudaSuccess, jump to label if not.
+ * Check if return value of stmt is cudaSuccess, jump to label and print an 
+ * error message if not.
  */
-#define CHK_CU_SUCCESS(stmt, label) CHK((stmt) == cudaSuccess, label)
+#define CHK_CU_SUCCESS(cuda_call, label)                                \
+  do {                                                                  \
+    if ((cuda_call) != cudaSuccess) {                                   \
+      cudaError_t err = cudaGetLastError();                             \
+      fprintf(stderr, "Cuda Error in file '%s' in line %i : %s.\n",     \
+              __FILE__, __LINE__, cudaGetErrorString(err));             \
+      goto label;                                                       \
+    }                                                                   \
+  } while(0)
 
 /**
  * Converts the string to upper case

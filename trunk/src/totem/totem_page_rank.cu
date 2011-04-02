@@ -174,7 +174,6 @@ error_t page_rank_gpu(graph_t* graph, float** rank) {
  err_free_graph_d:
   graph_finalize_device(graph_d);
  err:
-  printf("%d\n", cudaGetLastError());
   return FAILURE;
 }
 
