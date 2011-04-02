@@ -126,7 +126,7 @@ error_t page_rank_cpu(graph_t* graph, float** rank);
  * ownership of the array and, thus, the client is responsible for freeing the
  * memory area.
 */
-error_t bfs_gpu(uint32_t source_id, const graph_t* graph, uint32_t** cost);
+error_t bfs_gpu(id_t source_id, const graph_t* graph, uint32_t** cost);
 
 /**
  * Given an undirected, unweighted graph and a source vertex, find the minimum
