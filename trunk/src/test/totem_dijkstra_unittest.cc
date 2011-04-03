@@ -200,6 +200,75 @@ TEST_P(DijkstraTest, Complete) {
   graph_finalize(graph);
 }
 
+// Tests SSSP algorithm a star graph with 1K nodes with different edge weights.
+TEST_P(DijkstraTest, StarDiffWeight) {
+  graph_t* graph;
+  graph_initialize(DATA_FOLDER("star_1000_nodes_diff_weight.totem"),
+    true, &graph);
+
+  // First vertex as source
+  id_t source = 0;
+  weight_t* short_distances;
+  EXPECT_EQ(SUCCESS, dijkstra(graph, source, &short_distances));
+  EXPECT_FALSE(NULL == short_distances);
+  EXPECT_EQ(0, short_distances[0]);
+  for(id_t vertex_id = 1; vertex_id < graph->vertex_count; vertex_id++){
+    EXPECT_EQ(1, short_distances[vertex_id]);
+  }
+  mem_free(short_distances);
+
+  // Last vertex as source
+  source = graph->vertex_count - 1;
+  EXPECT_EQ(SUCCESS, dijkstra(graph, source, &short_distances));
+  EXPECT_EQ(0, short_distances[source]);
+  EXPECT_EQ(source + 1, short_distances[0]);
+  for(id_t vertex_id = 1; vertex_id < graph->vertex_count - 1; vertex_id++){
+    // out edge weight = vertex_id + 1
+    EXPECT_EQ(source + 2, short_distances[vertex_id]);
+  }
+  mem_free(short_distances);
+
+  // Non existent vertex source
+  EXPECT_EQ(FAILURE,
+    dijkstra(graph, graph->vertex_count, &short_distances));
+  EXPECT_EQ(NULL, short_distances);
+  graph_finalize(graph);
+}
+
+// Tests SSSP algorithm a complete graph with 300 nodes, different edge weights.
+TEST_P(DijkstraTest, CompleteDiffWeight) {
+  graph_t* graph;
+  graph_initialize(DATA_FOLDER("complete_graph_300_nodes_diff_weight.totem"),
+    true, &graph);
+
+  // First vertex as source
+  id_t source = 0;
+  weight_t* short_distances;
+  EXPECT_EQ(SUCCESS, dijkstra(graph, source, &short_distances));
+  EXPECT_FALSE(NULL == short_distances);
+  EXPECT_EQ(0, short_distances[0]);
+  for(id_t vertex_id = 1; vertex_id < graph->vertex_count; vertex_id++){
+    EXPECT_EQ(1, short_distances[vertex_id]);
+  }
+  mem_free(short_distances);
+
+  // Last vertex as source
+  source = graph->vertex_count - 1;
+  EXPECT_EQ(SUCCESS, dijkstra(graph, source, &short_distances));
+  EXPECT_EQ(0, short_distances[source]);
+  for(id_t vertex_id = 0; vertex_id < graph->vertex_count - 1; vertex_id++){
+    // out edge from any node has weight = vertex_id + 1
+    EXPECT_EQ(source + 1, short_distances[vertex_id]);
+  }
+  mem_free(short_distances);
+
+  // Non existent vertex source
+  EXPECT_EQ(FAILURE,
+    dijkstra(graph, graph->vertex_count, &short_distances));
+  EXPECT_EQ(NULL, short_distances);
+  graph_finalize(graph);
+}
+
 // TODO(elizeu): Add irregular topology graphs.
 
 INSTANTIATE_TEST_CASE_P(DijkstraGPUAndCPUTest, DijkstraTest,
