@@ -96,6 +96,9 @@ error_t graph_initialize(const char* graph_file, bool weighted,
  */
 error_t graph_finalize(graph_t* graph);
 
+// TODO(lauro): Discuss a common order for the parameters.
+// TODO(lauro): Organize algorithms alphabetically.
+
 /**
  * Implements a GPU version of the simple PageRank algorithm described in
  * [Malewicz 2010]. Algorithm details are described in totem_page_rank.cu.
@@ -142,6 +145,34 @@ error_t bfs_gpu(id_t source_id, const graph_t* graph, uint32_t** cost);
  * @return a flag indicating whether the operation succeeded or not.
 */
 error_t bfs_cpu(id_t source_id, const graph_t* graph, uint32_t** cost);
+
+/**
+ * Given an [un]directed, unweighted graph, a source vertex, and a destination
+ * vertex. Check if the destination is reachable from the source using GPU
+ * implementation.
+ * @param[in] source_id id of the source vertex
+ * @param[in] destination_id id of the destination vertex
+ * @param[in] graph the graph to perform BFS on
+ * @param[out] connected true if destination is reachable from source;
+ *             otherwise, false.
+ * @return a flag indicating whether the operation succeeded or not.
+*/
+error_t stcon_gpu(id_t source_id, id_t destination_id, const graph_t* graph,
+                  bool* connected);
+
+/**
+ * Given an [un]directed, unweighted graph, a source vertex, and a destination
+ * vertex. Check if the destination is reachable from the source using CPU
+ * implementation.
+ * @param[in] source_id id of the source vertex
+ * @param[in] destination_id id of the destination vertex
+ * @param[in] graph the graph to perform BFS on
+ * @param[out] connected true if destination is reachable from source;
+ *             otherwise, false.
+ * @return a flag indicating whether the operation succeeded or not.
+*/
+error_t stcon_cpu(id_t source_id, id_t destination_id, const graph_t* graph,
+                  bool* connected);
 
 /**
  * Given a weighted graph \f$G = (V, E, w)\f$ and a source vertex \f$v\inV\f$,
