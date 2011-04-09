@@ -77,16 +77,7 @@ void dijkstra_kernel(graph_t graph, bool* to_update, weight_t* distances,
   for (id_t i = 0; i < neighbor_count; i++) {
     id_t neighbor_id = neighbors[i];
     weight_t current_distance = distance_to_vertex + local_weights[i];
-    // TODO(elizeu): This mutex is inefficient, as it serializes all threads.
-    //               One approach to solve this is to have one mutex per vertex
-    //               that indicates whether the position in the new_distance
-    //               array regarding that vertex is locked or open.
-    while(!atomicCAS(mutex, 1, 0));
-    weight_t* new_distance = &(new_distances[neighbor_id]);
-    if (current_distance < *new_distance) {
-      *new_distance = current_distance;
-    }
-    atomicCAS(mutex, 0, 1);
+    atomicMin(&(new_distances[neighbor_id]), current_distance);
   } // for
 }
 
@@ -288,11 +279,7 @@ error_t dijkstra_cpu(graph_t* graph, id_t source_id,
   weight_t* weights  = graph->weights;
 
   // Initialize the mutex.
-  // TODO(elizeu): This line generates a "unreferenced variable" warning,
-  //               even though the variable is referenced implicitely by
-  //               omp below. We need to find a way to disable/enable it.
   int mutex = 0;
-  mutex = mutex + 0;
 
   bool changed = true;
   while (changed) {
