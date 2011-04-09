@@ -32,6 +32,72 @@ __global__ void memset_device(T* buffer, T value, uint32_t size) {
 }
 
 /**
+ * A double precision atomic add. Based on the algorithm in the NVIDIA CUDA 
+ * Programming Guide V4.0, Section B.11.
+ * reads the 64-bit word old located at address in global or shared memory, 
+ * computes (old + val), and stores the result back to memory at the same 
+ * address atomically.
+ * @param[in] address the content is incremented by val
+ * @param[in] val the value to be added to the content of address
+ * @return old value stored at address
+ */
+inline __device__ double atomicAdd(double* address, double val) {
+  unsigned long long int* address_as_ull = (unsigned long long int*)address;
+  unsigned long long int old = *address_as_ull, assumed;
+  do {
+    assumed = old;
+    old = atomicCAS(address_as_ull, assumed,
+                    __double_as_longlong(val + __longlong_as_double(assumed)));
+  } while (assumed != old);
+  return __longlong_as_double(old);
+}
+
+/**
+ * A double precision atomic min function. Based on the double precisision
+ * atomicAdd algorithm in the NVIDIA CUDA Programming Guide V4.0, Section B.11.
+ * reads the 64-bit word old located at address in global or shared memory, 
+ * computes the minimum of old and val, and stores the result back to memory at
+ * the same address atomically.
+ * @param[in] address the content is compared to val, the minimum is stored back
+ * @param[in] val the value to be compared with the content of address
+ * @return old value stored at address
+ */
+inline __device__ double atomicMin(double* address, double val) {
+  unsigned long long int* address_as_ull = (unsigned long long int*)address;
+  unsigned long long int old = *address_as_ull, assumed;
+  double min;
+  do {
+    assumed = old;
+    min = (val < __longlong_as_double(assumed)) ? val :
+      __longlong_as_double(assumed);
+    old = atomicCAS(address_as_ull, assumed, __double_as_longlong(min));
+  } while (assumed != old);
+  return __longlong_as_double(old);
+}
+
+/**
+ * A single precision atomic min function. Based on the double precisision
+ * atomicAdd algorithm in the NVIDIA CUDA Programming Guide V4.0, Section B.11.
+ * reads the 32-bit word old located at address in global or shared memory, 
+ * computes the minimum of old and val, and stores the result back to memory at
+ * the same address atomically.
+ * @param[in] address the content is compared to val, the minimum is stored back
+ * @param[in] val the value to be compared with the content of address
+ * @return old value stored at address
+ */
+inline __device__ float atomicMin(float* address, float val) {
+  uint32_t* address_as_uint = (uint32_t*)address;
+  uint32_t old = *address_as_uint, assumed;
+  float min;
+  do {
+    assumed = old;
+    min = (val < __int_as_float(assumed)) ? val : __int_as_float(assumed);
+    old = atomicCAS(address_as_uint, assumed, __float_as_int(min));
+  } while (assumed != old);
+  return __int_as_float(old);
+}
+
+/**
  * Initialize a graph structure (graph_d) to be passed as a parameter to GPU
  * kernels. Both graph_d and graph_h structs reside in host memory. The
  * vertices, edges and weights pointers in graph_d will point to buffers in
