@@ -21,6 +21,6 @@ html:
 	mv $(SUFFIX) html
 
 clean: 
-	rm -vf *.aux *.blg *.bbl *.log *.dvi *.toc *~
+	rm -vf *.aux *.blg *.bbl *.log *.dvi *.toc *~ *.pdf
 	rm -rf html/
 
