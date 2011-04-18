@@ -1,0 +1,25 @@
+\matei{The only substantial comment relates to approach.  Implementations are costly. So I wonder to what degree the use of a simplified execution model could give you some idea about the bounds of the efficiency one could get on a GPU?   (Or the percent of the bottleneck resource your graph parallel algorithm will be able to use?)  This might help you understand the relative speedups provided by GPUs and CPUs (e.g., compred to, let's say one core), and will force you to think about the critical properties of the algorithms you'll try to implement.   I realize what I am suggesting is, with a relatively high probability, a dead-end.  However, if it does go somewhere it will save a lot of  time.}
+
+\elizeu{I added a new reference that discusses the impact on performance by moving from a PRAM to DMM model. This might be useful to understand the impact on parallel algorithms in multi-gpu cases.}
+
+All the rest are minor comments:
+
+\matei{(in section 3): I would de-emphasize the framework - this is too ambitious in my opinion. At this point your goal is a feasibility study.}
+
+\abdullah{I disagree here with Matei, also it is not clear to me whether we can actually do a good enough feasibility study, I think we have enough indication from previous work that graphs on GPU could work.}
+
+\elizeu{I agree with Abdullah. I think we reached a good middleground. I kept the discussion about the framework as a goal. But, led the discussion towards the first steps we are taking.}
+
+\matei{Would a critical look at past implementations of graph algorithms for GPUs be useful?  I guess this is implicit when you say "The second phase is to port simple, yet well known graphs algorithms to GPUs [5, 8, 9, 14])."}
+
+\abdullah{we should discuss in the related work section: BSP model in Pregel, virtual warp concept}
+
+\elizeu{I added extra discussion in the related work about the considered models, perhaps we can expand later}
+
+\matei{Can you provide a clearer delineation for the class of graph problems you are interested in? By scale? By complexity of algorithm?}
+
+\abdullah{traversal algorithms in general?}
+
+\elizeu{So, far I'd say that traversal has been the focus: 2 out of the three algorithms. But, overall we want a more diverse mix, I think we can discuss the classes of algorithms later.}
+
+

@@ -1,0 +1,11 @@
+\section{Methodology}
+\label{sec:methodology}
+This section describes the steps this project has been following. In summary, the methodology consists of algorithm design, prototyping, and performance analysis (both theoretical and experimental).
+The first, and ongoing, step is bibliography review in order to better understand the areas described in \S~\ref{sec:related}, and how they relate to each other. Note that the work discussed in \S~\ref{sec:related} is not an exhaustive list. 
+
+The second phase is to port simple, yet well known graph algorithms to GPUs~\cite{Quinn1984,Meyer2003,Harish2007,Malewicz2009,Sungpack2010}). Implementing simple graph algorithms on GPUs gives us familiarity with the algorithms and the platform. Building hands-on expertise on graph problems is an important step towards designing the framework. It will inform what should be the building blocks provided by the framework and how to leverage the platform. Additionally, this step will inform the theoretical analysis of expected peak performance one can achieve on particular graph algorithms when executed on GPU platforms.
+
+Informed by the past steps, the third step will focus on defining building blocks of the graph processing framework, such as the parallel processing model, abstractions, the communication substrate and the high-level interface. Moreover, this phase aims to define the scope of graph algorithms the framework will support. In particular, we need to consider several design trade-offs carefully. Among these design decisions are: should the framework support directed or undirected edges? should the programming model support vertex- or edge-centric? what is the impact on the class of applications supported? are dynamic changes allowed in the graph? All these questions will help shaping the preliminary design of the graph processing framework.
+
+
+
