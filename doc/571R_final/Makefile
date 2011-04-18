@@ -1,5 +1,5 @@
 
-SOURCE := $(wildcard *571_midterm.tex)
+SOURCE := $(wildcard *571R_final.tex)
 SUFFIX := $(patsubst %.tex,%,$(SOURCE))
 
 all: pdf bib pdf2 pdf3 
