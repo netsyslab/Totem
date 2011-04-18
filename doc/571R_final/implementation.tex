@@ -46,8 +46,7 @@ Each GPU thread processes a vertex. An integer array, \texttt{cost}, stores the 
 __kernel__
 void dijkstra_kernel(graph_t g, bool* mask, 
                      int* distances, 
-                     int* new_distances, 
-                     int* mutex) {
+                     int* new_distances) {
   const int v_id = THREAD_GLOBAL_INDEX;
   if (v_id >= g.vertex_count || !mask[v_id]) {
     return;
@@ -61,10 +60,7 @@ void dijkstra_kernel(graph_t g, bool* mask,
     int* new_dist = &(new_distances[nghbr]);
     int cur_dist = my_dist + g.weights[nghbr];
     // avoid race condition
-    while(!atomicCAS(mutex, 1, 0));
-    *new_dist = (*new_dist < cur_dist ? 
-                 *new_dist : cur_dist);
-    atomicCAS(mutex, 0, 1);
+    *new_dist = atomicMin(*new_dist, cur_dist);
   } // for
 }
 \end{lstlisting}
