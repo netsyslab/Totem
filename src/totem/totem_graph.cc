@@ -11,7 +11,7 @@
 
 // common logistics for parsing
 #define MAX_LINE_LENGTH      100
-#define DEFAULT_EDGE_WEIGHT  0
+#define DEFAULT_EDGE_WEIGHT  1
 PRIVATE const char delimiters[] = " \t\n:";
 
 
