@@ -43,12 +43,11 @@ void has_true_kernel(bool* array, uint32_t size, bool* result) {
  * @param[in] graph the input graph used to compute the distances
  * @param[in] to_update an array to indicate which nodes will update distances
  * @param[in] distances an array that contains the current state of distances
- * @param[in] mutex a mutex variable used to implement an atomicMin.
  * @param[out] new_distances an array with distances updated in this round
  */
 __global__
 void dijkstra_kernel(graph_t graph, bool* to_update, weight_t* distances,
-                     weight_t* new_distances, uint32_t* mutex) {
+                     weight_t* new_distances) {
 
   // get direct access to graph members
   id_t  vertex_count = graph.vertex_count;
@@ -158,17 +157,6 @@ error_t dijkstra_gpu(graph_t* graph, id_t source_id,
   // Compute the number of blocks.
   KERNEL_CONFIGURE(graph_d->vertex_count, block_count, threads_per_block);
 
-  // Initialize the mutex used in the kernel to avoid the race condition.
-  // TODO(elizeu): We may want to move this feature into a separate file if
-  //               atomic-*() functions that receive floating point arguments
-  //               become common.
-  uint32_t* mutex_d;
-  CHK_CU_SUCCESS(cudaMalloc((void **)&mutex_d, sizeof(uint32_t)),
-                 err_free_new_distances);
-
-  // Initialize the mutex.
-  CHK_CU_SUCCESS(cudaMemset(mutex_d, 1, sizeof(uint32_t)), err_free_mutex);
-
   // Set all distances to infinite.
   memset_device<<<block_count, threads_per_block>>>(distances_d, WEIGHT_MAX,
                                                     graph_d->vertex_count);
@@ -177,11 +165,11 @@ error_t dijkstra_gpu(graph_t* graph, id_t source_id,
 
   // Set the distance to the source to zero.
   CHK_CU_SUCCESS(cudaMemset(&(distances_d[source_id]), (weight_t)0,
-                 sizeof(weight_t)), err_free_mutex);
+                 sizeof(weight_t)), err_free_new_distances);
 
   // Activate the source vertex to compute distances.
   CHK_CU_SUCCESS(cudaMemset(&(changed_d[source_id]), true, sizeof(bool)),
-                 err_free_mutex);
+                 err_free_new_distances);
 
   // Compute the distances update
   bool has_true;
@@ -194,7 +182,7 @@ error_t dijkstra_gpu(graph_t* graph, id_t source_id,
 
   while (has_true) {
     dijkstra_kernel<<<block_count, threads_per_block>>>
-      (*graph_d, changed_d, distances_d, new_distances_d, mutex_d);
+      (*graph_d, changed_d, distances_d, new_distances_d);
     dijkstra_final_kernel<<<block_count, threads_per_block>>>
       (*graph_d, changed_d, distances_d, new_distances_d);
     has_true_kernel<<<block_count, threads_per_block>>>
@@ -217,7 +205,6 @@ error_t dijkstra_gpu(graph_t* graph, id_t source_id,
   graph_finalize_device(graph_d);
   cudaFree(distances_d);
   cudaFree(changed_d);
-  cudaFree(mutex_d);
   cudaFree(new_distances_d);
 
   return SUCCESS;
@@ -225,8 +212,6 @@ error_t dijkstra_gpu(graph_t* graph, id_t source_id,
   // error handlers
   err_free_has_true:
     cudaFree(has_true_d);
-  err_free_mutex:
-    cudaFree(mutex_d);
   err_free_new_distances:
     cudaFree(new_distances_d);
   err_free_distances:
@@ -280,6 +265,7 @@ error_t dijkstra_cpu(graph_t* graph, id_t source_id,
 
   // Initialize the mutex.
   int mutex = 0;
+  mutex += 0;
 
   bool changed = true;
   while (changed) {
