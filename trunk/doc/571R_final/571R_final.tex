@@ -50,9 +50,7 @@ Santos-Neto\vspace{3mm}\\
 %\elizeu{Comments by Elizeu}
 
 \begin{abstract}
-The goal of this project is to understand the challenges in porting graph algorithms to multi-core architectures. In particular, this work focuses on hybrid massively-parallel platforms that consist of processors optimized for sequential processing and accelerators optimized for massively-parallel processing. Understanding the design and implementation of a range of graph algorithms is the first step towards building a generic graph processing framework on such architectures.
-
-To this end, we study a number of graph algorithms such as breadth-first search, single source shortest path, and PageRank. We focus on algorithms that are in the core of many relevant applications such as social network analysis, web search, transportation routes, paths of disease outbreaks, and citations among scientific papers.
+The goal of this project is to understand the challenges in porting graph algorithms to commodity, hybrid platforms; platforms that consist of processors optimized for sequential processing and accelerators optimized for massively-parallel processing. The study starts from the observation that current graph processing platforms are either expensive (e.g., supercomputers) or inefficient (e.g., commodity clusters). Our hypothesis is that commodity hybrid platforms (e.g., GPU-supported clusters) can bridge the performance-cost gap, and offer an attractive graph-processing solution for many graph-based applications such as social networks and web analysis.
 
 This work presents the first step towards designing {\sc Totem} -- a graph-processing framework that leverages massively parallel hybrid platforms. In particular, we give implementations of core graph algorithms (i.e., BFS, Dijkstra's algorithm, and PageR ank) and preliminary performance analysis of some of these algorithms. Also, we discuss the future work based on the current experience provided by these initial implementations.
 
