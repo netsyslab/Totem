@@ -6,9 +6,9 @@ However, the scale of current graphs calls for new computational platforms and t
 To this end, this work investigates the general challenges of processing graph algorithms on hybrid commodity systems (e.g., GPU-supported clusters). Additionally, in the spirit of building abstractions to hide complexity, the ultimate goal is to build a generic graph-processing framework that leverages massively-parallel hybrid platforms. In particular, this work aims at addressing the following questions:
 
 \begin{enumerate}
-\item What are the general challenges to support graph processing on a hybrid, GPU-based compute node? Is it possible to partition the processing to efficiently use both the main processor and the GPU? In other words, given a fixed area or power budget, is it more efficient to rely on a traditional multi-core or a hybrid node?
+\item What are the general challenges to support graph processing on a hybrid, GPU-based compute node? Is it possible to partition the processing to efficiently use both the main processor and the GPU? In other words, given a fixed area or power budget, is it more efficient to rely on a traditional symmetric multi-processor (SMP) or a hybrid node?
 
-\item Assuming that in hybrid, GPU-based node brings performance benefits, is it efficient to use a GPU-supported cluster to process large-scale graph problems compared to a traditional cluster? In other words, in a traditional cluster setup, is the computation phase dominant enough compared to the communication phase so that adding a GPU to speedup the computation phase would improve the end-to-end performance?
+\item Assuming that a hybrid, GPU-based node brings performance benefits, is it efficient to use a GPU-supported cluster to process large-scale graph problems compared to a traditional cluster? In other words, in a traditional cluster setup, is the computation phase dominant enough compared to the communication phase such that adding a massively-parallel component to speedup the computation phase would improve the end-to-end system performance?
 
 \item Assuming that graph algorithms can efficiently leverage GPU-supported clusters, what should a graph processing framework that aims at simplifying the task of implementing graph algorithms on such platforms provide to developers? Specifically, what is the adequate parallel processing model (e.g., BSP - Bulk Synchronous Processing~\cite{Valiant1990}, PRAM~\cite{Fortune78}, or LogP~\cite{Culler1996}), graph-level abstractions (e.g., vertex or edge centric), and the high-level interface of a sufficiently expressive, yet performance-efficient framework?
 
@@ -17,5 +17,7 @@ To this end, this work investigates the general challenges of processing graph a
 \item Ultimately, a graph-processing framework should enable measurable gains from the application standpoint. Thus, can we identify applications (e.g., PageRank) where the use of such framework enables problem-solving at larger scales or faster than current platforms?
 
 \end{enumerate}
+
+At this stage, we report on our progress towards addressing the first question. We present preliminary performance results for a number of graph algorithms on a single GPU and compare them with high-end SMP systems. We show that graph algorithms are memory-latency bound, and that traditional SMP systems are not optimized to support such a processing pattern. We also show that a GPU can offer important performance speedups due to its ability to hide memory access latency through massive multithreading.
 
 The next sections present the opportunities, goals, and anticipated challenges of this project (\S~\ref{sec:motivation}); related work (\S~\ref{sec:related}); methodology (\S~\ref{sec:methodology}); current progress (\S~\ref{sec:progress}); future work (\S~\ref{sec:future}); and, concluding remarks (\S ~\ref{sec:conclusion}).
