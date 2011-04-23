@@ -50,9 +50,9 @@ Santos-Neto\vspace{3mm}\\
 %\elizeu{Comments by Elizeu}
 
 \begin{abstract}
-The goal of this project is to understand the challenges in porting graph algorithms to commodity, hybrid platforms; platforms that consist of processors optimized for sequential processing and accelerators optimized for massively-parallel processing. The study starts from the observation that current graph processing platforms are either expensive (e.g., supercomputers) or inefficient (e.g., commodity clusters). Our hypothesis is that commodity hybrid platforms (e.g., GPU-supported clusters) can bridge the performance-cost gap, and offer an attractive graph-processing solution for many graph-based applications such as social networks and web analysis.
+The goal of this project is to understand the challenges in porting graph algorithms to commodity, hybrid platforms; platforms that consist of processors optimized for sequential processing and accelerators optimized for massively-parallel processing. This study fills the gap between current graph processing platforms that are either expensive (e.g., supercomputers) or inefficient (e.g., commodity clusters). Our hypothesis is that hybrid platforms (e.g., GPU-supported clusters) can bridge the performance-cost chasm, and offer an attractive graph-processing solution for many graph-based applications such as social networks and web analysis.
 
-This work presents the first step towards designing {\sc Totem} -- a graph-processing framework that leverages massively parallel hybrid platforms. In particular, we give implementations of core graph algorithms (i.e., BFS, Dijkstra's algorithm, and PageRank) and preliminary performance analysis of some of these algorithms. Also, we discuss the future work based on the current experience provided by these initial implementations.
+This work presents the first step towards designing {\sc Totem} -- a graph-processing framework that leverages massively parallel hybrid platforms. In particular, we design, implement, and evaluate core graph algorithms (i.e., BFS, Dijkstra's algorithm, and PageRank). Also, we discuss the future work based on the current experience provided by these initial implementations.
 \end{abstract}
 
 % A category with the (minimum) three required fields
@@ -70,14 +70,16 @@ This work presents the first step towards designing {\sc Totem} -- a graph-proce
 \section{Single Node Setup}
 \label{sec:single}
 
-This section aims to address the first motivating question (\S~\ref{sec:intro}). The section disccusses the implementation of three algorithms on the GPU (\S~\ref{sec:implementation}), and evaluates their performance compared to multithreaded CPU versions (\S~\ref{sec:evaluation}).
+This section addresses the first motivating question (\S~\ref{sec:intro}). In particular, it disccusses the implementation of three algorithms on the GPU (\S~\ref{sec:implementation}), evaluates their performance compared to multithreaded CPU versions (\S~\ref{sec:evaluation}), and present preliminary workload analysis that will inform the design of {\sc Totem}.
 
 \input{implementation}
 \input{evaluation}
 
-\section{Towards a GPU-Supported Cluster Setup}
+\section{Towards Supporting Multi-GPU Clusters}
 \label{sec:cluster}
-This section discusses our progress towards designing and implementing graph algorithms for GPU-supported clusters. It first presents a simple model to quantify graph processing overheads in traditional cluster setups \ref{sec:model}. The goal is to understand whether adding more compute power to the nodes improves the end-to-end performance or not. Next, we present a preliminary design of an intra-GPU communication layer, which forms the base of designing algorithms for multi-GPU setups, including GPU-supported clusters \ref{sec:grooves}.
+With the understanding that GPU can deliver superior performance in a single node setup, we move towards desigining a key component of {\sc Totem}, that will be instrumental on the implementation of graph algorithms for multi-GPU clusters. 
+
+To this end, this section first presents a simple model to quantify graph processing overheads in traditional cluster setups \ref{sec:model}. The goal is to understand whether adding more compute power to the nodes improves the end-to-end performance. Next, we present a preliminary design of an intra-GPU communication layer, which forms the base of designing algorithms for multi-GPU setups, including multi-GPU clusters \ref{sec:grooves}.
 
 \input{model}
 \input{grooves}
