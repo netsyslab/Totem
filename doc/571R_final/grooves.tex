@@ -1,0 +1,19 @@
+\section{Grooves: A Message Passing Substrate for Totem}
+\label{sec:grooves}
+
+Grooves\footnote{Grooves are the long narrow furrow cuts crafted in totems…} is the message passing substrate for the Totem graph-processing framework. This section describes the requirements of Grooves, the assumptions and the mechanics for an initial version. 
+
+Grooves aim at enabling communication between the graph’s vertices, which can be stored in the same GPU, host’s memory, or distributed across GPUs. To successfully meet this goal, the solution requirements are: \emph{low memory footprint}, to allow efficient usage of the GPU’s scarce memory; \emph{easy to configure}, to allow optimizations enabled by specific communication patterns that exist in some graph algorithms (e.g., message multicasting); \it{scalability} to accelerate the processing of large graphs by increasing the number hybrid nodes in the cluster.
+
+The initial design of Grooves relies on the following assumptions: 
+\begin{itemize}
+\item The graph is represented in a compressed sparse raw (edge list) format as described in \ref{sec:…}.
+\item Messages can only be sent via outgoing edges of a vertex.
+\item A destination vertex is oblivious to the sources of messages it receives.
+\item The graph fits GPU memory.
+\item The processing model follows a Bulk Synchronous Parallel (BSP) one. The processing is divided into two phases: a compute phase and a communication phase.
+\end{itemize}
+
+To enable communication, each GPU stores the following: two buffers, \texttt{inbox} and \texttt{outbox}, of maximum size $|E|$ each; and two member variables per vertex, \texttt{box_index} and \texttt{box_count}. Each vertex has a number of slots in the \emph{inbox} and \emph{outbox} buffers equal to its in-degree. The \texttt{box_index} variable is set for each vertex during the graph initialization phase and represents an index in the \texttt{inbox} and \texttt{outbox} buffers at which the slots of a vertex starts. The \texttt{box_count} is used to control write access to the \texttt{outbox} buffer. It is set to 0 at the beginning of each compute phase. 
+
+A source vertex (\texttt{src}) sends a message to a destination vertex (\texttt{dst}) as follows: (i) \texttt{src} gets the current value of \texttt{box_count} of \texttt{dst} and increments it atomically, (ii) the message is copied to the slot in the \texttt{src}’s outbox buffer indexed by the value of \texttt{box_count} retrieved in the previous step. At the end of a compute phase, the \emph{inbox} and \emph{outbox} are swapped. Then, in the following computing phase, \texttt{dst} can process the message sent by \texttt{src} in the previous computing phase and send messages to other vertices, which will consume the messages in a subsequent computing phase. Swapping the buffers corresponds to the communication phase of BSP model. It is simple in the first Grooves version as it needs just to swap the buffers to avoid message overwriting. However, it will require more complex processing, as Grooves scales to support a hybrid environment, to properly deliver the messages to vertices spread throughout different nodes and GPUs in a hybrid-based cluster. 
