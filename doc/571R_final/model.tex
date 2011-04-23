@@ -1,0 +1,26 @@
+\subsection{Communication-to-Computation Ratio in a Cluster Setup}
+\label{sec:model}
+We first present the assumptions the calcualtion is based on; then, based on these assumptions, an estimate of the computation-to-communication ratio is calculated. 
+
+Let {\bf n} be the number of compute nodes in the cluster, and {\bf v} be the number of vertices in the graph. We assume the following: 
+
+\begin{enumerate}
+\item The processing model is assumed to be Bulk Synchronous Parallel (BSP). Based on this model, the processing is divided into two phases, computation and communication; hence allowing for batch communication.
+
+\item The compute nodes are connected via 10Gbps links. This is a reasonable assumption as 10Gbs links have become commodity. Due to various overheads, however, a 10GBps link do not perform at peak rate. Feng et al. \cite{Feng2003} reports that in a commodity setup, a 10Gbps Ethernet link can perform at 7.2Gbps. Moreover, in the communication phase, all nodes communicate at the same time, hence we assume that half of a node's bandwidth is dedicated for sending and the other of receiving. Accordingly, we assume a node's link throughput to be 7.2/2 = 3.1Gbps. Finally, since communication happens in batches, the link latency can be disregarded.
+
+\item The compute nodes have dual socket quad core Nehalem processors similar to the setup described in \S~\ref{sec:evaluation}. This is an optimistic assumption as this represents the top of line for commodity components.
+
+\item The graph is partitioned such that each compute node maintains {\bf v}/{\bf n} vertices.
+
+\item The size of value communicated per vertex is 4 bytes (e.g., the level in BFS and the rank in PageRank).
+
+\item The graph size is of class "Toy" according to Graph500 specification. It has 64 million vertices and 1 billion edges. Note that it could be any of the other classes.
+
+\item The graph processing rate of a compute node is that of the one achieved for the LiveJournal workload. This is an optimistic assumption because the graph is relatively small, and its vertex array fits the cache of a commodity compute node. The compute rates for this graph based on the evaluation in \S~\ref{sec:evaluation} are roughly: BFS = 300ME/s.
+\end{enumerate}
+
+
+In the case of BFS, each vertex level will be communicated at most once (basically, when it is part of the frontier). If we assume in the worst case that at least one neighbor exist for a vertex on the other ({\bf n} - 1) partitions, each compute node will, at most, communicate the level of all of its vertices to all other nodes, i.e. ({\bf n} - 1) * {\bf v}/{\bf n}, which is roughly {\bf v}. 
+
+Accordingly, considering a Toy graph size, the communication time is ((64 * 1000) * 4) / (3.1 * 128 * 1024) = .63 second, and the computation overhead is 1024/ * 300 = 3.4 second, which equates to almost 87\% of the total processing time. This shows that the computation phase is the dominant one, and that accelearating this phase will improve the end-to-end performance of the system.

@@ -67,14 +67,20 @@ This work presents the first step towards designing {\sc Totem} -- a graph-proce
 \input{related_work}
 \input{method}
 
-\section{Progress to Date}
-\label{sec:progress}
+\section{Single Node Setup}
+\label{sec:single}
 
-This section provides a description of the three algorithms implemented (\S~\ref{sec:implementation}) so far and some preliminary evaluation results (\S~\ref{sec:evaluation}). In summary, the work done so far consists of literature review, which is described in the related work section (\S~\ref{sec:related}) and an initial implementation that will serve as the basis for the framework.
+This section aims to address the first motivating question (\S~\ref{sec:intro}). The section disccusses the implementation of three algorithms on the GPU (\S~\ref{sec:implementation}), and evaluates their performance compared to multithreaded CPU versions (\S~\ref{sec:evaluation}).
 
 \input{implementation}
-%\include{comments}
 \input{evaluation}
+
+\section{Towards a GPU-Supported Cluster Setup}
+\label{sec:cluster}
+This section discusses our progress towards designing and implementing graph algorithms for GPU-supported clusters. It first presents a simple model to quantify graph processing overheads in traditional cluster setups \ref{sec:model}. The goal is to understand whether adding more compute power to the nodes improves the end-to-end performance or not. Next, we present a preliminary design of an intra-GPU communication layer, which forms the base of designing algorithms for multi-GPU setups, including GPU-supported clusters \ref{sec:grooves}.
+
+\input{model}
+\input{grooves}
 \input{future}
 \input{conclusions}
 
