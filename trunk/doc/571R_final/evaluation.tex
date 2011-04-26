@@ -42,7 +42,7 @@ Although the performance levels above provide evidence that hybrid platforms are
 
 One potential source for these inconsistencies is the work imbalance across threads, which is a result of non-uniform connectivity across the nodes in the graph (e.g., node degree). More specifically, the hypothesis is that node degree imbalance will cause threads divergence in the GPU-implementations and hinder its performance. 
 
-To test this hypothesis, we characterize the node degree distribution of each graph in the workload and correlate it with the achieved performance. The characterization considers two metrics of the concentration of a distribution: Kurtosis~\cite{refstats}; and the $\alpha$ coefficient of a fitted power-law (i.e., the slope of the line on the log-log plot of the node degree distribution) (see Table~\ref{tab:kurtosis}). 
+To test this hypothesis, we characterize the node degree distribution of each graph in the workload and correlate it with the achieved performance. The characterization considers two metrics of the concentration of a distribution: Kurtosis; and the $\alpha$ coefficient of a fitted power-law (i.e., the slope of the line on the log-log plot of the node degree distribution) (see Table~\ref{tab:kurtosis}). 
 
 \begin{table}[ht]
 \centering
