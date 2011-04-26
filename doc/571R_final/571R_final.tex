@@ -70,7 +70,7 @@ This work presents the first step towards designing {\sc Totem} -- a graph-proce
 \section{Single Node Setup}
 \label{sec:single}
 
-This section addresses the first motivating question (\S~\ref{sec:intro}). In particular, it disccusses the implementation of three algorithms on the GPU (\S~\ref{sec:implementation}), evaluates their performance compared to multithreaded CPU versions (\S~\ref{sec:evaluation}), and present preliminary workload analysis that will inform the design of {\sc Totem}.
+This section addresses the first motivating question (discussed in \S~\ref{sec:intro}). It presents the implementation of three algorithms on the GPU (\S~\ref{sec:implementation}), evaluates their performance compared to multithreaded CPU versions (\S~\ref{sec:evaluation}), and present preliminary workload analysis that will inform the design of {\sc Totem}.
 
 \input{implementation}
 \input{evaluation}
@@ -79,7 +79,7 @@ This section addresses the first motivating question (\S~\ref{sec:intro}). In pa
 \label{sec:cluster}
 With the understanding that GPU can deliver superior performance in a single node setup, we move towards desigining a key component of {\sc Totem}, that will be instrumental on the implementation of graph algorithms for multi-GPU clusters. 
 
-To this end, this section first presents a simple model to quantify graph processing overheads in traditional cluster setups \ref{sec:model}. The goal is to understand whether adding more compute power to the nodes improves the end-to-end performance. Next, we present a preliminary design of an intra-GPU communication layer, which forms the base of designing algorithms for multi-GPU setups, including multi-GPU clusters \ref{sec:grooves}.
+To this end, this section first presents a simple model to quantify graph processing overheads in traditional cluster setups (\S~\ref{sec:model}). The goal is to understand whether adding more compute power to the nodes improves the end-to-end performance. Next, we present a preliminary design of an intra-GPU communication layer, which forms the base of designing algorithms for multi-GPU setups, including multi-GPU clusters (\S~\ref{sec:grooves}).
 
 \input{model}
 \input{grooves}
