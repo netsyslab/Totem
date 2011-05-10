@@ -18,7 +18,7 @@
  * @param[in] size buffer size to allocate
  * @return allocated buffer
  */
-void* mem_alloc(int size);
+void* mem_alloc(size_t size);
 
 /**
  * Frees a buffer allocated by mem_alloc

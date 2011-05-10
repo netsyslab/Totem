@@ -12,7 +12,7 @@
 #include "totem_mem.h"
 #include "cuda.h"
 
-void* mem_alloc(int size) {
+void* mem_alloc(size_t size) {
   void* buf;
 #ifdef FEATURE_PAGEABLE_MEMORY
   buf = malloc(size);
