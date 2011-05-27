@@ -6,15 +6,22 @@
 #--------------------------------------------------------------------------
 include ../make.defs
 
-TARGET = graph
+TARGET  = totem
+LIBOBJS = $(filter-out %_main.o, $(CCOBJS)) $(filter-out %_main.cu_o, $(CUOBJS))
+MAINOBJS =  $(filter %_main.o, $(CCOBJS)) $(filter %_main.cu_o, $(CUOBJS))
 
 .PHONY: objects clean clean-all tags
 
 all: $(TARGET)
 
-$(TARGET): objects
-	@printf "\nLinking %s ...\n" $(TARGET)
-	$(CC) -o $@ $(CCOBJS) $(CUOBJS) $(LFLAGS)
+$(TARGET): lib 
+	@printf "\nLinking %s executable ...\n" $(TARGET)
+	$(CC) -o $@ $(MAINOBJS) -l$(TARGET) $(LFLAGS)
+
+lib: objects
+	@printf "\nCreating %s library ...\n" $(TARGET)
+	ar -r -u lib$(TARGET).a $(LIBOBJS)
+	ranlib lib$(TARGET).a
 
 objects: $(OBJDIR) $(CCOBJS) $(CUOBJS)
 
@@ -28,10 +35,10 @@ $(CUOBJS): $(OBJDIR)/%.cu_o: %.cu $(CDEPS) $(CUDEPS)
 	$(NVCC) $(NVCCFLAGS) $(TOTEM_FEATURES) -c $< -o $@
 
 clean:
-	@$(CLEAN_CMD)
+	@$(CLEAN_CMD) lib$(TARGET).a
 
 clean-all:
-	@$(CLEAN_ALL_CMD)
+	@$(CLEAN_ALL_CMD) lib$(TARGET).a
 
 tags:
 	@$(ETAGS_CMD)
