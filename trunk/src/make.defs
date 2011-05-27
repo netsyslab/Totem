@@ -2,7 +2,7 @@
 # Common definitions to all internal makefiles
 #
 # Features (e.g., make MEMORY="PINNED"): 
-#   MEMORY=PINNED   // enables using pinned instead of pageable memory
+#   MEMORY=PAGEABLE // enables using pageable instead of pinned memory
 #   MP=NO           // disables OpenMP 
 #
 # Created on: 2011-02-28
@@ -22,7 +22,7 @@ ifeq ($(MP), NO)
 OPENMP    = 
 endif
 # Architecture to compile for (TODO: (abdullah): make this automatic)
-ARCH = 64 
+ARCH = 64
 
 # directory definitions
 CUDA_INSTALL_PATH = /usr/local/cuda
@@ -37,7 +37,7 @@ NVCC = $(CUDA_INSTALL_PATH)/bin/nvcc
 OPTFLAGS  = -O3 -fno-strict-aliasing
 CCFLAGS    = -g $(OPENMP) $(OPTFLAGS) -Wall -Wno-format \
              -I$(CUDA_INSTALL_PATH)/include -D__STDC_LIMIT_MACROS
-LFLAGS    =  -lm $(OPENMP) -lcudart -I. -L$(CUDA_INSTALL_PATH)/lib$(ARCH)
+LFLAGS    =  -lm $(OPENMP) -lcudart -I. -L. -L$(CUDA_INSTALL_PATH)/lib$(ARCH)
 NVCCFLAGS = --ptxas-options=-v -g -Xcompiler "$(OPENMP)" -O3 -I. \
             -I$(CUDA_INSTALL_PATH)/include  -arch=sm_20 -D__STDC_LIMIT_MACROS \
 
