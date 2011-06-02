@@ -2,6 +2,34 @@
  * Defines the graph interface. Mainly the data-structure, and its initialize
  * and finalize methods.
  *
+ * The following is the totem graph file format template:
+ *
+ * # NODES: vertex_count [Y]
+ * # EDGES: edge_count
+ * # DIRECTED|UNDIRECTED
+ * [VERTEX LIST]
+ * [EDGE LIST]
+ *
+ * The first three lines specify the vertex and edge counts, whether the 
+ * graph is directed or not and whether the graph has a vertex list. 
+ * Note that the flag [Y] after vertex_count indicates that a vertex list 
+ * should be expected. 
+ *
+ * The vertices are assumed to have numerical IDs that ranges from 0 to 
+ * vertex_count. The vertices are sorted in an increasing order.
+ *
+ * A vertex list is an optional list that defines a value for each vertex.
+ * Each line in the vertex list defines the value associated with a vertex
+ * as follows: "VERTEX_ID VALUE". The parser expects the vertex ids to be sorted
+ * in the vertex list. Although a value is not needed for each vertex, a value 
+ * for the last vertex (i.e., vertex id = vertex_count - 1) is required as it is
+ * used as an end-of-list signal. If a value does not exist for a vertex, it 
+ * will be assigned a default one.
+ *
+ * An edge list represents the edges in the graph. Each line describes a single 
+ * edge, optionally with a weight as follows: "SOURCE DESTINATION [WEIGHT]". If 
+ * the weight does not exist, it will be assigned a default value.
+ *
  *  Created on: 2011-02-28
  *  Author: Abdullah Gharaibeh
  */
@@ -44,6 +72,15 @@ typedef float weight_t;
  */
 const weight_t WEIGHT_MAX = FLT_MAX;
 
+/**
+ * Specifies the default edge weight
+ */
+const weight_t DEFAULT_EDGE_WEIGHT =  1;
+
+/**
+ * Specifies the default vertex value in the vertex list
+ */
+const weight_t DEFAULT_VERTEX_VALUE = 0;
 
 /**
  * A graph type based on adjacency list representation.
@@ -65,21 +102,17 @@ typedef struct graph_s {
   id_t*        vertices;        /**< the vertices list. */
   id_t*        edges;           /**< the edges list. */
   weight_t*    weights;         /**< stores the weights of the edges. */
+  weight_t*    values;          /**< stores the values of the vertices. */
   uint64_t     vertex_count;    /**< number of vertices. */
   uint64_t     edge_count;      /**< number of edges. */
-  bool         weighted;        /**< indicates if edges have weights or not. */
+  bool         valued;          /**< indicates if vertices have values. */
+  bool         weighted;        /**< indicates if edges have weights. */
   bool         directed;        /**< indicates if the graph is directed. */
 } graph_t;
 
 /**
  * reads a graph from the given file and builds a graph data type.
  * The function allocates graph data type and the buffers within it.
- * We assume the following regarding the graph file format: each line
- * describes a single edge, optionally with a weight as
- * "source destination [weight]". If the weight does not exist,
- * it will be assumed to be zero. The vertices are assumed to have
- * numerical IDs that ranges from 0 to N, where N is the number of
- * vertices. The vertices are sorted in an increasing order.
  * @param[in] graph_file path to the graph file.
  * @param[in] weighted a flag to indicate loading edge weights.
  * @param[out] graph a reference to allocated graph_t type.
