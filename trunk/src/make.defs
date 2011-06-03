@@ -41,7 +41,7 @@ LFLAGS    =  -lm $(OPENMP) -lcudart -I. -L. -L$(CUDA_INSTALL_PATH)/lib$(ARCH)
 NVCCFLAGS = --ptxas-options=-v -g -Xcompiler "$(OPENMP)" -O3 -I. \
             -I$(CUDA_INSTALL_PATH)/include  -arch=sm_20 -D__STDC_LIMIT_MACROS \
 
-# source files and their correspnding objects and dependencies
+# source files and their corresponding objects and dependencies
 CCSRC	= $(wildcard *.cc)
 CUSRC	= $(wildcard *.cu)
 CCOBJS  = $(CCSRC:%.cc=$(OBJDIR)/%.o)
