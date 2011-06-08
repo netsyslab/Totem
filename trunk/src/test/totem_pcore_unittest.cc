@@ -16,9 +16,7 @@ using ::testing::TestWithParam;
 using ::testing::Values;
 
 // The following implementation relies on TestWithParam<PCoreFunction> to test
-// the two versions of p-core: CPU and GPU. Currently, only the CPU version is
-// implemented, hence it is the only one included in this test.
-// TODO(abdullah): add GPU version when it is ready
+// the two versions of p-core: CPU and GPU.
 // Details on how to use TestWithParam<T> can be found at:
 // http://code.google.com/p/googletest/source/browse/trunk/samples/sample7_unittest.cc
 
@@ -76,7 +74,7 @@ TEST_P(PCoreTest, EmptyEdges) {
   uint32_t* round;
   EXPECT_EQ(SUCCESS, pcore(graph, 0, 1, &round));
   EXPECT_FALSE(round == NULL);
-  for(id_t vertex = 0; vertex < graph->vertex_count; vertex++){
+  for (id_t vertex = 0; vertex < graph->vertex_count; vertex++) {
     EXPECT_EQ((uint32_t)0, round[vertex]);
   }
   mem_free(round);
@@ -91,7 +89,7 @@ TEST_P(PCoreTest, Chain) {
   uint32_t* round = NULL;
   EXPECT_EQ(SUCCESS, pcore(graph, 0, 1, &round));  
   EXPECT_FALSE(round == NULL);
-  for(id_t vertex = 0; vertex < graph->vertex_count; vertex++){
+  for (id_t vertex = 0; vertex < graph->vertex_count; vertex++) {
     EXPECT_EQ((uint32_t)1, round[vertex]);
   }
   mem_free(round);
@@ -106,7 +104,7 @@ TEST_P(PCoreTest, CompleteGraph) {
   uint32_t* round;
   EXPECT_EQ(SUCCESS, pcore(graph, 0, 1, &round));
   EXPECT_FALSE(round == NULL);
-  for(id_t vertex = 0; vertex < graph->vertex_count; vertex++){
+  for (id_t vertex = 0; vertex < graph->vertex_count; vertex++) {
     EXPECT_EQ((uint32_t)299, round[vertex]);
   }
   mem_free(round);
@@ -121,7 +119,7 @@ TEST_P(PCoreTest, Star) {
   uint32_t* round;
   EXPECT_EQ(SUCCESS, pcore(graph, 0, 1, &round));
   EXPECT_FALSE(round == NULL);
-  for(id_t vertex = 0; vertex < graph->vertex_count; vertex++){
+  for (id_t vertex = 0; vertex < graph->vertex_count; vertex++) {
     EXPECT_EQ((uint32_t)1, round[vertex]);
   }
   mem_free(round);
@@ -136,7 +134,8 @@ TEST_P(PCoreTest, Star) {
 //
 // Values() receives a list of parameters and the framework will execute the
 // whole set of tests PCoreTest for each element of Values()
-INSTANTIATE_TEST_CASE_P(BFSGPUAndCPUTest, PCoreTest, Values(&pcore_cpu));
+INSTANTIATE_TEST_CASE_P(PCOREGPUAndCPUTest, PCoreTest, 
+                        Values(&pcore_gpu, &pcore_cpu));
 
 #else
 
