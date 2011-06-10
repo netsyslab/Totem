@@ -236,4 +236,29 @@ error_t dijkstra_gpu(graph_t* graph, id_t source_id,
 error_t dijkstra_cpu(graph_t* graph, id_t source_id,
                      weight_t** shortest_distances);
 
+/**
+ * Given a weighted and undirected graph, the algorithm identifies for each 
+ * vertex the largest p-core it is part of. A p-core is the maximal subset of 
+ * vertices such that the sum of edge weights each vertex has is at least "p". 
+ * The word maximal means that there is no other vertex in the graph that can 
+ * be added to the subset while preserving the aforementioned property. 
+ * Note that p-core is a variation of the k-core concept: k-core considers 
+ * degree, while p-core considers edge weights. If all edges have weight 1, then
+ * p-core becomes k-core.
+ * Specifically, the algorithm computes the p-core for a range of "p" values 
+ * between "start" and the maximum p the graph has. In each round, "p" is 
+ * incremented by "step". The output array "round" stores the latest round 
+ * (equivalent to the highest p-core) a vertex was part of.
+ *
+ * @param[in] graph an instance of the graph structure
+ * @param[in] start the start value of p
+ * @param[in] step the value used to increment p in each new round
+ * @param[out] round for each vertex  latest round a vertex was part of
+ * @return a flag indicating whether the operation succeeded or not.
+ */
+error_t pcore_cpu(graph_t* graph, uint32_t start, uint32_t step, 
+                   uint32_t** round);
+error_t pcore_gpu(graph_t* graph, uint32_t start, uint32_t step, 
+                   uint32_t** round);
+
 #endif  // TOTEM_GRAPH_H
