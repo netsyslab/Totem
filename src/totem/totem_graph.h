@@ -10,24 +10,24 @@
  * [VERTEX LIST]
  * [EDGE LIST]
  *
- * The first three lines specify the vertex and edge counts, whether the 
- * graph is directed or not and whether the graph has a vertex list. 
- * Note that the flag [Y] after vertex_count indicates that a vertex list 
- * should be expected. 
+ * The first three lines specify the vertex and edge counts, whether the
+ * graph is directed or not and whether the graph has a vertex list.
+ * Note that the flag [Y] after vertex_count indicates that a vertex list
+ * should be expected.
  *
- * The vertices are assumed to have numerical IDs that ranges from 0 to 
+ * The vertices are assumed to have numerical IDs that ranges from 0 to
  * vertex_count. The vertices are sorted in an increasing order.
  *
  * A vertex list is an optional list that defines a value for each vertex.
  * Each line in the vertex list defines the value associated with a vertex
  * as follows: "VERTEX_ID VALUE". The parser expects the vertex ids to be sorted
- * in the vertex list. Although a value is not needed for each vertex, a value 
+ * in the vertex list. Although a value is not needed for each vertex, a value
  * for the last vertex (i.e., vertex id = vertex_count - 1) is required as it is
- * used as an end-of-list signal. If a value does not exist for a vertex, it 
+ * used as an end-of-list signal. If a value does not exist for a vertex, it
  * will be assigned a default one.
  *
- * An edge list represents the edges in the graph. Each line describes a single 
- * edge, optionally with a weight as follows: "SOURCE DESTINATION [WEIGHT]". If 
+ * An edge list represents the edges in the graph. Each line describes a single
+ * edge, optionally with a weight as follows: "SOURCE DESTINATION [WEIGHT]". If
  * the weight does not exist, it will be assigned a default value.
  *
  *  Created on: 2011-02-28
@@ -130,31 +130,12 @@ error_t graph_initialize(const char* graph_file, bool weighted,
 error_t graph_finalize(graph_t* graph);
 
 // TODO(lauro): Discuss a common order for the parameters.
-// TODO(lauro): Organize algorithms alphabetically.
-
-/**
- * Implements a GPU version of the simple PageRank algorithm described in
- * [Malewicz 2010]. Algorithm details are described in totem_page_rank.cu.
- * @param[in]  graph the graph to run PageRank on
- * @param[out] rank the PageRank output array (must be freed via mem_free)
- * @return generic success or failure
- */
-error_t page_rank_gpu(graph_t* graph, float** rank);
-
-/**
- * Implements a CPU version of the simple PageRank algorithm described in
- * [Malewicz 2010]. Algorithm details are described in totem_page_rank.cu.
- * @param[in]  graph the graph to run PageRank on
- * @param[out] rank the PageRank output array (must be freed via mem_free)
- * @return generic success or failure
- */
-error_t page_rank_cpu(graph_t* graph, float** rank);
 
 /**
  * Given an undirected, unweighted graph and a source vertex, find the minimum
  * number of edges needed to reach every vertex V from the source vertex.
  * Its implementation follows Breadth First Search variation based on
- * in [Harish07] using GPU.
+ * in [Harish07] using the CPU and GPU, respectively.
  * @param[in] source_id id of the source vertex
  * @param[in] graph the graph to perform BFS on
  * @return array where the indexes are the vertices' ids and the values are the
@@ -162,64 +143,9 @@ error_t page_rank_cpu(graph_t* graph, float** rank);
  * ownership of the array and, thus, the client is responsible for freeing the
  * memory area.
 */
-error_t bfs_gpu(id_t source_id, const graph_t* graph, uint32_t** cost);
-
-/**
- * Given an undirected, unweighted graph and a source vertex, find the minimum
- * number of edges needed to reach every vertex V from the source vertex.
- * Its implementation follows Breadth First Search variation based on
- * in [Harish07] using CPU.
- * @param[in] source_id id of the source vertex
- * @param[in] graph the graph to perform BFS on
- * @param[out] cost array where the indexes are the vertices' ids and the values
- * are the number of edges needed to reach the vertex. Note that the function
- * gives the ownership of the array and, thus, the client is responsible for
- * freeing the memory area.
- * @return a flag indicating whether the operation succeeded or not.
-*/
 error_t bfs_cpu(id_t source_id, const graph_t* graph, uint32_t** cost);
 
-/**
- * Given an [un]directed, unweighted graph, a source vertex, and a destination
- * vertex. Check if the destination is reachable from the source using GPU
- * implementation.
- * @param[in] source_id id of the source vertex
- * @param[in] destination_id id of the destination vertex
- * @param[in] graph the graph to perform BFS on
- * @param[out] connected true if destination is reachable from source;
- *             otherwise, false.
- * @return a flag indicating whether the operation succeeded or not.
-*/
-error_t stcon_gpu(id_t source_id, id_t destination_id, const graph_t* graph,
-                  bool* connected);
-
-/**
- * Given an [un]directed, unweighted graph, a source vertex, and a destination
- * vertex. Check if the destination is reachable from the source using CPU
- * implementation.
- * @param[in] source_id id of the source vertex
- * @param[in] destination_id id of the destination vertex
- * @param[in] graph the graph to perform BFS on
- * @param[out] connected true if destination is reachable from source;
- *             otherwise, false.
- * @return a flag indicating whether the operation succeeded or not.
-*/
-error_t stcon_cpu(id_t source_id, id_t destination_id, const graph_t* graph,
-                  bool* connected);
-
-/**
- * Given a weighted graph \f$G = (V, E, w)\f$ and a source vertex \f$v\inV\f$,
- * Dijkstra's algorithm computes the distance from \f$v\f$ to every other
- * vertex in a directed, weighted graph, where the edges have non-negative
- * weights (i.e., \f$\forall (u,v) \in E, w(u,v) \leq 0\f$).
- *
- * @param[in] graph an instance of the graph structure
- * @param[in] source_id vertex id for the source
- * @param[out] shortest_distances the length of the computed shortest paths
- * @return a flag indicating whether the operation succeeded or not.
- */
-error_t dijkstra_gpu(graph_t* graph, id_t source_id,
-                     weight_t** shortest_distances);
+error_t bfs_gpu(id_t source_id, const graph_t* graph, uint32_t** cost);
 
 
 /**
@@ -236,18 +162,54 @@ error_t dijkstra_gpu(graph_t* graph, id_t source_id,
 error_t dijkstra_cpu(graph_t* graph, id_t source_id,
                      weight_t** shortest_distances);
 
+error_t dijkstra_gpu(graph_t* graph, id_t source_id,
+                     weight_t** shortest_distances);
+
+
 /**
- * Given a weighted and undirected graph, the algorithm identifies for each 
- * vertex the largest p-core it is part of. A p-core is the maximal subset of 
- * vertices such that the sum of edge weights each vertex has is at least "p". 
- * The word maximal means that there is no other vertex in the graph that can 
- * be added to the subset while preserving the aforementioned property. 
- * Note that p-core is a variation of the k-core concept: k-core considers 
+ * Implements a version of the simple PageRank algorithm described in
+ * [Malewicz 2010] for both CPU and CPU. Algorithm details are described in
+ * totem_page_rank.cu.
+ * @param[in]  graph the graph to run PageRank on
+ * @param[out] rank the PageRank output array (must be freed via mem_free)
+ * @return generic success or failure
+ */
+error_t page_rank_cpu(graph_t* graph, float** rank);
+
+error_t page_rank_gpu(graph_t* graph, float** rank);
+
+
+
+/**
+ * Given an [un]directed, unweighted graph, a source vertex, and a destination
+ * vertex. Check if the destination is reachable from the source using the CPU
+ * and GPU, respectively.
+ * @param[in] source_id id of the source vertex
+ * @param[in] destination_id id of the destination vertex
+ * @param[in] graph the graph to perform BFS on
+ * @param[out] connected true if destination is reachable from source;
+ *             otherwise, false.
+ * @return a flag indicating whether the operation succeeded or not.
+*/
+error_t stcon_cpu(id_t source_id, id_t destination_id, const graph_t* graph,
+                  bool* connected);
+
+error_t stcon_gpu(id_t source_id, id_t destination_id, const graph_t* graph,
+                  bool* connected);
+
+
+/**
+ * Given a weighted and undirected graph, the algorithm identifies for each
+ * vertex the largest p-core it is part of. A p-core is the maximal subset of
+ * vertices such that the sum of edge weights each vertex has is at least "p".
+ * The word maximal means that there is no other vertex in the graph that can
+ * be added to the subset while preserving the aforementioned property.
+ * Note that p-core is a variation of the k-core concept: k-core considers
  * degree, while p-core considers edge weights. If all edges have weight 1, then
  * p-core becomes k-core.
- * Specifically, the algorithm computes the p-core for a range of "p" values 
- * between "start" and the maximum p the graph has. In each round, "p" is 
- * incremented by "step". The output array "round" stores the latest round 
+ * Specifically, the algorithm computes the p-core for a range of "p" values
+ * between "start" and the maximum p the graph has. In each round, "p" is
+ * incremented by "step". The output array "round" stores the latest round
  * (equivalent to the highest p-core) a vertex was part of.
  *
  * @param[in] graph an instance of the graph structure
@@ -256,9 +218,10 @@ error_t dijkstra_cpu(graph_t* graph, id_t source_id,
  * @param[out] round for each vertex  latest round a vertex was part of
  * @return a flag indicating whether the operation succeeded or not.
  */
-error_t pcore_cpu(graph_t* graph, uint32_t start, uint32_t step, 
+error_t pcore_cpu(graph_t* graph, uint32_t start, uint32_t step,
                    uint32_t** round);
-error_t pcore_gpu(graph_t* graph, uint32_t start, uint32_t step, 
+
+error_t pcore_gpu(graph_t* graph, uint32_t start, uint32_t step,
                    uint32_t** round);
 
 #endif  // TOTEM_GRAPH_H
