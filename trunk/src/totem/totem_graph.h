@@ -129,6 +129,16 @@ error_t graph_initialize(const char* graph_file, bool weighted,
  */
 error_t graph_finalize(graph_t* graph);
 
+
+/**
+ * Creates a subgraph from a graph. the graph is de-allocated via graph_finalize
+ * @param[in] graph the graph to extract the subgraph from
+ * @param[in] mask identifies the vertices to be included in the subgraph
+ * @param[out] subgraph a reference to allocated subgraph 
+ * @return generic success or failure
+ */
+error_t get_subgraph(graph_t* graph, bool* mask, graph_t** subgraph);
+
 // TODO(lauro): Discuss a common order for the parameters.
 
 /**
