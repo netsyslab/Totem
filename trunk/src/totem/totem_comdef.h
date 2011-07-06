@@ -50,7 +50,7 @@ typedef double stopwatch_t;
 /**
  * Determines the maximum number of threads per block.
  */
-#define MAX_THREADS_PER_BLOCK 512
+#define MAX_THREADS_PER_BLOCK 128
 
 /**
  * Determines the maximum number of dimensions of a grid block.
@@ -93,10 +93,15 @@ typedef double stopwatch_t;
   } while(0)
 
 /**
- * Computes the linear thread index
+ * Global linear thread index
  */
 #define THREAD_GLOBAL_INDEX (threadIdx.x + blockDim.x                   \
                              * (gridDim.x * blockIdx.y + blockIdx.x))
+
+/**
+ * Grid scope linear thread index
+ */
+#define THREAD_GRID_INDEX (threadIdx.x)
 
 /**
  * A wrapper that asserts the success of totem function calls
