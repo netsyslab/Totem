@@ -271,14 +271,52 @@ PRIVATE error_t parse_edge_list(FILE* file_handler, graph_t* graph) {
     return FAILURE;
 }
 
+/**
+ * Allocates space for a graph structure and its buffers. It also, sets the
+ * various members of the structure.
+ * @param[in] vertex_count number of vertices
+ * @param[in] edge_count number of edges
+ * @param[in] weighted indicates if the edge weights are to be loaded
+ * @param[in] valued indicates if the vertex values are to be loaded
+ * @param[out] graph reference to allocated graph type to store the edge list
+ * @return generic success or failure
+ */
+PRIVATE void allocate_graph(uint64_t vertex_count, uint64_t edge_count, 
+                            bool directed, bool weighted, bool valued,
+                            graph_t** graph_ret) {
+  // Allocate the main structure
+  graph_t* graph = (graph_t*)calloc(1, sizeof(graph_t));
+  assert(graph);
+  // Allocate the buffers. An extra slot is allocated in the vertices array to
+  // make it easy to calculate the number of neighbors of the last vertex.
+  graph->vertices = (id_t*)mem_alloc((vertex_count + 1) * sizeof(id_t));
+  graph->edges    = (id_t*)mem_alloc(edge_count * sizeof(id_t));
+  graph->weights  = weighted ? 
+    (weight_t*)mem_alloc(edge_count * sizeof(weight_t)) : NULL;
+  graph->values  = valued ?
+    (weight_t*)mem_alloc(vertex_count * sizeof(weight_t)) : NULL;
+  // Ensure buffer allocation
+  assert((graph->vertices && graph->edges) && 
+         ((valued && graph->values) || (!valued && !graph->values)) && 
+         ((weighted && graph->weights) || (!weighted && !graph->weights)));
+  // Set the member variables
+  graph->vertex_count = vertex_count;
+  graph->edge_count = edge_count;
+  graph->directed = directed;
+  graph->weighted = weighted;
+  graph->valued = valued;
+
+  *graph_ret = graph;
+}
+
 error_t graph_initialize(const char* graph_file, bool weighted,
-                         graph_t** out_graph) {
+                         graph_t** graph_ret) {
 
   /* we had to define those variables here, not within the code, to overcome a
      compilation problem with using "goto" (used to emulate exceptions). */
+  graph_t* graph        = NULL;
   uint64_t vertex_count = 0;
   uint64_t edge_count   = 0;
-  graph_t* graph        = NULL;
   bool     directed     = true;
   bool     valued       = false;
 
@@ -286,28 +324,12 @@ error_t graph_initialize(const char* graph_file, bool weighted,
   FILE* file_handler = fopen(graph_file, "r");
   CHK(file_handler != NULL, err_openfile);
 
-  // parse metadata, will allow us to allocate the graph buffers
+  // get graph characteristics
   CHK(parse_metadata(file_handler, &vertex_count, &edge_count, 
 		     &directed, &valued) == SUCCESS, err);
 
-  /* allocate graph buffers, we allocate an extra slot in the vertices array to
-     make it easy to calculate the number of neighbors of the last vertex. */
-  graph           = (graph_t*)calloc(1, sizeof(graph_t));
-  assert(graph);
-  graph->vertices = (id_t*)mem_alloc((vertex_count + 1) * sizeof(id_t));
-  graph->edges    = (id_t*)mem_alloc(edge_count * sizeof(id_t));
-  graph->weights  = weighted ?
-    (weight_t*)mem_alloc(edge_count * sizeof(weight_t)) : NULL;
-  graph->values  = valued ?
-    (weight_t*)mem_alloc(vertex_count * sizeof(weight_t)) : NULL;
-
-  /* set the rest of the members of the graph data structure.
-     TODO(abdullah): verify that the graph is actually undirected if true */
-  graph->vertex_count = vertex_count;
-  graph->edge_count   = edge_count;
-  graph->directed     = directed;
-  graph->weighted     = weighted;
-  graph->valued       = valued;
+  // allocate the graph and its buffers
+  allocate_graph(vertex_count, edge_count, directed, weighted, valued, &graph);
 
   // parse the vertex list
   CHK(parse_vertex_list(file_handler, graph) == SUCCESS, err_format_clean);
@@ -317,7 +339,7 @@ error_t graph_initialize(const char* graph_file, bool weighted,
 
   // we are done
   fclose(file_handler);
-  *out_graph = graph;
+  *graph_ret = graph;
   return SUCCESS;
 
   // error handling
@@ -333,6 +355,67 @@ error_t graph_initialize(const char* graph_file, bool weighted,
             line_number);
   err:
     return FAILURE;
+}
+
+error_t get_subgraph(graph_t* graph, bool* mask, graph_t** subgraph_ret) {
+
+  assert(graph && mask);
+
+  // Used to map vertices in the graph to the subgraph to maintain the 
+  // requirement that vertex ids start from 0 to vertex_count
+  id_t* map = (id_t*)calloc(graph->vertex_count, sizeof(id_t));
+
+  // get the number of vertices and edges of the subgraph and build the map
+  uint32_t subgraph_vertex_count = 0;
+  uint32_t subgraph_edge_count = 0;
+  for (id_t vertex_id = 0; vertex_id < graph->vertex_count; vertex_id++) {
+    if (mask[vertex_id]) {
+      map[vertex_id] = subgraph_vertex_count;
+      subgraph_vertex_count++;
+      for (uint32_t i = graph->vertices[vertex_id]; 
+           i < graph->vertices[vertex_id + 1]; i++) {
+        if (mask[graph->edges[i]]) subgraph_edge_count++;     
+      }
+    }
+  }
+
+  // allocate the subgraph and its buffers
+  graph_t* subgraph = NULL;
+  allocate_graph(subgraph_vertex_count, subgraph_edge_count, graph->directed, 
+                 graph->weighted, graph->valued, &subgraph);
+
+  // build the vertex and edge lists
+  uint32_t subgraph_edge_index = 0;
+  uint32_t subgraph_vertex_index = 0;
+  for (id_t vertex_id = 0; vertex_id < graph->vertex_count; vertex_id++) {
+    if (mask[vertex_id]) {
+      subgraph->vertices[subgraph_vertex_index] = subgraph_edge_index;
+      if (subgraph->valued) {
+        subgraph->values[subgraph_vertex_index] = graph->values[vertex_id];
+      }
+      subgraph_vertex_index++;
+
+      for (uint32_t i = graph->vertices[vertex_id]; 
+           i < graph->vertices[vertex_id + 1]; i++) {
+        if (mask[graph->edges[i]]) {
+          subgraph->edges[subgraph_edge_index] = map[graph->edges[i]];
+          if (subgraph->weighted) { 
+            subgraph->weights[subgraph_edge_index] = graph->weights[i];
+          }
+          subgraph_edge_index++;
+        }
+      }
+    }
+  }
+  // set the last (fake) vertex
+  subgraph->vertices[subgraph_vertex_index] = subgraph_edge_index;
+
+  // clean up
+  free(map);
+
+  // set output
+  *subgraph_ret = subgraph;
+  return SUCCESS;
 }
 
 error_t graph_finalize(graph_t* graph) {
