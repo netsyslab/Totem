@@ -12,6 +12,27 @@
 #include "totem_comdef.h"
 #include "totem_graph.h"
 
+// Virtual warp paramters. Virtual warp is a technique to reduce thread
+// divergence among threads within a warp. The idea is to have all the 
+// threads that belong to a warp work as a unit. In other words, instead
+// of dividing the work among threads, the work is divided among warps.
+// a warp goes through phases of SISD and SIMD in complete lock-step as
+// if they are all a single thread.
+// The technique divides the work into batches, were each warp is responsible
+// for one batch of work. Typically, the threads of a warp collaborate to fetch 
+// their assigned batch data to shared memory, and together process the batch.
+// The technique is presented in [Hong11] S. Hong, S. Kim, T. Oguntebi and 
+// K.Olukotun "Accelerating CUDA Graph Algorithms at Maximum Warp, PPoPP11.
+
+/**
+ * the size of the batch of work assigned to each virtual warp
+ */
+#define VWARP_BATCH_SIZE 16
+/**
+ * the number of threads a warp consists of
+ */
+#define VWARP_WARP_SIZE 8
+
 /**
  * A templatized version of memset for device buffers, the assumption is that
  * the caller will dispatch a number of threads at least equal to "size"
@@ -116,14 +137,25 @@ inline error_t graph_initialize_device(const graph_t* graph_h,
   *graph_d = (graph_t*)malloc(sizeof(graph_t));
   if (*graph_d == NULL) return FAILURE;
 
-  /* Copy basic data types within the structure, the buffers pointers will be
-     overwritten next with device pointers */
+  // Copy basic data types within the structure, the buffers pointers will be
+  // overwritten next with device pointers
   **graph_d = *graph_h;
 
-  /* Allocate vertices, edges and weights device buffers and move them to
-     the device. */
+  // Vertices will be processed by each warp in batches. To avoid explicitly 
+  // checking for end of array boundaries, the vertices array is padded with
+  // fake vertices so that its length is multiple of batch size. The fake 
+  // vertices has no edges and they don't count in the vertex_count (much
+  // like the extra vertex we used to have which enables calculating the number
+  // of neighbors for the last vertex). Note that this padding does not affect
+  // the algorithms that does not apply the virtual warp technique.
+  uint64_t vertex_count_batch_padded = 
+    (((graph_h->vertex_count / VWARP_BATCH_SIZE) + 
+      (graph_h->vertex_count % VWARP_BATCH_SIZE == 0 ? 0 : 1)) *
+     VWARP_BATCH_SIZE);
+
+  // Allocate device buffers
   CHK_CU_SUCCESS(cudaMalloc((void**)&(*graph_d)->vertices,
-                            (graph_h->vertex_count + 1) *
+                            (vertex_count_batch_padded + 1) * 
                             sizeof(id_t)), err);
   CHK_CU_SUCCESS(cudaMalloc((void**)&(*graph_d)->edges, graph_h->edge_count *
                             sizeof(id_t)), err_free_vertices);
@@ -133,6 +165,7 @@ inline error_t graph_initialize_device(const graph_t* graph_h,
                    err_free_edges);
   }
   
+  // Move data to the GPU
   CHK_CU_SUCCESS(cudaMemcpy((*graph_d)->vertices, graph_h->vertices,
                             (graph_h->vertex_count + 1) * sizeof(id_t),
                             cudaMemcpyHostToDevice), err_free_weights);
@@ -145,6 +178,19 @@ inline error_t graph_initialize_device(const graph_t* graph_h,
                               cudaMemcpyHostToDevice), err_free_weights);
   }
   
+  // Set the index of the extra vertices to the last actual vertex. This
+  // renders the padded fake vertices with zero edges.
+  int pad_size;
+  pad_size = vertex_count_batch_padded - graph_h->vertex_count;
+  if (pad_size > 0) {
+    dim3 blocks, threads_per_block;
+    KERNEL_CONFIGURE(pad_size, blocks, threads_per_block);
+    memset_device<<<blocks, threads_per_block>>>
+      (&((*graph_d)->vertices[graph_h->vertex_count + 1]), 
+       graph_h->vertices[graph_h->vertex_count], pad_size);
+    CHK_CU_SUCCESS(cudaGetLastError(), err_free_weights);
+  }
+
   return SUCCESS;
   
  err_free_weights:
