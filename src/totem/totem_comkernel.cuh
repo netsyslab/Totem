@@ -1,5 +1,12 @@
 /**
- *  Defines a set of convenience kernels
+ * This header includes common constants, macros and functions used to deal
+ * with the GPU.
+ * This includes (i) device utility functions (i.e., used only from within a 
+ * kernel) such as double precision atomicMin and atomicAdd, (ii) utility 
+ * functions to allocate, copy and free a device resident graph structure (e.g.,
+ * graph_initialize_device and graph_finalize_device), (iii) utility kernels
+ * such as memset_device and (iv) common constants and functions related to the
+ * virtual warp technique (described below).
  *
  *  Created on: 2011-03-07
  *  Author: Abdullah Gharaibeh
@@ -12,26 +19,54 @@
 #include "totem_comdef.h"
 #include "totem_graph.h"
 
-// Virtual warp paramters. Virtual warp is a technique to reduce thread
-// divergence among threads within a warp. The idea is to have all the 
-// threads that belong to a warp work as a unit. In other words, instead
-// of dividing the work among threads, the work is divided among warps.
-// a warp goes through phases of SISD and SIMD in complete lock-step as
-// if they are all a single thread.
-// The technique divides the work into batches, were each warp is responsible
+// Virtual warp paramters. Virtual warp is a technique to reduce divergence 
+// among threads within a warp. The idea is to have all the threads that
+// belong to a warp work as a unit. To this end, instead of dividing the work
+// among threads, the work is divided among warps. A warp goes through phases of
+// SISD and SIMD in complete lock-step as if they were all a single thread.
+// The technique divides the work into batches, where each warp is responsible
 // for one batch of work. Typically, the threads of a warp collaborate to fetch 
 // their assigned batch data to shared memory, and together process the batch.
 // The technique is presented in [Hong11] S. Hong, S. Kim, T. Oguntebi and 
 // K.Olukotun "Accelerating CUDA Graph Algorithms at Maximum Warp, PPoPP11.
 
 /**
- * the size of the batch of work assigned to each virtual warp
- */
-#define VWARP_BATCH_SIZE 16
-/**
  * the number of threads a warp consists of
  */
 #define VWARP_WARP_SIZE 8
+
+/**
+ * the size of the batch of work assigned to each virtual warp
+ */
+#define VWARP_BATCH_SIZE 16
+
+/**
+ * number of batches of size "VWARP_BATCH_SIZE" vertices
+ */
+#define VWARP_BATCH_COUNT(vertex_count) \
+  (((vertex_count) / VWARP_BATCH_SIZE) + \
+   ((vertex_count) % VWARP_BATCH_SIZE == 0 ? 0 : 1))
+
+/**
+ * A SIMD version of memcpy for the virtual warp technique. The assumption is
+ * that the threads of a warp invoke this function to copy their batch of work 
+ * from global memory (src) to shared memory (dst). In each iteration of the for
+ * loop, each thread copies one element. For example, thread 0 in the warp 
+ * copies elements 0, VWARP_WARP_SIZE, (2 * VWARP_WARP_SIZE) etc., while thread 
+ * thread 1 in the warp copies elements 1, (1 + VWARP_WARP_SIZE), 
+ * (1 + 2 * VWARP_WARP_SIZE) and so on. Finally, this function is called only 
+ * from within a kernel.
+ * @param[in] dst destination buffer (typically shared memory buffer)
+ * @param[in] src the source buffer (typically global memory buffer)
+ * @param[in] size number of elements to copy
+ * @param[in] thread_offset_in_warp thread index within its warp
+ */
+template<typename T> 
+__device__ void vwarp_memcpy(T* dst, T* src, uint32_t size, 
+                             uint32_t thread_offset_in_warp) {
+  for(int i = thread_offset_in_warp; i < size; i += VWARP_WARP_SIZE) 
+    dst[i] = src[i];
+}
 
 /**
  * A templatized version of memset for device buffers, the assumption is that
@@ -42,13 +77,8 @@
  */
 template<typename T>
 __global__ void memset_device(T* buffer, T value, uint32_t size) {
-
   uint32_t index = THREAD_GLOBAL_INDEX;
-
-  if (index >= size) {
-    return;
-  }
-
+  if (index >= size) return;
   buffer[index] = value;
 }
 
@@ -147,11 +177,9 @@ inline error_t graph_initialize_device(const graph_t* graph_h,
   // vertices has no edges and they don't count in the vertex_count (much
   // like the extra vertex we used to have which enables calculating the number
   // of neighbors for the last vertex). Note that this padding does not affect
-  // the algorithms that does not apply the virtual warp technique.
-  uint64_t vertex_count_batch_padded = 
-    (((graph_h->vertex_count / VWARP_BATCH_SIZE) + 
-      (graph_h->vertex_count % VWARP_BATCH_SIZE == 0 ? 0 : 1)) *
-     VWARP_BATCH_SIZE);
+  // the algorithms that do not apply the virtual warp technique.
+  uint64_t vertex_count_batch_padded = VWARP_BATCH_SIZE *
+    VWARP_BATCH_COUNT(graph_h->vertex_count);
 
   // Allocate device buffers
   CHK_CU_SUCCESS(cudaMalloc((void**)&(*graph_d)->vertices,
