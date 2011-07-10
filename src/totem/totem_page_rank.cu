@@ -44,6 +44,24 @@
 #define DAMPING_FACTOR 0.85
 
 /**
+ * Sum the rank of the neighbors.
+ * @param[in] graph the graph to apply page rank on
+ * @param[in] rank an array storing the current rank of each vertex in the graph
+ * @return sum of neighbors' ranks
+ */
+inline __device__ 
+double sum_neighbors_ranks(graph_t* graph, id_t vertex_id, float* ranks) {
+  //id_t vertex_id = THREAD_GLOBAL_INDEX;
+  double sum = 0;
+  for (uint64_t i = graph->vertices[vertex_id];
+       i < graph->vertices[vertex_id + 1]; i++) {
+    const id_t neighbor = graph->edges[i];
+    sum += ranks[neighbor];
+  }
+  return sum;
+}
+
+/**
  * The PageRank kernel. Based on the algorithm described in [Malewicz2010].
  * For each round, each vertex broadcasts along each outgoing edge its tentative
  * PageRank divided by the number of outgoing edges. The tentative PageRank of
@@ -62,26 +80,34 @@
  * @param[in] outbox messages to be broadcasted in the next round
  */
 __global__
-void page_rank_kernel(graph_t graph, float* inbox, float* outbox,
-                      bool last_round) {
-
+void page_rank_kernel(graph_t graph, float* inbox, float* outbox) {
   // get the thread's linear index
   id_t vertex_id = THREAD_GLOBAL_INDEX;
   if (vertex_id >= graph.vertex_count) return;
-
-  // calculate the sum of all neighbors' rank
-  double sum = 0;
-  for (uint64_t i = graph.vertices[vertex_id];
-       i < graph.vertices[vertex_id + 1]; i++) {
-    const id_t neighbor = graph.edges[i];
-    sum += inbox[neighbor];
-  }
-
-  // calculate my rank
+  // get sum of neighbors' ranks
+  double sum = sum_neighbors_ranks(&graph, vertex_id, inbox);
+  // calculate my normalized rank
   float my_rank =
     ((1 - DAMPING_FACTOR) / graph.vertex_count) + (DAMPING_FACTOR * sum);
-  outbox[vertex_id] = last_round? my_rank: my_rank /
+  outbox[vertex_id] =  my_rank /
     (graph.vertices[vertex_id + 1] - graph.vertices[vertex_id]);
+}
+
+/**
+ * This kernel is similar to the main page_rank_kernel. The difference is that
+ * it does not normalize the rank by dividing it by the number of neighbors. It 
+ * is invoked in the end to get the final, un-normalized, rank of each vertex.
+ */
+__global__
+void page_rank_final_kernel(graph_t graph, float* inbox, float* outbox) {
+  // get the thread's linear index
+  id_t vertex_id = THREAD_GLOBAL_INDEX;
+  if (vertex_id >= graph.vertex_count) return;
+  // get sum of neighbors' ranks
+  double sum = sum_neighbors_ranks(&graph, vertex_id, inbox);
+  // calculate my rank
+  outbox[vertex_id] = 
+    ((1 - DAMPING_FACTOR) / graph.vertex_count) + (DAMPING_FACTOR * sum);
 }
 
 error_t page_rank_gpu(graph_t* graph, float** rank) {
@@ -132,34 +158,32 @@ error_t page_rank_gpu(graph_t* graph, float** rank) {
   float initial_value;
   initial_value = 1 / (float)graph->vertex_count;
   memset_device<<<blocks, threads_per_block>>>
-    (outbox_d, initial_value, graph->vertex_count);
+    (inbox_d, initial_value, graph->vertex_count);
   CHK_CU_SUCCESS(cudaGetLastError(), err_free_outbox);
 
-  for (uint32_t round = 0; round < PAGE_RANK_ROUNDS; round++) {
+  for (uint32_t round = 0; round < PAGE_RANK_ROUNDS - 1; round++) {
+    // call the kernel
+    page_rank_kernel<<<blocks, threads_per_block>>>
+      (*graph_d, inbox_d, outbox_d);
+    CHK_CU_SUCCESS(cudaGetLastError(), err_free_outbox);
+
     // swap the inbox and outbox pointers (simulates passing messages)
     float* tmp = inbox_d;
     inbox_d = outbox_d;
     outbox_d = tmp;
-
-    // call the kernel
-    bool last_round = (round == (PAGE_RANK_ROUNDS - 1));
-    page_rank_kernel<<<blocks, threads_per_block>>>
-      (*graph_d, inbox_d, outbox_d, last_round);
-    CHK_CU_SUCCESS(cudaGetLastError(), err_free_outbox);
-
-    cudaThreadSynchronize();
-    CHK_CU_SUCCESS(cudaGetLastError(), err_free_outbox);
   }
+  page_rank_final_kernel<<<blocks, threads_per_block>>>
+    (*graph_d, inbox_d, outbox_d);
+  CHK_CU_SUCCESS(cudaGetLastError(), err_free_outbox);
+  cudaThreadSynchronize();
 
   // copy back the final result from the outbox
-  float* my_rank;
-  my_rank = (float*)mem_alloc(graph->vertex_count * sizeof(float));
-  CHK_CU_SUCCESS(cudaMemcpy(my_rank, outbox_d, graph->vertex_count * 
+  *rank = (float*)mem_alloc(graph->vertex_count * sizeof(float));
+  CHK_CU_SUCCESS(cudaMemcpy(*rank, outbox_d, graph->vertex_count * 
                             sizeof(float), cudaMemcpyDeviceToHost), 
                  err_free_all);
 
   // we are done! set the output and clean up
-  *rank = my_rank;
   cudaFree(outbox_d);
   cudaFree(inbox_d);
   graph_finalize_device(graph_d);
