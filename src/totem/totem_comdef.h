@@ -48,62 +48,6 @@ typedef double stopwatch_t;
 #define PRIVATE static
 
 /**
- * Determines the maximum number of threads per block.
- */
-#define MAX_THREADS_PER_BLOCK 128
-
-/**
- * Determines the maximum number of dimensions of a grid block.
- */
-#define MAX_BLOCK_DIMENSION 2
-
-/**
- * Determines the maximum number of blocks that fit in a grid dimension.
- */
-#define MAX_BLOCK_PER_DIMENSION 1024
-
-/**
- * Determines the maximum number of threads a kernel can be configured with.
- */
-#define MAX_THREAD_COUNT \
-  MAX_THREADS_PER_BLOCK * pow(MAX_BLOCK_PER_DIMENSION, MAX_BLOCK_DIMENSION)
-
-/**
- * Computes a kernel configuration based on the number of vertices.
- * It assumes a 2D grid. vertex_count is input paramter, while blocks
- * and threads_per_block are output of type dim3.
- */
-#define KERNEL_CONFIGURE(vertex_count, blocks, threads_per_block)       \
-  do {                                                                  \
-    assert(vertex_count <= MAX_THREAD_COUNT);                           \
-    threads_per_block = (vertex_count) >= MAX_THREADS_PER_BLOCK ?       \
-      MAX_THREADS_PER_BLOCK : vertex_count;                             \
-    uint32_t blocks_left = (((vertex_count) % MAX_THREADS_PER_BLOCK == 0) ? \
-                            (vertex_count) / MAX_THREADS_PER_BLOCK :    \
-                            (vertex_count) / MAX_THREADS_PER_BLOCK + 1); \
-    uint32_t x_blocks = (blocks_left >= MAX_BLOCK_PER_DIMENSION) ?      \
-      MAX_BLOCK_PER_DIMENSION : blocks_left;                            \
-    blocks_left = (((blocks_left) % x_blocks == 0) ?                    \
-                   (blocks_left) / x_blocks :                           \
-                   (blocks_left) / x_blocks + 1);                       \
-    uint32_t y_blocks = (blocks_left >= MAX_BLOCK_PER_DIMENSION) ?      \
-      MAX_BLOCK_PER_DIMENSION : blocks_left;                            \
-    dim3 my_blocks(x_blocks, y_blocks);                                 \
-    blocks = my_blocks;                                                 \
-  } while(0)
-
-/**
- * Global linear thread index
- */
-#define THREAD_GLOBAL_INDEX (threadIdx.x + blockDim.x                   \
-                             * (gridDim.x * blockIdx.y + blockIdx.x))
-
-/**
- * Grid scope linear thread index
- */
-#define THREAD_GRID_INDEX (threadIdx.x)
-
-/**
  * A wrapper that asserts the success of totem function calls
  */
 #define CALL_SAFE(func)                         \
@@ -126,20 +70,6 @@ typedef double stopwatch_t;
  * Check if return value of stmt is SUCCESS, jump to label if not.
  */
 #define CHK_SUCCESS(stmt, label) CHK((stmt) == SUCCESS, label)
-
-/**
- * Check if return value of stmt is cudaSuccess, jump to label and print an 
- * error message if not.
- */
-#define CHK_CU_SUCCESS(cuda_call, label)                                \
-  do {                                                                  \
-    if ((cuda_call) != cudaSuccess) {                                   \
-      cudaError_t err = cudaGetLastError();                             \
-      fprintf(stderr, "Cuda Error in file '%s' in line %i : %s.\n",     \
-              __FILE__, __LINE__, cudaGetErrorString(err));             \
-      goto label;                                                       \
-    }                                                                   \
-  } while(0)
 
 /**
  * Converts the string to upper case
