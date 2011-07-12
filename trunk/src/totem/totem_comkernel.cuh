@@ -19,16 +19,17 @@
 #include "totem_comdef.h"
 #include "totem_graph.h"
 
-// Virtual warp paramters. Virtual warp is a technique to reduce divergence 
-// among threads within a warp. The idea is to have all the threads that
-// belong to a warp work as a unit. To this end, instead of dividing the work
-// among threads, the work is divided among warps. A warp goes through phases of
-// SISD and SIMD in complete lock-step as if they were all a single thread.
-// The technique divides the work into batches, where each warp is responsible
-// for one batch of work. Typically, the threads of a warp collaborate to fetch 
-// their assigned batch data to shared memory, and together process the batch.
-// The technique is presented in [Hong11] S. Hong, S. Kim, T. Oguntebi and 
-// K.Olukotun "Accelerating CUDA Graph Algorithms at Maximum Warp, PPoPP11.
+// Virtual warp paramters are prefixed with "vwarp". Virtual warp is a technique
+// to reduce divergence among threads within a warp. The idea is to have all the
+// threads that belong to a warp work as a unit. To this end, instead of 
+// dividing the work among threads, the work is divided among warps. A warp goes
+// through phases of SISD and SIMD in complete lock-step as if they were all a 
+// single thread. The technique divides the work into batches, where each warp 
+// is responsible for one batch of work. Typically, the threads of a warp 
+// collaborate to fetch their assigned batch data to shared memory, and together
+// process the batch. The technique is presented in [Hong11] S. Hong, S. Kim, 
+// T. Oguntebi and K.Olukotun "Accelerating CUDA Graph Algorithms at Maximum 
+// Warp, PPoPP11.
 
 /**
  * the number of threads a warp consists of
@@ -41,11 +42,81 @@
 #define VWARP_BATCH_SIZE 16
 
 /**
+ * Determines the maximum number of threads per block.
+ */
+#define MAX_THREADS_PER_BLOCK 128
+
+/**
+ * Determines the maximum number of dimensions of a grid block.
+ */
+#define MAX_BLOCK_DIMENSION 2
+
+/**
+ * Determines the maximum number of blocks that fit in a grid dimension.
+ */
+#define MAX_BLOCK_PER_DIMENSION 1024
+
+/**
+ * Determines the maximum number of threads a kernel can be configured with.
+ */
+#define MAX_THREAD_COUNT \
+  MAX_THREADS_PER_BLOCK * pow(MAX_BLOCK_PER_DIMENSION, MAX_BLOCK_DIMENSION)
+
+/**
+ * Global linear thread index
+ */
+#define THREAD_GLOBAL_INDEX (threadIdx.x + blockDim.x                   \
+                             * (gridDim.x * blockIdx.y + blockIdx.x))
+
+/**
+ * Grid scope linear thread index
+ */
+#define THREAD_GRID_INDEX (threadIdx.x)
+
+/**
  * number of batches of size "VWARP_BATCH_SIZE" vertices
  */
 #define VWARP_BATCH_COUNT(vertex_count) \
   (((vertex_count) / VWARP_BATCH_SIZE) + \
    ((vertex_count) % VWARP_BATCH_SIZE == 0 ? 0 : 1))
+
+/**
+ * Computes a kernel configuration based on the number of vertices.
+ * It assumes a 2D grid. vertex_count is input paramter, while blocks
+ * and threads_per_block are output of type dim3.
+ */
+#define KERNEL_CONFIGURE(vertex_count, blocks, threads_per_block)       \
+  do {                                                                  \
+    assert(vertex_count <= MAX_THREAD_COUNT);                           \
+    threads_per_block = (vertex_count) >= MAX_THREADS_PER_BLOCK ?       \
+      MAX_THREADS_PER_BLOCK : vertex_count;                             \
+    uint32_t blocks_left = (((vertex_count) % MAX_THREADS_PER_BLOCK == 0) ? \
+                            (vertex_count) / MAX_THREADS_PER_BLOCK :    \
+                            (vertex_count) / MAX_THREADS_PER_BLOCK + 1); \
+    uint32_t x_blocks = (blocks_left >= MAX_BLOCK_PER_DIMENSION) ?      \
+      MAX_BLOCK_PER_DIMENSION : blocks_left;                            \
+    blocks_left = (((blocks_left) % x_blocks == 0) ?                    \
+                   (blocks_left) / x_blocks :                           \
+                   (blocks_left) / x_blocks + 1);                       \
+    uint32_t y_blocks = (blocks_left >= MAX_BLOCK_PER_DIMENSION) ?      \
+      MAX_BLOCK_PER_DIMENSION : blocks_left;                            \
+    dim3 my_blocks(x_blocks, y_blocks);                                 \
+    blocks = my_blocks;                                                 \
+  } while(0)
+
+/**
+ * Check if return value of stmt is cudaSuccess, jump to label and print an 
+ * error message if not.
+ */
+#define CHK_CU_SUCCESS(cuda_call, label)                                \
+  do {                                                                  \
+    if ((cuda_call) != cudaSuccess) {                                   \
+      cudaError_t err = cudaGetLastError();                             \
+      fprintf(stderr, "Cuda Error in file '%s' in line %i : %s.\n",     \
+              __FILE__, __LINE__, cudaGetErrorString(err));             \
+      goto label;                                                       \
+    }                                                                   \
+  } while(0)
 
 /**
  * A SIMD version of memcpy for the virtual warp technique. The assumption is
