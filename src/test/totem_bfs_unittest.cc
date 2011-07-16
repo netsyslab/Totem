@@ -240,7 +240,8 @@ TEST_P(BFSTest, Star) {
 //
 // Values() receives a list of parameters and the framework will execute the
 // whole set of tests BFSTest for each element of Values()
-INSTANTIATE_TEST_CASE_P(BFSGPUAndCPUTest, BFSTest, Values(&bfs_gpu,&bfs_cpu));
+INSTANTIATE_TEST_CASE_P(BFSGPUAndCPUTest, BFSTest, Values(&bfs_cpu, &bfs_gpu,
+                                                          &bfs_vwarp_gpu));
 
 #else
 

@@ -157,6 +157,7 @@ error_t bfs_cpu(id_t source_id, const graph_t* graph, uint32_t** cost);
 
 error_t bfs_gpu(id_t source_id, const graph_t* graph, uint32_t** cost);
 
+error_t bfs_vwarp_gpu(id_t source_id, const graph_t* graph, uint32_t** cost);
 
 /**
  * Given a weighted graph \f$G = (V, E, w)\f$ and a source vertex \f$v\inV\f$,
@@ -179,7 +180,9 @@ error_t dijkstra_gpu(graph_t* graph, id_t source_id,
 /**
  * Implements a version of the simple PageRank algorithm described in
  * [Malewicz 2010] for both CPU and CPU. Algorithm details are described in
- * totem_page_rank.cu.
+ * totem_page_rank.cu. Note that the "incoming" postfixed funtions take into
+ * consideration the incoming edges, while the first two consider the outgoing
+ * edges.
  * @param[in]  graph the graph to run PageRank on
  * @param[out] rank the PageRank output array (must be freed via mem_free)
  * @return generic success or failure
@@ -188,7 +191,9 @@ error_t page_rank_cpu(graph_t* graph, float** rank);
 
 error_t page_rank_gpu(graph_t* graph, float** rank);
 
+error_t page_rank_incoming_cpu(graph_t* graph, float** rank);
 
+error_t page_rank_incoming_gpu(graph_t* graph, float** rank);
 
 /**
  * Given an [un]directed, unweighted graph, a source vertex, and a destination
