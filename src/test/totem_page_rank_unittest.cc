@@ -64,6 +64,10 @@ TEST_P(PageRankTest, Chain) {
   EXPECT_EQ(SUCCESS, graph_initialize(DATA_FOLDER("chain_1000_nodes.totem"),
                                       false, &graph));
 
+  // the graph should be undirected because the test is shared between the 
+  // two versions of the PageRank algorithm: incoming- and outgoing- based.
+  EXPECT_EQ(false, graph->directed);
+
   float* rank = NULL;
   EXPECT_EQ(SUCCESS, page_rank(graph, &rank));
   EXPECT_FALSE(rank == NULL);
@@ -81,6 +85,9 @@ TEST_P(PageRankTest, CompleteGraph) {
   EXPECT_EQ(SUCCESS,
             graph_initialize(DATA_FOLDER("complete_graph_300_nodes.totem"),
                              false, &graph));
+  // the graph should be undirected because the test is shared between the 
+  // two versions of the PageRank algorithm: incoming- and outgoing- based.
+  EXPECT_EQ(false, graph->directed);
 
   float* rank = NULL;
   EXPECT_EQ(SUCCESS, page_rank(graph, &rank));
@@ -100,6 +107,10 @@ TEST_P(PageRankTest, Star) {
             graph_initialize(DATA_FOLDER("star_1000_nodes.totem"),
                              false, &graph));
 
+  // the graph should be undirected because the test is shared between the 
+  // two versions of the PageRank algorithm: incoming- and outgoing- based.
+  EXPECT_EQ(false, graph->directed);
+
   float* rank = NULL;
   EXPECT_EQ(SUCCESS, page_rank(graph, &rank));
   EXPECT_FALSE(rank == NULL);
@@ -118,8 +129,13 @@ TEST_P(PageRankTest, Star) {
 
 // Values() receives a list of parameters and the framework will execute the
 // whole set of tests PageRankTest for each element of Values()
+// TODO(abdullah): both versions of the PageRank algorithm (the incoming- and 
+// outgoing- based) can share the same tests because all the graphs are 
+// undirected. Separate the two for cases where the graphs are directed.
 INSTANTIATE_TEST_CASE_P(PageRankGPUAndCPUTest, PageRankTest,
-                        Values(&page_rank_gpu,&page_rank_cpu));
+                        Values(&page_rank_gpu,&page_rank_cpu, 
+                               &page_rank_incoming_gpu,
+                               &page_rank_incoming_cpu));
 
 #else
 
