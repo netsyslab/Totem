@@ -19,6 +19,20 @@
 #include "totem_graph.h"
 #include "totem_mem.h"
 
+/**
+   This structure is used by the virtual warp-based implementation. It stores a 
+   batch of work. It is typically allocated on shared memory and is processed by
+   a single virtual warp.
+ */
+typedef struct {
+  uint32_t cost[VWARP_BATCH_SIZE];
+  id_t vertices[VWARP_BATCH_SIZE + 1];
+  // the following ensures 64-bit alignment, it assumes that the 
+  // cost and vertices arrays are of 32-bit elements.
+  // TODO(abdullah) a portable way to do this (what if id_t is 64-bit?)
+  int pad; 
+} vwarp_mem_t;
+
 /* This comment describes implementation details of the next two functions.
  Modified from [Harish07].
  Breadth First Search
@@ -56,6 +70,207 @@ void bfs_kernel(graph_t graph, uint32_t level, bool* finished, uint32_t* cost) {
   } // for
 }
 
+/**
+ * The neighbors processing function. This function sets the level of the 
+ * neighbors' vertex to one level more than the vertex. The assumption is that 
+ * the threads of a warp invoke this function to process the warp's batch of 
+ * work. In each iteration of the for loop, each thread processes a neighbor. 
+ * For example, thread 0 in the warp processes neighbors at indices 0, 
+ * VWARP_WARP_SIZE, (2 * VWARP_WARP_SIZE) etc. in the edges array, while thread 
+ * 1 in the warp processes neighbors 1, (1 + VWARP_WARP_SIZE), 
+ * (1 + 2 * VWARP_WARP_SIZE) and so on.
+*/
+__device__
+void vwarp_process_neighbors(int warp_offset, int neighbor_count, id_t* edges, 
+                             uint32_t* cost, int level, bool* finished) {
+  for(int i = warp_offset; i < neighbor_count; i += VWARP_WARP_SIZE) {
+    int neighbor_id = edges[i];
+    if (cost[neighbor_id] == INFINITE) {
+      cost[neighbor_id] = level + 1;
+      *finished = false;
+    } 
+  }
+}
+
+/**
+ * A warp-based implementation of the BFS kernel. Please refer to the 
+ * description of the warp technique for details. Also, please refer to
+ * bfs_kernel for details on the BFS implementation. 
+ */
+__global__
+void vwarp_bfs_kernel(graph_t graph, uint32_t level, bool* finished,
+                      uint32_t* cost, uint32_t thread_count) {
+
+  if (THREAD_GLOBAL_INDEX >= thread_count) return;
+
+  int warp_offset = THREAD_GLOBAL_INDEX % VWARP_WARP_SIZE;
+  int warp_id     = THREAD_GLOBAL_INDEX / VWARP_WARP_SIZE;
+  
+  __shared__ vwarp_mem_t shared_memory[(MAX_THREADS_PER_BLOCK / 
+                                        VWARP_WARP_SIZE)];
+  vwarp_mem_t* my_space = shared_memory + (THREAD_GRID_INDEX / VWARP_WARP_SIZE);
+
+  // copy my work to local space
+  int v_ = warp_id * VWARP_BATCH_SIZE;
+  vwarp_memcpy(my_space->cost, &cost[v_], VWARP_BATCH_SIZE, warp_offset);
+  vwarp_memcpy(my_space->vertices, &(graph.vertices[v_]), VWARP_BATCH_SIZE + 1, 
+               warp_offset);
+
+  // iterate over my work
+  for(uint32_t v = 0; v < VWARP_BATCH_SIZE; v++) {
+    if (my_space->cost[v] == level) {
+      int neighbor_count = my_space->vertices[v + 1] - my_space->vertices[v];
+      id_t* neighbors = &(graph.edges[my_space->vertices[v]]);
+      vwarp_process_neighbors(warp_offset, neighbor_count, neighbors, cost, 
+                              level, finished);
+    }
+  }
+}
+
+/**
+ * A modified version of bfs_kernel_warp kernel that does not use shared memory.
+ * this is a drop-in replacement for the vwarp_bfs_kernel kernel.
+ * TODO(Abdullah) This kernel is not currently in use, will be used once we have
+ * an elegant soultion for the multi-version algorithms.
+*/
+__global__
+void vwarp_bfs_kernel_no_shared(graph_t graph, uint32_t level, bool* finished, 
+                                uint32_t* cost, uint32_t thread_count) {
+
+  if (THREAD_GLOBAL_INDEX >= thread_count) return;
+
+  int warp_offset = THREAD_GLOBAL_INDEX % VWARP_WARP_SIZE;
+  int warp_id     = THREAD_GLOBAL_INDEX / VWARP_WARP_SIZE;
+  
+  // iterate over my work
+  int batch_offset = warp_id * VWARP_BATCH_SIZE;
+  for(uint64_t v = batch_offset; v < (VWARP_BATCH_SIZE + batch_offset); v++) {
+    if (cost[v] == level) {
+      int neighbor_count = graph.vertices[v + 1] - graph.vertices[v];
+      id_t* neighbors = &(graph.edges[graph.vertices[v]]);
+      vwarp_process_neighbors(warp_offset, neighbor_count, neighbors, cost,
+                              level, finished);
+    }
+  }
+}
+
+
+/**
+ * A common initialization function for GPU implementations. It allocates and 
+ * initalizes state on the GPU
+*/
+PRIVATE 
+error_t bfs_gpu_initialize(const graph_t* graph, id_t source_id, 
+                           uint64_t cost_len, graph_t** graph_d, 
+                           uint32_t** cost_d, bool** finished_d) {
+
+  // TODO(lauro) Next four lines are not directly related to this function and
+  // should have a better location.
+  dim3 blocks;
+  dim3 threads_per_block;
+
+  // Create graph on GPU memory.
+  CHK_SUCCESS(graph_initialize_device(graph, graph_d), err);
+
+  // Create cost array only on GPU.
+  CHK_CU_SUCCESS(cudaMalloc((void**) cost_d, cost_len * sizeof(uint32_t)),
+                 err_free_graph_d);
+
+  // Initialize cost to INFINITE.
+  KERNEL_CONFIGURE(cost_len, blocks, threads_per_block);
+  memset_device<<<blocks, threads_per_block>>>((*cost_d), INFINITE, cost_len);
+
+  // For the source vertex, initialize cost.
+  CHK_CU_SUCCESS(cudaMemset(&((*cost_d)[source_id]), 0, sizeof(uint32_t)),
+                 err_free_cost_d_graph_d);
+
+  // Allocate the termination flag
+  CHK_CU_SUCCESS(cudaMalloc((void**) finished_d, sizeof(bool)),
+                 err_free_cost_d_graph_d);
+
+  return SUCCESS;
+
+  err_free_cost_d_graph_d:
+    cudaFree(cost_d);
+  err_free_graph_d:
+    graph_finalize_device(*graph_d);
+  err:
+    return FAILURE;
+}
+
+/**
+ * A common finalize function for GPU implementations. It allocates the host
+ * output buffer, moves the final results from GPU to the host buffers and
+ * frees up some resources.
+*/
+PRIVATE 
+error_t bfs_gpu_finalize(graph_t* graph_d, uint32_t* cost_d, uint32_t** cost) {
+  *cost = (uint32_t*) mem_alloc(graph_d->vertex_count * sizeof(uint32_t));
+  CHK_CU_SUCCESS(cudaMemcpy(*cost, cost_d, graph_d->vertex_count *
+                            sizeof(uint32_t), cudaMemcpyDeviceToHost), err);
+  graph_finalize_device(graph_d);
+  cudaFree(cost_d);
+  return SUCCESS;
+ err:
+  return FAILURE;
+}
+
+__host__
+error_t bfs_vwarp_gpu(id_t source_id, const graph_t* graph, uint32_t** cost) {
+  // TODO(lauro,abdullah): Factor out a validate graph function.
+  if((graph == NULL) || (source_id >= graph->vertex_count)) {
+    *cost = NULL;
+    return FAILURE;
+  } else if(graph->vertex_count == 1) {
+    *cost = (uint32_t*) mem_alloc(sizeof(uint32_t));
+    *cost[0] = 0;
+    return SUCCESS;
+  }
+  // TODO(lauro): More optimizations can be performed here. For example, if
+  // there is no edge. It can return the cost array initialize as INFINITE.
+
+  // Create and initialize state on GPU
+  graph_t* graph_d;
+  uint32_t* cost_d;
+  uint64_t cost_length;
+  bool* finished_d;
+  cost_length = VWARP_BATCH_SIZE * VWARP_BATCH_COUNT(graph->vertex_count);
+  CHK_SUCCESS(bfs_gpu_initialize(graph, source_id, cost_length, &graph_d, 
+                                 &cost_d, &finished_d), err_free_all);
+
+  // {} used to limit scope and avoid problems with error handles.
+  {
+  // Configure the kernel's threads and on-chip memory. On-ship memory is 
+  // configured as shared memory rather than L1 cache
+  dim3 blocks;
+  dim3 threads_per_block;
+  int thread_count = VWARP_WARP_SIZE * VWARP_BATCH_COUNT(graph->vertex_count);
+  KERNEL_CONFIGURE(thread_count, blocks, threads_per_block);
+  cudaFuncSetCacheConfig(vwarp_bfs_kernel, cudaFuncCachePreferShared);
+  bool finished = false;
+  // while the current level has vertices to be processed.
+  for (uint32_t level = 0; !finished; level++) {
+    CHK_CU_SUCCESS(cudaMemset(finished_d, true, 1), err_free_all);
+    vwarp_bfs_kernel<<<blocks, threads_per_block>>>(*graph_d, level, finished_d,
+                                                    cost_d, thread_count);
+    CHK_CU_SUCCESS(cudaGetLastError(), err_free_all);
+    CHK_CU_SUCCESS(cudaMemcpy(&finished, finished_d, sizeof(bool),
+                              cudaMemcpyDeviceToHost), err_free_all);
+  }
+  }
+
+  CHK_SUCCESS(bfs_gpu_finalize(graph_d, cost_d, cost), err_free_all);
+  return SUCCESS;
+
+  // error handlers
+  err_free_all:
+    cudaFree(finished_d);
+    cudaFree(cost_d);
+    graph_finalize_device(graph_d);
+    *cost = NULL;
+    return FAILURE;
+}
+
 __host__
 error_t bfs_gpu(id_t source_id, const graph_t* graph, uint32_t** cost) {
   // TODO(lauro,abdullah): Factor out a validate graph function.
@@ -70,65 +285,39 @@ error_t bfs_gpu(id_t source_id, const graph_t* graph, uint32_t** cost) {
   // TODO(lauro): More optimizations can be performed here. For example, if
   // there is no edge. It can return the cost array initialize as INFINITE.
 
-  // TODO(lauro) Next four lines are not directly related to this function and
-  // should have a better location.
+  // Create and initialize state on GPU
+  graph_t* graph_d;
+  uint32_t* cost_d;
+  bool* finished_d;
+  CHK_SUCCESS(bfs_gpu_initialize(graph, source_id, graph->vertex_count, 
+                                 &graph_d, &cost_d, &finished_d), err_free_all);
+
+  // {} used to limit scope and avoid problems with error handles.
+  {
   dim3 blocks;
   dim3 threads_per_block;
   KERNEL_CONFIGURE(graph->vertex_count, blocks, threads_per_block);
-  //TODO(abdullah, lauro) handle the case (vertex_count > number of threads).
-  assert(graph->vertex_count <= MAX_THREAD_COUNT);
-
-  // Create graph on GPU memory.
-  graph_t* graph_d;
-  CHK_SUCCESS(graph_initialize_device(graph, &graph_d), err);
-
-  // Create cost array only on GPU.
-  uint32_t* cost_d;
-  CHK_CU_SUCCESS(cudaMalloc((void**) &cost_d,
-                            graph->vertex_count * sizeof(uint32_t)),
-                 err_free_graph_d);
-
-  // Initialize cost to INFINITE.
-  memset_device<<<blocks, threads_per_block>>>(cost_d, INFINITE,
-                                               graph->vertex_count);
-
-  // For the source vertex, initialize cost.
-  CHK_CU_SUCCESS(cudaMemset(&(cost_d[source_id]), 0, sizeof(uint32_t)),
-                 err_free_cost_d_graph_d);
-
+  bool finished = false;
   // while the current level has vertices to be processed.
-  // {} used to limit scope and avoid problems with error handles.
-  bool* finished_d;
-  {bool finished = false;
-  CHK_CU_SUCCESS(cudaMalloc((void**) &finished_d, sizeof(bool)),
-                 err_free_cost_d_graph_d);
-
-  for (uint32_t level = 0; !finished; level++) {
+  for (uint32_t level = 0; !finished; level++) {    
     CHK_CU_SUCCESS(cudaMemset(finished_d, true, 1), err_free_all);
     // for each vertex V in parallel do
     bfs_kernel<<<blocks, threads_per_block>>>(*graph_d, level, finished_d,
                                               cost_d);
+    CHK_CU_SUCCESS(cudaGetLastError(), err_free_all);
     CHK_CU_SUCCESS(cudaMemcpy(&finished, finished_d, sizeof(bool),
                               cudaMemcpyDeviceToHost), err_free_all);
   }}
 
-  *cost = (uint32_t*) mem_alloc(graph->vertex_count * sizeof(uint32_t));
-  CHK_CU_SUCCESS(cudaMemcpy(*cost, cost_d, graph->vertex_count *
-                            sizeof(uint32_t), cudaMemcpyDeviceToHost),
-                 err_free_all);
-
-  graph_finalize_device(graph_d);
-  cudaFree(cost_d);
+  // We are done, get the results back and clean up state
+  CHK_CU_SUCCESS(bfs_gpu_finalize(graph_d, cost_d, cost), err_free_all);
   return SUCCESS;
 
   // error handlers
   err_free_all:
     cudaFree(finished_d);
-  err_free_cost_d_graph_d:
     cudaFree(cost_d);
-  err_free_graph_d:
     graph_finalize_device(graph_d);
-  err:
     *cost = NULL;
     return FAILURE;
 }
