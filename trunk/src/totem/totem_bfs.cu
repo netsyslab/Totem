@@ -33,6 +33,60 @@ typedef struct {
   int pad; 
 } vwarp_mem_t;
 
+/**
+ * A common initialization function for GPU implementations. It allocates and 
+ * initalizes state on the GPU
+*/
+PRIVATE 
+error_t initialize_gpu(const graph_t* graph, id_t source_id, uint64_t cost_len, 
+                       graph_t** graph_d, uint32_t** cost_d, 
+                       bool** finished_d) {
+
+  // TODO(lauro) Next four lines are not directly related to this function and
+  // should have a better location.
+  dim3 blocks;
+  dim3 threads_per_block;
+
+  // Allocate space on GPU
+  CHK_SUCCESS(graph_initialize_device(graph, graph_d), err);
+  CHK_CU_SUCCESS(cudaMalloc((void**) cost_d, cost_len * sizeof(uint32_t)),
+                 err_free_graph_d);
+  // Initialize cost to INFINITE.
+  KERNEL_CONFIGURE(cost_len, blocks, threads_per_block);
+  memset_device<<<blocks, threads_per_block>>>((*cost_d), INFINITE, cost_len);
+  // For the source vertex, initialize cost.
+  CHK_CU_SUCCESS(cudaMemset(&((*cost_d)[source_id]), 0, sizeof(uint32_t)),
+                 err_free_cost_d_graph_d);
+  // Allocate the termination flag
+  CHK_CU_SUCCESS(cudaMalloc((void**) finished_d, sizeof(bool)),
+                 err_free_cost_d_graph_d);
+  return SUCCESS;
+
+  err_free_cost_d_graph_d:
+    cudaFree(cost_d);
+  err_free_graph_d:
+    graph_finalize_device(*graph_d);
+  err:
+    return FAILURE;
+}
+
+/**
+ * A common finalize function for GPU implementations. It allocates the host
+ * output buffer, moves the final results from GPU to the host buffers and
+ * frees up some resources.
+*/
+PRIVATE 
+error_t finalize_gpu(graph_t* graph_d, uint32_t* cost_d, uint32_t** cost) {
+  *cost = (uint32_t*) mem_alloc(graph_d->vertex_count * sizeof(uint32_t));
+  CHK_CU_SUCCESS(cudaMemcpy(*cost, cost_d, graph_d->vertex_count *
+                            sizeof(uint32_t), cudaMemcpyDeviceToHost), err);
+  graph_finalize_device(graph_d);
+  cudaFree(cost_d);
+  return SUCCESS;
+ err:
+  return FAILURE;
+}
+
 /* This comment describes implementation details of the next two functions.
  Modified from [Harish07].
  Breadth First Search
@@ -154,67 +208,6 @@ void vwarp_bfs_kernel_no_shared(graph_t graph, uint32_t level, bool* finished,
   }
 }
 
-
-/**
- * A common initialization function for GPU implementations. It allocates and 
- * initalizes state on the GPU
-*/
-PRIVATE 
-error_t bfs_gpu_initialize(const graph_t* graph, id_t source_id, 
-                           uint64_t cost_len, graph_t** graph_d, 
-                           uint32_t** cost_d, bool** finished_d) {
-
-  // TODO(lauro) Next four lines are not directly related to this function and
-  // should have a better location.
-  dim3 blocks;
-  dim3 threads_per_block;
-
-  // Create graph on GPU memory.
-  CHK_SUCCESS(graph_initialize_device(graph, graph_d), err);
-
-  // Create cost array only on GPU.
-  CHK_CU_SUCCESS(cudaMalloc((void**) cost_d, cost_len * sizeof(uint32_t)),
-                 err_free_graph_d);
-
-  // Initialize cost to INFINITE.
-  KERNEL_CONFIGURE(cost_len, blocks, threads_per_block);
-  memset_device<<<blocks, threads_per_block>>>((*cost_d), INFINITE, cost_len);
-
-  // For the source vertex, initialize cost.
-  CHK_CU_SUCCESS(cudaMemset(&((*cost_d)[source_id]), 0, sizeof(uint32_t)),
-                 err_free_cost_d_graph_d);
-
-  // Allocate the termination flag
-  CHK_CU_SUCCESS(cudaMalloc((void**) finished_d, sizeof(bool)),
-                 err_free_cost_d_graph_d);
-
-  return SUCCESS;
-
-  err_free_cost_d_graph_d:
-    cudaFree(cost_d);
-  err_free_graph_d:
-    graph_finalize_device(*graph_d);
-  err:
-    return FAILURE;
-}
-
-/**
- * A common finalize function for GPU implementations. It allocates the host
- * output buffer, moves the final results from GPU to the host buffers and
- * frees up some resources.
-*/
-PRIVATE 
-error_t bfs_gpu_finalize(graph_t* graph_d, uint32_t* cost_d, uint32_t** cost) {
-  *cost = (uint32_t*) mem_alloc(graph_d->vertex_count * sizeof(uint32_t));
-  CHK_CU_SUCCESS(cudaMemcpy(*cost, cost_d, graph_d->vertex_count *
-                            sizeof(uint32_t), cudaMemcpyDeviceToHost), err);
-  graph_finalize_device(graph_d);
-  cudaFree(cost_d);
-  return SUCCESS;
- err:
-  return FAILURE;
-}
-
 __host__
 error_t bfs_vwarp_gpu(id_t source_id, const graph_t* graph, uint32_t** cost) {
   // TODO(lauro,abdullah): Factor out a validate graph function.
@@ -235,8 +228,8 @@ error_t bfs_vwarp_gpu(id_t source_id, const graph_t* graph, uint32_t** cost) {
   uint64_t cost_length;
   bool* finished_d;
   cost_length = VWARP_BATCH_SIZE * VWARP_BATCH_COUNT(graph->vertex_count);
-  CHK_SUCCESS(bfs_gpu_initialize(graph, source_id, cost_length, &graph_d, 
-                                 &cost_d, &finished_d), err_free_all);
+  CHK_SUCCESS(initialize_gpu(graph, source_id, cost_length, &graph_d, 
+                             &cost_d, &finished_d), err_free_all);
 
   // {} used to limit scope and avoid problems with error handles.
   {
@@ -259,7 +252,7 @@ error_t bfs_vwarp_gpu(id_t source_id, const graph_t* graph, uint32_t** cost) {
   }
   }
 
-  CHK_SUCCESS(bfs_gpu_finalize(graph_d, cost_d, cost), err_free_all);
+  CHK_SUCCESS(finalize_gpu(graph_d, cost_d, cost), err_free_all);
   return SUCCESS;
 
   // error handlers
@@ -289,8 +282,8 @@ error_t bfs_gpu(id_t source_id, const graph_t* graph, uint32_t** cost) {
   graph_t* graph_d;
   uint32_t* cost_d;
   bool* finished_d;
-  CHK_SUCCESS(bfs_gpu_initialize(graph, source_id, graph->vertex_count, 
-                                 &graph_d, &cost_d, &finished_d), err_free_all);
+  CHK_SUCCESS(initialize_gpu(graph, source_id, graph->vertex_count, 
+                             &graph_d, &cost_d, &finished_d), err_free_all);
 
   // {} used to limit scope and avoid problems with error handles.
   {
@@ -310,7 +303,7 @@ error_t bfs_gpu(id_t source_id, const graph_t* graph, uint32_t** cost) {
   }}
 
   // We are done, get the results back and clean up state
-  CHK_CU_SUCCESS(bfs_gpu_finalize(graph_d, cost_d, cost), err_free_all);
+  CHK_SUCCESS(finalize_gpu(graph_d, cost_d, cost), err_free_all);
   return SUCCESS;
 
   // error handlers
