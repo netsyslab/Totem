@@ -20,7 +20,7 @@ using ::testing::Values;
 // totem_bfs_unittest.cc and
 // http://code.google.com/p/googletest/source/browse/trunk/samples/sample7_unittest.cc
 
-typedef error_t(*PageRankFunction)(graph_t*, float**);
+typedef error_t(*PageRankFunction)(graph_t*, float*, float**);
 
 class PageRankTest : public TestWithParam<PageRankFunction> {
  public:
@@ -40,7 +40,7 @@ TEST_P(PageRankTest, Empty) {
   graph.edge_count = 0;
 
   float* rank = NULL;
-  EXPECT_EQ(FAILURE, page_rank(&graph, &rank));
+  EXPECT_EQ(FAILURE, page_rank(&graph, NULL, &rank));
 }
 
 // Tests PageRank for single node graphs.
@@ -50,7 +50,7 @@ TEST_P(PageRankTest, SingleNode) {
                                       false, &graph));
 
   float* rank = NULL;
-  EXPECT_EQ(SUCCESS, page_rank(graph, &rank));
+  EXPECT_EQ(SUCCESS, page_rank(graph, NULL, &rank));
   EXPECT_FALSE(rank == NULL);
   EXPECT_EQ(1, rank[0]);
   mem_free(rank);
@@ -69,7 +69,7 @@ TEST_P(PageRankTest, Chain) {
   EXPECT_EQ(false, graph->directed);
 
   float* rank = NULL;
-  EXPECT_EQ(SUCCESS, page_rank(graph, &rank));
+  EXPECT_EQ(SUCCESS, page_rank(graph, NULL, &rank));
   EXPECT_FALSE(rank == NULL);
   for(id_t vertex = 0; vertex < graph->vertex_count/2; vertex++){
     EXPECT_EQ(rank[vertex], rank[graph->vertex_count - vertex - 1]);
@@ -90,7 +90,7 @@ TEST_P(PageRankTest, CompleteGraph) {
   EXPECT_EQ(false, graph->directed);
 
   float* rank = NULL;
-  EXPECT_EQ(SUCCESS, page_rank(graph, &rank));
+  EXPECT_EQ(SUCCESS, page_rank(graph, NULL, &rank));
   EXPECT_FALSE(rank == NULL);
   for(id_t vertex = 0; vertex < graph->vertex_count; vertex++){
     EXPECT_EQ(rank[0], rank[vertex]);
@@ -112,7 +112,7 @@ TEST_P(PageRankTest, Star) {
   EXPECT_EQ(false, graph->directed);
 
   float* rank = NULL;
-  EXPECT_EQ(SUCCESS, page_rank(graph, &rank));
+  EXPECT_EQ(SUCCESS, page_rank(graph, NULL, &rank));
   EXPECT_FALSE(rank == NULL);
   for(id_t vertex = 1; vertex < graph->vertex_count; vertex++){
     EXPECT_EQ(rank[1], rank[vertex]);
@@ -133,7 +133,7 @@ TEST_P(PageRankTest, Star) {
 // outgoing- based) can share the same tests because all the graphs are 
 // undirected. Separate the two for cases where the graphs are directed.
 INSTANTIATE_TEST_CASE_P(PageRankGPUAndCPUTest, PageRankTest,
-                        Values(&page_rank_gpu,&page_rank_cpu, 
+                        Values(&page_rank_gpu, &page_rank_cpu,
                                &page_rank_incoming_gpu,
                                &page_rank_incoming_cpu));
 

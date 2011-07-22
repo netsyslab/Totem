@@ -184,16 +184,18 @@ error_t dijkstra_gpu(graph_t* graph, id_t source_id,
  * consideration the incoming edges, while the first two consider the outgoing
  * edges.
  * @param[in]  graph the graph to run PageRank on
+ * @param[in]  rank_i the initial rank for each node in the graph (NULL
+ *                    indicates uniform initial rankings as default)
  * @param[out] rank the PageRank output array (must be freed via mem_free)
  * @return generic success or failure
  */
-error_t page_rank_cpu(graph_t* graph, float** rank);
+error_t page_rank_cpu(graph_t* graph, float* rank_i, float** rank);
 
-error_t page_rank_gpu(graph_t* graph, float** rank);
+error_t page_rank_gpu(graph_t* graph, float* rank_i, float** rank);
 
-error_t page_rank_incoming_cpu(graph_t* graph, float** rank);
+error_t page_rank_incoming_cpu(graph_t* graph, float* rank_i, float** rank);
 
-error_t page_rank_incoming_gpu(graph_t* graph, float** rank);
+error_t page_rank_incoming_gpu(graph_t* graph, float* rank_i, float** rank);
 
 /**
  * Given an [un]directed, unweighted graph, a source vertex, and a destination
