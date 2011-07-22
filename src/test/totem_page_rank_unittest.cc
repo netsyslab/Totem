@@ -135,6 +135,7 @@ TEST_P(PageRankTest, Star) {
 INSTANTIATE_TEST_CASE_P(PageRankGPUAndCPUTest, PageRankTest,
                         Values(&page_rank_gpu, &page_rank_cpu,
                                &page_rank_incoming_gpu,
+                               &page_rank_vwarp_incoming_gpu,
                                &page_rank_incoming_cpu));
 
 #else
