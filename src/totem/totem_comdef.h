@@ -101,6 +101,99 @@ inline bool is_numeric(char* str) {
 }
 
 /**
+ * A single precision atomic add. The built in __sync_add_and_fetch function
+ * does not have a floating point version, hence this one.
+ * @param[in] address the content is incremented by val
+ * @param[in] val the value to be added to the content of address
+ * @return old value stored at address
+ */
+inline float __sync_add_and_fetch_float(float* address, float val) {
+  int* address_as_int = (int*)address;
+  int old = *address_as_int, assumed;
+  do {
+    assumed = old;
+    float sum = (val + *((float*)&assumed));
+    old = __sync_val_compare_and_swap(address_as_int, assumed, *((int*)&sum));
+  } while (assumed != old);
+  return *((float *)&old);
+}
+
+/**
+ * A double precision atomic add. The built in __sync_add_and_fetch function
+ * does not have a floating point version, hence this one.
+ * @param[in] address the content is incremented by val
+ * @param[in] val the value to be added to the content of address
+ * @return old value stored at address
+ */
+inline double __sync_add_and_fetch_double(double* address, double val) {
+  int64_t* address_as_int64 = (int64_t*)address;
+  int64_t old = *address_as_int64, assumed;
+  do {
+    assumed = old;
+    double sum = val + (*((double*)&assumed));
+    old = __sync_val_compare_and_swap(address_as_int64, assumed, 
+                                      *((int64_t*)&sum));
+  } while (assumed != old);
+  return *((double *)&old);
+}
+
+/**
+ * Atomic min for int values. Atomically store the minimum of value at address 
+ * and val back at address and returns the old value at address.
+ * @param[in] address stores the minimum of val and old value at address
+ * @param[in] val the value to be compared with
+ * @return old value stored at address
+ */
+inline float __sync_min_and_fetch(int* address, int val) {
+  int old = *address, assumed;
+  do {
+    assumed = old;
+    int min = (val < assumed) ? val : assumed;
+    old = __sync_val_compare_and_swap(address, assumed, min);
+  } while (assumed != old);
+  return old;
+}
+
+/**
+ * A single precision atomic min. Atomically store the minimum of value at 
+ * address and val back at address and returns the old value at address.
+ * @param[in] address stores the minimum of val and old value at address
+ * @param[in] val the value to be compared with
+ * @return old value stored at address
+ */
+inline float __sync_min_and_fetch_float(float* address, float val) {
+  int* address_as_int = (int*)address;
+  int old = *address_as_int, assumed;
+  do {
+    assumed = old;
+    float assumed_float = *((float*)&assumed);
+    float min = (val < assumed_float) ? val : assumed_float;
+    old = __sync_val_compare_and_swap(address_as_int, assumed, *((int*)&min));
+  } while (assumed != old);
+  return *((float *)&old);
+}
+
+/**
+ * A double precision atomic min. Atomically store the minimum of value at 
+ * address and val back at address and returns the old value at address.
+ * @param[in] address stores the minimum of val and old value at address
+ * @param[in] val the value to be compared with
+ * @return old value stored at address
+ */
+inline double __sync_min_and_fetch_double(double* address, double val) {
+  int64_t* address_as_int64 = (int64_t*)address;
+  int64_t old = *address_as_int64, assumed;
+  do {
+    assumed = old;
+    double assumed_double = *((double*)&assumed);
+    double min = (val < assumed_double) ? val : assumed_double;
+    old = __sync_val_compare_and_swap(address_as_int64, assumed, 
+                                      *((int64_t*)&min));
+  } while (assumed != old);
+  return *((double *)&old);
+}
+
+/**
  * Resets the timer to current system time. Called at the moment to
  * start timing an operation.
  * @param[in] stopwatch the stopwatch handler
