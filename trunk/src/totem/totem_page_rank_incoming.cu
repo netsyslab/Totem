@@ -77,8 +77,8 @@ error_t check_special_cases(graph_t* graph, float** rank, bool* finished) {
  * initalizes state on the GPU
 */
 PRIVATE
-error_t initialize_gpu(graph_t* graph, uint64_t rank_length, graph_t** graph_d, 
-                       float **rank_d, float** mailbox_d) {
+error_t initialize_gpu(graph_t* graph, float* rank_i, uint64_t rank_length,
+                       graph_t** graph_d, float **rank_d, float** mailbox_d) {
 
   /* had to define them at the beginning to avoid a compilation problem with
      goto-label error handling mechanism */
@@ -94,28 +94,20 @@ error_t initialize_gpu(graph_t* graph, uint64_t rank_length, graph_t** graph_d,
   CHK_CU_SUCCESS(cudaMalloc((void**)rank_d, rank_length * sizeof(float)), 
                  err_free_mailbox);
 
-  // initialize the rank of each vertex
-  // TODO (elizeu, abdullah): A more realistic version of PageRank could be
-  //                          easily implemented as follows:
-  //                          1. Have a kernel that determines the in-degree of
-  //                             each vertex (i.e., the number of occurrences of
-  //                             each vertex id in the edges array).
-  //                          2. Divide the in-degree by edge_count and set this
-  //                             as the initial rank.
-  //                          The rationale behind this is that vertices with
-  //                          higher in-degree are more likely to be visited by
-  //                          the random surfer.
-  {
-  float initial_value = 1 / (float)graph->vertex_count;
-  KERNEL_CONFIGURE(rank_length, blocks, threads_per_block);
-  memset_device<<<blocks, threads_per_block>>>
-    (*rank_d, initial_value, rank_length);
-  CHK_CU_SUCCESS(cudaGetLastError(), err_free_all);
+  if (rank_i == NULL) {
+    float initial_value = 1 / (float)graph->vertex_count;
+    KERNEL_CONFIGURE(rank_length, blocks, threads_per_block);
+    memset_device<<<blocks, threads_per_block>>>
+        (*rank_d, initial_value, rank_length);
+    CHK_CU_SUCCESS(cudaGetLastError(), err_free_all);
+  } else {
+    CHK_CU_SUCCESS(cudaMemcpy(*rank_d, rank_i, rank_length * sizeof(float),
+        cudaMemcpyHostToDevice), err_free_all);
+  }  
 
   memset_device<<<blocks, threads_per_block>>>
     (*mailbox_d, (float)0.0, graph->vertex_count);
   CHK_CU_SUCCESS(cudaGetLastError(), err_free_all);
-  }
 
   return SUCCESS;
 
@@ -310,7 +302,8 @@ void vwarp_compute_unnormalized_rank_kernel(graph_t graph, float* rank,
 }
 
 __host__
-error_t page_rank_vwarp_incoming_gpu(graph_t* graph, float** rank) {
+error_t page_rank_vwarp_incoming_gpu(graph_t* graph, float* rank_i,\
+                                     float** rank) {
 
   // Check for special cases
   bool finished = false;
@@ -324,7 +317,7 @@ error_t page_rank_vwarp_incoming_gpu(graph_t* graph, float** rank) {
   float* mailbox_d;
   uint64_t rank_length;
   rank_length = VWARP_BATCH_SIZE * VWARP_BATCH_COUNT(graph->vertex_count);
-  CHK_SUCCESS(initialize_gpu(graph, rank_length, &graph_d, &rank_d, 
+  CHK_SUCCESS(initialize_gpu(graph, rank_i, rank_length, &graph_d, &rank_d,
                              &mailbox_d), err);
 
   {// Configure the kernels. Setup the number of threads for phase1 and phase2, 
@@ -370,7 +363,7 @@ error_t page_rank_vwarp_incoming_gpu(graph_t* graph, float** rank) {
 }
 
 __host__
-error_t page_rank_incoming_gpu(graph_t* graph, float** rank) {
+error_t page_rank_incoming_gpu(graph_t* graph, float* rank_i, float** rank) {
 
   // Check for special cases
   bool finished = false;
@@ -383,7 +376,7 @@ error_t page_rank_incoming_gpu(graph_t* graph, float** rank) {
   float* mailbox_d;
   uint64_t rank_length;
   rank_length = VWARP_BATCH_SIZE * VWARP_BATCH_COUNT(graph->vertex_count);
-  CHK_SUCCESS(initialize_gpu(graph, rank_length, &graph_d, &rank_d,
+  CHK_SUCCESS(initialize_gpu(graph, rank_i, rank_length, &graph_d, &rank_d,
                              &mailbox_d), err);
 
   {// Configure the kernel
@@ -420,7 +413,8 @@ error_t page_rank_incoming_gpu(graph_t* graph, float** rank) {
   return FAILURE;
 }
 
-error_t page_rank_incoming_cpu(graph_t* graph, float** rank_ret) {
+error_t page_rank_incoming_cpu(graph_t* graph, float* rank_i,
+                               float** rank_ret) {
 
   // Check for special cases
   bool finished = false;
@@ -432,10 +426,17 @@ error_t page_rank_incoming_cpu(graph_t* graph, float** rank_ret) {
   float* mailbox = (float*)mem_alloc(graph->vertex_count * sizeof(float));
 
   // initialize the rank of each vertex
-  float initial_value = 1 / (float)graph->vertex_count;
-  for (id_t vertex_id = 0; vertex_id < graph->vertex_count; vertex_id++) {
-    rank[vertex_id] = initial_value;
-    mailbox[vertex_id] = 0;
+  if (rank_i == NULL) {
+    float initial_value = 1 / (float)graph->vertex_count;
+    for (id_t vertex_id = 0; vertex_id < graph->vertex_count; vertex_id++) {
+      rank[vertex_id] = initial_value;
+      mailbox[vertex_id] = 0;
+    }
+  } else {
+    for (id_t vertex_id = 0; vertex_id < graph->vertex_count; vertex_id++) {
+      rank[vertex_id] = rank_i[vertex_id];
+      mailbox[vertex_id] = 0;
+    }
   }
 
   for (int round = 0; round < PAGE_RANK_ROUNDS; round++) {

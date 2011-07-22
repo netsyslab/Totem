@@ -44,6 +44,26 @@
 #define DAMPING_FACTOR 0.85
 
 /**
+ * Checks for input parameters and special cases. This is invoked at the
+ * beginning of public interfaces (GPU and CPU)
+*/
+PRIVATE
+error_t check_special_cases(graph_t* graph, float** rank, bool* finished) {
+  *finished = true;
+  if (graph == NULL) {
+    return FAILURE;
+  } else if (graph->vertex_count == 0) {
+    return FAILURE;
+  } else if (graph->vertex_count == 1) {
+    *rank = (float*)mem_alloc(sizeof(float));
+    (*rank)[0] = (float)1.0;
+    return SUCCESS;
+  }
+  *finished = false;
+  return SUCCESS;
+}
+
+/**
  * Sum the rank of the neighbors.
  * @param[in] graph the graph to apply page rank on
  * @param[in] rank an array storing the current rank of each vertex in the graph
@@ -110,16 +130,11 @@ void page_rank_final_kernel(graph_t graph, float* inbox, float* outbox) {
     ((1 - DAMPING_FACTOR) / graph.vertex_count) + (DAMPING_FACTOR * sum);
 }
 
-error_t page_rank_gpu(graph_t* graph, float** rank) {
-  if (graph == NULL) {
-    return FAILURE;
-  } else if (graph->vertex_count == 0) {
-    return FAILURE;
-  } else if (graph->vertex_count == 1) {
-    *rank = (float*)mem_alloc(sizeof(float));
-    (*rank)[0] = (float)1.0;
-    return SUCCESS;
-  }
+error_t page_rank_gpu(graph_t* graph, float *rank_i, float** rank) {
+  // Check for special cases
+  bool finished = false;
+  error_t rc = check_special_cases(graph, rank, &finished);
+  if (finished) return rc;
 
   /* had to define them at the beginning to avoid a compilation problem with
      goto-label error handling mechanism */
@@ -143,23 +158,19 @@ error_t page_rank_gpu(graph_t* graph, float** rank) {
   assert(graph->vertex_count <= MAX_THREAD_COUNT);
   KERNEL_CONFIGURE(graph->vertex_count, blocks, threads_per_block);
 
-  // initialize the rank of each vertex
-  // TODO (elizeu, abdullah): A more realistic version of PageRank could be
-  //                          easily implemented as follows:
-  //                          1. Have a kernel that determines the in-degree of
-  //                             each vertex (i.e., the number of occurrences of
-  //                             each vertex id in the edges array).
-  //                          2. Divide the in-degree by edge_count and set this
-  //                             as the initial rank.
-
-  //                          The rationale behind this is that vertices with
-  //                          higher in-degree are more likely to be visited by
-  //                          the random surfer.
-  float initial_value;
-  initial_value = 1 / (float)graph->vertex_count;
-  memset_device<<<blocks, threads_per_block>>>
-    (inbox_d, initial_value, graph->vertex_count);
-  CHK_CU_SUCCESS(cudaGetLastError(), err_free_outbox);
+  // Initialize the intial state of the random walk (i.e., the initial
+  // probabilities that the random walker will stop at a given node)
+  if (rank_i == NULL) {
+    float initial_value;
+    initial_value = 1 / (float)graph->vertex_count;
+    memset_device<<<blocks, threads_per_block>>>
+        (inbox_d, initial_value, graph->vertex_count);
+    CHK_CU_SUCCESS(cudaGetLastError(), err_free_outbox);
+  } else {
+    CHK_CU_SUCCESS(cudaMemcpy(inbox_d, rank_i,
+        graph->vertex_count * sizeof(float), cudaMemcpyHostToDevice),
+        err_free_outbox);
+  }
 
   for (uint32_t round = 0; round < PAGE_RANK_ROUNDS - 1; round++) {
     // call the kernel
@@ -201,37 +212,27 @@ error_t page_rank_gpu(graph_t* graph, float** rank) {
   return FAILURE;
 }
 
-error_t page_rank_cpu(graph_t* graph, float** rank) {
-  if (graph == NULL) {
-    return FAILURE;
-  } else if (graph->vertex_count == 0) {
-    return FAILURE;
-  } else if (graph->vertex_count == 1) {
-    *rank = (float*)mem_alloc(sizeof(float));
-    (*rank)[0] = (float)1.0;
-    return SUCCESS;
-  }
+error_t page_rank_cpu(graph_t* graph, float *rank_i, float** rank) {
+  // Check for special cases
+  bool finished = false;
+  error_t rc = check_special_cases(graph, rank, &finished);
+  if (finished) return rc;
 
   // allocate buffers
   float* inbox = (float*)mem_alloc(graph->vertex_count * sizeof(float));
   float* outbox = (float*)mem_alloc(graph->vertex_count * sizeof(float));
 
-  // TODO (elizeu, abdullah): A more realistic version of PageRank could be
-  //                          easily implemented as follows:
-  //                          1. Have a kernel that determines the in-degree of
-  //                             each vertex (i.e., the number of occurrences of
-  //                             each vertex id in the edges array).
-  //                          2. Divide the in-degree by edge_count and set this
-  //                             as the initial rank.
-
-  //                          The rationale behind this is that vertices with
-  //                          higher in-degree are more likely to be visited by
-  //                          the random surfer.
   // initialize the rank of each vertex
-  float initial_value;
-  initial_value = 1 / (float)graph->vertex_count;
-  for (id_t vertex_id = 0; vertex_id < graph->vertex_count; vertex_id++) {
-    outbox[vertex_id] = initial_value;
+  if (rank_i == NULL) {
+    float initial_value;
+    initial_value = 1 / (float)graph->vertex_count;
+    for (id_t vertex_id = 0; vertex_id < graph->vertex_count; vertex_id++) {
+      outbox[vertex_id] = initial_value;
+    }
+  } else {
+    for (id_t vertex_id = 0; vertex_id < graph->vertex_count; vertex_id++) {
+      outbox[vertex_id] = rank_i[vertex_id];
+    }
   }
 
   for (int round = 0; round < PAGE_RANK_ROUNDS; round++) {

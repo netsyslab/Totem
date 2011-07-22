@@ -35,6 +35,10 @@ typedef enum {
 typedef struct options_s {
   char* graph_file;
   bool  weighted;
+  id_t  source;
+  id_t  begin_id;
+  id_t  end_id;
+  char* initial_rank_file;
 } options_t;
 
 /**
