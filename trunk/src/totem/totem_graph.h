@@ -197,6 +197,9 @@ error_t page_rank_incoming_cpu(graph_t* graph, float* rank_i, float** rank);
 
 error_t page_rank_incoming_gpu(graph_t* graph, float* rank_i, float** rank);
 
+error_t page_rank_vwarp_incoming_gpu(graph_t* graph, float* rank_i, 
+                                     float** rank);
+
 /**
  * Given an [un]directed, unweighted graph, a source vertex, and a destination
  * vertex. Check if the destination is reachable from the source using the CPU
