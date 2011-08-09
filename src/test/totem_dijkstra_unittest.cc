@@ -33,6 +33,7 @@ class DijkstraTest : public TestWithParam<DijkstraFunction> {
   DijkstraFunction dijkstra;
 };
 
+
 // Tests Dijkstra for empty vertex set graph.
 TEST_P(DijkstraTest, EmptyVertexSet) {
   graph_t graph;
@@ -272,7 +273,8 @@ TEST_P(DijkstraTest, CompleteDiffWeight) {
 // TODO(elizeu): Add irregular topology graphs.
 
 INSTANTIATE_TEST_CASE_P(DijkstraGPUAndCPUTest, DijkstraTest,
-                        Values(&dijkstra_gpu, &dijkstra_cpu));
+                        Values(&dijkstra_gpu, &dijkstra_cpu,
+                               &dijkstra_vwarp_gpu));
 
 #else
 
