@@ -176,6 +176,8 @@ error_t dijkstra_cpu(graph_t* graph, id_t source_id,
 error_t dijkstra_gpu(graph_t* graph, id_t source_id,
                      weight_t** shortest_distances);
 
+error_t dijkstra_vwarp_gpu(graph_t* graph, id_t source_id,
+                           weight_t** shortest_distances);
 
 /**
  * Implements a version of the simple PageRank algorithm described in
@@ -199,23 +201,6 @@ error_t page_rank_incoming_gpu(graph_t* graph, float* rank_i, float** rank);
 
 error_t page_rank_vwarp_incoming_gpu(graph_t* graph, float* rank_i, 
                                      float** rank);
-
-/**
- * Given an [un]directed, unweighted graph, a source vertex, and a destination
- * vertex. Check if the destination is reachable from the source using the CPU
- * and GPU, respectively.
- * @param[in] source_id id of the source vertex
- * @param[in] destination_id id of the destination vertex
- * @param[in] graph the graph to perform BFS on
- * @param[out] connected true if destination is reachable from source;
- *             otherwise, false.
- * @return a flag indicating whether the operation succeeded or not.
-*/
-error_t stcon_cpu(id_t source_id, id_t destination_id, const graph_t* graph,
-                  bool* connected);
-
-error_t stcon_gpu(id_t source_id, id_t destination_id, const graph_t* graph,
-                  bool* connected);
 
 
 /**
@@ -243,5 +228,23 @@ error_t pcore_cpu(graph_t* graph, uint32_t start, uint32_t step,
 
 error_t pcore_gpu(graph_t* graph, uint32_t start, uint32_t step,
                    uint32_t** round);
+
+
+/**
+ * Given an [un]directed, unweighted graph, a source vertex, and a destination
+ * vertex. Check if the destination is reachable from the source using the CPU
+ * and GPU, respectively.
+ * @param[in] source_id id of the source vertex
+ * @param[in] destination_id id of the destination vertex
+ * @param[in] graph the graph to perform BFS on
+ * @param[out] connected true if destination is reachable from source;
+ *             otherwise, false.
+ * @return a flag indicating whether the operation succeeded or not.
+*/
+error_t stcon_cpu(id_t source_id, id_t destination_id, const graph_t* graph,
+                  bool* connected);
+
+error_t stcon_gpu(id_t source_id, id_t destination_id, const graph_t* graph,
+                  bool* connected);
 
 #endif  // TOTEM_GRAPH_H
