@@ -109,17 +109,18 @@ int main(int argc, char** argv) {
   error_t err;
   stopwatch_t stopwatch;
 
-  int rounds = 1;
-  while (rounds--) {
+  for (int rounds = 1; rounds > 0; rounds--) {
     stopwatch_start(&stopwatch);
     float* rank_cpu = NULL;
-    err = page_rank_cpu(graph, &rank_cpu);
+    float* rank_cpu_weight = NULL;
+    err = page_rank_cpu(graph, rank_cpu_weight, &rank_cpu);
     assert(err == SUCCESS);
     printf("%f\t", stopwatch_elapsed(&stopwatch));
-    
+
     stopwatch_start(&stopwatch);
     float* rank = NULL;
-    err = page_rank_gpu(graph, &rank);
+    float* rank_gpu_weight = NULL;
+    err = page_rank_gpu(graph, rank_gpu_weight, &rank);
     assert(err == SUCCESS);
     printf("%f\n", stopwatch_elapsed(&stopwatch));
 
