@@ -16,13 +16,18 @@ TOTEM_FEATURES =
 ifeq ($(MEMORY), PAGEABLE)
 TOTEM_FEATURES += -DFEATURE_PAGEABLE_MEMORY
 endif
+
 # OpenMP support, default is enabled
 OPENMP    = -fopenmp
 ifeq ($(MP), NO)
 OPENMP    = 
 endif
-# Architecture to compile for (TODO: (abdullah): make this automatic)
-ARCH = 64
+
+# Architecture to compile for
+ARCH = $(shell getconf LONG_BIT)
+ifeq ($(ARCH), 32)
+ARCH = 
+endif
 
 # directory definitions
 CUDA_INSTALL_PATH = /usr/local/cuda
