@@ -9,6 +9,7 @@
 #include "totem_comdef.h"
 #include "totem_graph.h"
 #include "totem_mem.h"
+#include "totem_util.h"
 
 /**
  * Global variable of program options
@@ -97,6 +98,10 @@ void print_graph(graph_t* graph) {
  */
 int main(int argc, char** argv) {
 
+  /* Ensure the minimum CUDA architecture is supported */
+  if(check_cuda_version() != SUCCESS) {
+     exit(EXIT_FAILURE);
+  }
   parse_command_line(argc, argv);
 
   graph_t* graph;
