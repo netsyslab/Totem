@@ -25,6 +25,8 @@ typedef error_t(*PageRankFunction)(graph_t*, float*, float**);
 class PageRankTest : public TestWithParam<PageRankFunction> {
  public:
   virtual void SetUp() {
+    // Ensure the minimum CUDA architecture is supported
+    CUDA_CHECK_VERSION();
     page_rank = GetParam();
   }
 

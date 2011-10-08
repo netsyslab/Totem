@@ -26,6 +26,8 @@ typedef error_t(*DijkstraFunction)(graph_t*, id_t, weight_t**);
 class DijkstraTest : public TestWithParam<DijkstraFunction> {
  public:
   virtual void SetUp() {
+    // Ensure the minimum CUDA architecture is supported
+    CUDA_CHECK_VERSION();
     dijkstra = GetParam();
   }
 

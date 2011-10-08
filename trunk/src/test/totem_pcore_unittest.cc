@@ -25,6 +25,8 @@ typedef error_t(*PCoreFunction)(graph_t*, uint32_t, uint32_t, uint32_t**);
 class PCoreTest : public TestWithParam<PCoreFunction> {
  public:
   virtual void SetUp() {
+    // Ensure the minimum CUDA architecture is supported
+    CUDA_CHECK_VERSION();
     pcore = GetParam();
   }
 
