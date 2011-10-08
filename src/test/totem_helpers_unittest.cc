@@ -9,8 +9,16 @@
 // totem includes
 #include "totem_common_unittest.h"
 
+class GraphHelper : public ::testing::Test {
+ protected:
+  virtual void SetUp() {
+    // Ensure the minimum CUDA architecture is supported
+    CUDA_CHECK_VERSION();
+  }
+};
+
 // Tests for initialize helper function.
-TEST(GraphHelper, Initialize) {
+TEST_F(GraphHelper, Initialize) {
   graph_t* graph;
 
   EXPECT_EQ(SUCCESS, graph_initialize(DATA_FOLDER("single_node.totem"),
@@ -57,7 +65,7 @@ TEST(GraphHelper, Initialize) {
   // TODO(lauro, abdullah): Add more cases and test other fields.
 }
 
-TEST(GraphHelper, SubGraph) {
+TEST_F(GraphHelper, SubGraph) {
   graph_t* graph;
   graph_t* subgraph;
   bool* mask;
@@ -186,7 +194,7 @@ TEST(GraphHelper, SubGraph) {
 }
 
 
-TEST(GraphHelper, AtomicOperations) {
+TEST_F(GraphHelper, AtomicOperations) {
 
   // the following is used in all tests
   srand (time(NULL));

@@ -15,11 +15,18 @@
 #include "totem_comdef.h"
 #include "totem_graph.h"
 #include "totem_mem.h"
+#include "totem_util.h"
 
 /**
  *  Defines a relative path of a graph file
  */
 #define DATA_FOLDER(graph_file) "../../data/"graph_file
 
+#define CUDA_CHECK_VERSION()               \
+  do {                                     \
+    if(check_cuda_version() != SUCCESS) {  \
+      exit(EXIT_FAILURE);                  \
+    }                                      \
+  } while (0)
 
 #endif // TOTEM_COMMON_UNITTEST_H

@@ -25,6 +25,8 @@ typedef error_t(*BFSFunction)(id_t, const graph_t*, uint32_t**);
 class BFSTest : public TestWithParam<BFSFunction> {
  public:
   virtual void SetUp() {
+    // Ensure the minimum CUDA architecture is supported
+    CUDA_CHECK_VERSION();
     bfs = GetParam();
   }
 
