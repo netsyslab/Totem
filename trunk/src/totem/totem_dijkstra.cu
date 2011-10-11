@@ -493,25 +493,17 @@ error_t dijkstra_cpu(graph_t* graph, id_t source_id,
 
       for (id_t i = 0; i < neighbor_count; i++) {
         id_t neighbor_id = neighbors[i];
-        // TODO(elizeu): This global lock may be inefficient. One approach to
-        //               solve this is to have one lock per vertex.
-        #ifdef _OPENMP
-        #pragma omp critical (mutex)
-        {
-        #endif // _OPENMP
-        weight_t current_distance =
-            (*shortest_distances)[vertex_id] + local_weights[i];
-        if ((*shortest_distances)[neighbor_id] > current_distance) {
-          (*shortest_distances)[neighbor_id] = current_distance;
+        weight_t current_distance = (*shortest_distances)[vertex_id] +
+                                    local_weights[i];
+        weight_t old_distance =
+            __sync_min_and_fetch_float(&((*shortest_distances)[neighbor_id]),
+                                       current_distance);
+        if ( current_distance < old_distance ) {
           to_update[neighbor_id] = true;
           changed = true;
         }
-        #ifdef _OPENMP
-        } // critical
-        #endif // _OPENMP
       } // for
     } // for
   } // while
   return SUCCESS;
 }
-
