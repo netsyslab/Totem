@@ -450,7 +450,7 @@ error_t page_rank_incoming_cpu(graph_t* graph, float* rank_i,
       for (uint64_t i = graph->vertices[vertex_id];
            i < graph->vertices[vertex_id + 1]; i++) {
         const id_t neighbor_id = graph->edges[i];
-        __sync_add_and_fetch_float(&mailbox[neighbor_id], (float)my_rank);
+        __sync_fetch_and_add_float(&mailbox[neighbor_id], (float)my_rank);
       }
     }
 
