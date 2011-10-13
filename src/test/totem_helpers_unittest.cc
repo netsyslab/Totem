@@ -216,7 +216,7 @@ TEST_F(GraphHelper, AtomicOperations) {
   float p_sum_float = 0;
 #pragma omp parallel for
   for (int i = 0; i < buf_count; i++) {    
-    __sync_add_and_fetch_float(&p_sum_float, (float)buf[i]);
+    __sync_fetch_and_add_float(&p_sum_float, (float)buf[i]);
   }
   EXPECT_EQ(p_sum_float, sum_float);
 
@@ -228,7 +228,7 @@ TEST_F(GraphHelper, AtomicOperations) {
   double p_sum_double = 0;
 #pragma omp parallel for
   for (int i = 0; i < buf_count; i++) {
-    __sync_add_and_fetch_double(&p_sum_double, (double)buf[i]);
+    __sync_fetch_and_add_double(&p_sum_double, (double)buf[i]);
   }
   EXPECT_EQ(p_sum_double, sum_double);
 
@@ -242,7 +242,7 @@ TEST_F(GraphHelper, AtomicOperations) {
   int p_min_int = 0;
 #pragma omp parallel for
   for (int i = 0; i < buf_count; i++) {
-    __sync_min_and_fetch(&p_min_int, buf[i]);
+    __sync_fetch_and_min(&p_min_int, buf[i]);
   }
   EXPECT_EQ(p_min_int, min_int);
 
@@ -257,7 +257,7 @@ TEST_F(GraphHelper, AtomicOperations) {
 #pragma omp parallel for
   for (int i = 0; i < buf_count; i++) {
     float value = (float)buf[i] * factor;
-    __sync_min_and_fetch_float(&p_min_float, value);
+    __sync_fetch_and_min_float(&p_min_float, value);
   }
   EXPECT_EQ(p_min_float, min_float);
 
@@ -271,7 +271,7 @@ TEST_F(GraphHelper, AtomicOperations) {
 #pragma omp parallel for
   for (int i = 0; i < buf_count; i++) {
     double value = (double)buf[i] * factor;
-    __sync_min_and_fetch_double(&p_min_double, value);
+    __sync_fetch_and_min_double(&p_min_double, value);
   }
   EXPECT_EQ(p_min_double, min_double);
 }

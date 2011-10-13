@@ -111,7 +111,7 @@ inline bool is_numeric(char* str) {
  * @param[in] val the value to be added to the content of address
  * @return old value stored at address
  */
-inline float __sync_add_and_fetch_float(float* address, float val) {
+inline float __sync_fetch_and_add_float(float* address, float val) {
   int* address_as_int = (int*)address;
   int old = *address_as_int, assumed;
   do {
@@ -129,7 +129,7 @@ inline float __sync_add_and_fetch_float(float* address, float val) {
  * @param[in] val the value to be added to the content of address
  * @return old value stored at address
  */
-inline double __sync_add_and_fetch_double(double* address, double val) {
+inline double __sync_fetch_and_add_double(double* address, double val) {
   int64_t* address_as_int64 = (int64_t*)address;
   int64_t old = *address_as_int64, assumed;
   do {
@@ -148,7 +148,7 @@ inline double __sync_add_and_fetch_double(double* address, double val) {
  * @param[in] val the value to be compared with
  * @return old value stored at address
  */
-inline float __sync_min_and_fetch(int* address, int val) {
+inline int __sync_fetch_and_min(int* address, int val) {
   int old = *address, assumed;
   do {
     assumed = old;
@@ -165,7 +165,7 @@ inline float __sync_min_and_fetch(int* address, int val) {
  * @param[in] val the value to be compared with
  * @return old value stored at address
  */
-inline float __sync_min_and_fetch_float(float* address, float val) {
+inline float __sync_fetch_and_min_float(float* address, float val) {
   int* address_as_int = (int*)address;
   int old = *address_as_int, assumed;
   do {
@@ -184,7 +184,7 @@ inline float __sync_min_and_fetch_float(float* address, float val) {
  * @param[in] val the value to be compared with
  * @return old value stored at address
  */
-inline double __sync_min_and_fetch_double(double* address, double val) {
+inline double __sync_fetch_and_min_double(double* address, double val) {
   int64_t* address_as_int64 = (int64_t*)address;
   int64_t old = *address_as_int64, assumed;
   do {

@@ -496,7 +496,7 @@ error_t dijkstra_cpu(graph_t* graph, id_t source_id,
         weight_t current_distance = (*shortest_distances)[vertex_id] +
                                     local_weights[i];
         weight_t old_distance =
-            __sync_min_and_fetch_float(&((*shortest_distances)[neighbor_id]),
+            __sync_fetch_and_min_float(&((*shortest_distances)[neighbor_id]),
                                        current_distance);
         if ( current_distance < old_distance ) {
           to_update[neighbor_id] = true;
