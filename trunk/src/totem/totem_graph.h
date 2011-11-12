@@ -139,6 +139,15 @@ error_t graph_finalize(graph_t* graph);
  */
 error_t get_subgraph(graph_t* graph, bool* mask, graph_t** subgraph);
 
+/**
+ * Creates a subgraph such that all nodes has at least one incoming or outgoing 
+ * edge. The subgraph is de-allocated via graph_finalize
+ * @param[in] graph the graph to extract the subgraph from
+ * @param[out] subgraph a reference to allocated subgraph
+ * @return generic success or failure
+ */
+error_t graph_remove_singletons(graph_t* graph, graph_t** subgraph);
+
 // TODO(lauro): Discuss a common order for the parameters.
 
 /**

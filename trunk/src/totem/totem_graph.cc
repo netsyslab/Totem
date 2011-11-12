@@ -418,6 +418,21 @@ error_t get_subgraph(graph_t* graph, bool* mask, graph_t** subgraph_ret) {
   return SUCCESS;
 }
 
+error_t graph_remove_singletons(graph_t* graph, graph_t** subgraph) {
+  // TODO(abdullah): change the signature to graph_get_k_degree_nodes
+  if (!graph) return FAILURE;
+  bool* mask = (bool*)calloc(graph->vertex_count, sizeof(bool));
+  for (id_t vid = 0; vid < graph->vertex_count; vid++) {
+    for (id_t i = graph->vertices[vid]; i < graph->vertices[vid + 1]; i++) {
+      mask[graph->edges[i]] = true;
+      mask[vid] = true;
+    }
+  }
+  error_t err = get_subgraph(graph, mask, subgraph);
+  free(mask);
+  return err;
+}
+
 error_t graph_finalize(graph_t* graph) {
   assert(graph);
 
