@@ -20,7 +20,7 @@ using ::testing::Values;
 // totem_bfs_unittest.cc and
 // http://code.google.com/p/googletest/source/browse/trunk/samples/sample7_unittest.cc
 
-typedef error_t(*PageRankFunction)(graph_t*, float*, float**);
+typedef error_t(*PageRankFunction)(const graph_t*, float*, float**);
 
 class PageRankTest : public TestWithParam<PageRankFunction> {
  public:

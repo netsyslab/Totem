@@ -16,7 +16,7 @@
 #include "totem_mem.h"
 
 __host__
-error_t stcon_gpu(id_t source_id, id_t destination_id, const graph_t* graph,
+error_t stcon_gpu(const graph_t* graph, id_t source_id, id_t destination_id,
                   bool* connected) {
   if((graph == NULL) || (source_id >= graph->vertex_count)
      || (destination_id >= graph->vertex_count)) {
@@ -51,7 +51,7 @@ error_t stcon_gpu(id_t source_id, id_t destination_id, const graph_t* graph,
 }
 
 __host__
-error_t stcon_cpu(id_t source_id, id_t destination_id, const graph_t* graph,
+error_t stcon_cpu(const graph_t* graph, id_t source_id, id_t destination_id,
                   bool* connected) {
   if((graph == NULL) || (source_id >= graph->vertex_count)
      || (destination_id >= graph->vertex_count)) {

@@ -137,7 +137,7 @@ error_t graph_finalize(graph_t* graph);
  * @param[out] subgraph a reference to allocated subgraph 
  * @return generic success or failure
  */
-error_t get_subgraph(graph_t* graph, bool* mask, graph_t** subgraph);
+error_t get_subgraph(const graph_t* graph, bool* mask, graph_t** subgraph);
 
 /**
  * Creates a subgraph such that all nodes has at least one incoming or outgoing 
@@ -146,9 +146,8 @@ error_t get_subgraph(graph_t* graph, bool* mask, graph_t** subgraph);
  * @param[out] subgraph a reference to allocated subgraph
  * @return generic success or failure
  */
-error_t graph_remove_singletons(graph_t* graph, graph_t** subgraph);
+error_t graph_remove_singletons(const graph_t* graph, graph_t** subgraph);
 
-// TODO(lauro): Discuss a common order for the parameters.
 
 /**
  * Given an undirected, unweighted graph and a source vertex, find the minimum
@@ -162,11 +161,11 @@ error_t graph_remove_singletons(graph_t* graph, graph_t** subgraph);
  * ownership of the array and, thus, the client is responsible for freeing the
  * memory area.
 */
-error_t bfs_cpu(id_t source_id, const graph_t* graph, uint32_t** cost);
+error_t bfs_cpu(const graph_t* graph, id_t source_id, uint32_t** cost);
 
-error_t bfs_gpu(id_t source_id, const graph_t* graph, uint32_t** cost);
+error_t bfs_gpu(const graph_t* graph, id_t source_id, uint32_t** cost);
 
-error_t bfs_vwarp_gpu(id_t source_id, const graph_t* graph, uint32_t** cost);
+error_t bfs_vwarp_gpu(const graph_t* graph, id_t source_id, uint32_t** cost);
 
 /**
  * Given a weighted graph \f$G = (V, E, w)\f$ and a source vertex \f$v\inV\f$,
@@ -179,13 +178,13 @@ error_t bfs_vwarp_gpu(id_t source_id, const graph_t* graph, uint32_t** cost);
  * @param[out] shortest_distances the length of the computed shortest paths
  * @return a flag indicating whether the operation succeeded or not.
  */
-error_t dijkstra_cpu(graph_t* graph, id_t source_id,
+error_t dijkstra_cpu(const graph_t* graph, id_t source_id,
                      weight_t** shortest_distances);
 
-error_t dijkstra_gpu(graph_t* graph, id_t source_id,
+error_t dijkstra_gpu(const graph_t* graph, id_t source_id,
                      weight_t** shortest_distances);
 
-error_t dijkstra_vwarp_gpu(graph_t* graph, id_t source_id,
+error_t dijkstra_vwarp_gpu(const graph_t* graph, id_t source_id,
                            weight_t** shortest_distances);
 
 /**
@@ -200,15 +199,17 @@ error_t dijkstra_vwarp_gpu(graph_t* graph, id_t source_id,
  * @param[out] rank the PageRank output array (must be freed via mem_free)
  * @return generic success or failure
  */
-error_t page_rank_cpu(graph_t* graph, float* rank_i, float** rank);
+error_t page_rank_cpu(const graph_t* graph, float* rank_i, float** rank);
 
-error_t page_rank_gpu(graph_t* graph, float* rank_i, float** rank);
+error_t page_rank_gpu(const graph_t* graph, float* rank_i, float** rank);
 
-error_t page_rank_incoming_cpu(graph_t* graph, float* rank_i, float** rank);
+error_t page_rank_incoming_cpu(const graph_t* graph, float* rank_i, 
+                               float** rank);
 
-error_t page_rank_incoming_gpu(graph_t* graph, float* rank_i, float** rank);
+error_t page_rank_incoming_gpu(const graph_t* graph, float* rank_i, 
+                               float** rank);
 
-error_t page_rank_vwarp_incoming_gpu(graph_t* graph, float* rank_i, 
+error_t page_rank_vwarp_incoming_gpu(const graph_t* graph, float* rank_i, 
                                      float** rank);
 
 
@@ -232,11 +233,11 @@ error_t page_rank_vwarp_incoming_gpu(graph_t* graph, float* rank_i,
  * @param[out] round for each vertex  latest round a vertex was part of
  * @return a flag indicating whether the operation succeeded or not.
  */
-error_t pcore_cpu(graph_t* graph, uint32_t start, uint32_t step,
-                   uint32_t** round);
+error_t pcore_cpu(const graph_t* graph, uint32_t start, uint32_t step,
+                  uint32_t** round);
 
-error_t pcore_gpu(graph_t* graph, uint32_t start, uint32_t step,
-                   uint32_t** round);
+error_t pcore_gpu(const graph_t* graph, uint32_t start, uint32_t step,
+                  uint32_t** round);
 
 
 /**
@@ -250,10 +251,10 @@ error_t pcore_gpu(graph_t* graph, uint32_t start, uint32_t step,
  *             otherwise, false.
  * @return a flag indicating whether the operation succeeded or not.
 */
-error_t stcon_cpu(id_t source_id, id_t destination_id, const graph_t* graph,
+error_t stcon_cpu(const graph_t* graph, id_t source_id, id_t destination_id,
                   bool* connected);
 
-error_t stcon_gpu(id_t source_id, id_t destination_id, const graph_t* graph,
+error_t stcon_gpu(const graph_t* graph, id_t source_id, id_t destination_id,
                   bool* connected);
 
 #endif  // TOTEM_GRAPH_H

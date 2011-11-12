@@ -72,8 +72,8 @@ void init_state_kernel(graph_t graph, int* weights_sum, uint32_t* round) {
  */
 __global__ 
 void pcore_kernel(graph_t graph, int* weights_sum, uint32_t* round, 
-                   uint32_t cur_round,  uint32_t cur_threshold, 
-                   bool* finish_flags) {
+                  uint32_t cur_round,  uint32_t cur_threshold, 
+                  bool* finish_flags) {
   // get the thread's linear index
   id_t vertex_id = THREAD_GLOBAL_INDEX;
   if (vertex_id >= graph.vertex_count || 
@@ -110,14 +110,14 @@ void pcore_kernel(graph_t graph, int* weights_sum, uint32_t* round,
  * @param[in] step the value used to increment p in each new round
  */
 PRIVATE inline
-error_t verify_input(graph_t* graph, uint32_t start, uint32_t step) {
+error_t verify_input(const graph_t* graph, uint32_t start, uint32_t step) {
   if (!graph || !graph->weighted || graph->directed || step == 0 || 
       !graph->vertex_count) return FAILURE;
   return SUCCESS;
 }
 
-error_t pcore_gpu(graph_t* graph, uint32_t start, uint32_t step, 
-                   uint32_t** round_out) {
+error_t pcore_gpu(const graph_t* graph, uint32_t start, uint32_t step, 
+                  uint32_t** round_out) {
 
   // kernel configuration parameters
   dim3 block_count;
@@ -215,8 +215,8 @@ error_t pcore_gpu(graph_t* graph, uint32_t start, uint32_t step,
   return FAILURE;
 }
 
-error_t pcore_cpu(graph_t* graph, uint32_t start, uint32_t step, 
-                   uint32_t** round_out) {
+error_t pcore_cpu(const graph_t* graph, uint32_t start, uint32_t step, 
+                  uint32_t** round_out) {
   CHK_SUCCESS(verify_input(graph, start, step), err);
 
   // simple optimization for a single node graph

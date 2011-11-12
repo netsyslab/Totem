@@ -357,7 +357,7 @@ error_t graph_initialize(const char* graph_file, bool weighted,
     return FAILURE;
 }
 
-error_t get_subgraph(graph_t* graph, bool* mask, graph_t** subgraph_ret) {
+error_t get_subgraph(const graph_t* graph, bool* mask, graph_t** subgraph_ret) {
 
   assert(graph && mask);
 
@@ -418,7 +418,7 @@ error_t get_subgraph(graph_t* graph, bool* mask, graph_t** subgraph_ret) {
   return SUCCESS;
 }
 
-error_t graph_remove_singletons(graph_t* graph, graph_t** subgraph) {
+error_t graph_remove_singletons(const graph_t* graph, graph_t** subgraph) {
   // TODO(abdullah): change the signature to graph_get_k_degree_nodes
   if (!graph) return FAILURE;
   bool* mask = (bool*)calloc(graph->vertex_count, sizeof(bool));
