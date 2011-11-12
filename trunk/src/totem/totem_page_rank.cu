@@ -48,7 +48,7 @@
  * beginning of public interfaces (GPU and CPU)
 */
 PRIVATE
-error_t check_special_cases(graph_t* graph, float** rank, bool* finished) {
+error_t check_special_cases(const graph_t* graph, float** rank, bool* finished) {
   *finished = true;
   if (graph == NULL) {
     return FAILURE;
@@ -130,7 +130,7 @@ void page_rank_final_kernel(graph_t graph, float* inbox, float* outbox) {
     ((1 - DAMPING_FACTOR) / graph.vertex_count) + (DAMPING_FACTOR * sum);
 }
 
-error_t page_rank_gpu(graph_t* graph, float *rank_i, float** rank) {
+error_t page_rank_gpu(const graph_t* graph, float *rank_i, float** rank) {
   // Check for special cases
   bool finished = false;
   error_t rc = check_special_cases(graph, rank, &finished);
@@ -212,7 +212,7 @@ error_t page_rank_gpu(graph_t* graph, float *rank_i, float** rank) {
   return FAILURE;
 }
 
-error_t page_rank_cpu(graph_t* graph, float *rank_i, float** rank) {
+error_t page_rank_cpu(const graph_t* graph, float *rank_i, float** rank) {
   // Check for special cases
   bool finished = false;
   error_t rc = check_special_cases(graph, rank, &finished);

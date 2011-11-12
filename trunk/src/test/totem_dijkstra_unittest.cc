@@ -21,7 +21,7 @@ using ::testing::Values;
 // totem_bfs_unittest.cc and
 // http://code.google.com/p/googletest/source/browse/trunk/samples/sample7_unittest.cc
 
-typedef error_t(*DijkstraFunction)(graph_t*, id_t, weight_t**);
+typedef error_t(*DijkstraFunction)(const graph_t*, id_t, weight_t**);
 
 class DijkstraTest : public TestWithParam<DijkstraFunction> {
  public:

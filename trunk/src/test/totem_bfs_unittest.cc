@@ -20,7 +20,7 @@ using ::testing::Values;
 // Details on how to use TestWithParam<T> can be found at:
 // http://code.google.com/p/googletest/source/browse/trunk/samples/sample7_unittest.cc
 
-typedef error_t(*BFSFunction)(id_t, const graph_t*, uint32_t**);
+typedef error_t(*BFSFunction)(const graph_t*, id_t, uint32_t**);
 
 class BFSTest : public TestWithParam<BFSFunction> {
  public:
@@ -42,10 +42,10 @@ TEST_P(BFSTest, Empty) {
   graph.edge_count = 0;
 
   uint32_t* cost;
-  EXPECT_EQ(FAILURE, bfs(0, &graph, &cost));
+  EXPECT_EQ(FAILURE, bfs(&graph, 0, &cost));
   EXPECT_EQ(NULL, cost);
 
-  EXPECT_EQ(FAILURE, bfs(99, &graph, &cost));
+  EXPECT_EQ(FAILURE, bfs(&graph, 99, &cost));
   EXPECT_EQ(NULL, cost);
 }
 
@@ -55,22 +55,22 @@ TEST_P(BFSTest, SingleNode) {
   graph_initialize(DATA_FOLDER("single_node.totem"), false, &graph);
 
   uint32_t* cost;
-  EXPECT_EQ(SUCCESS, bfs(0, graph, &cost));
+  EXPECT_EQ(SUCCESS, bfs(graph, 0, &cost));
   EXPECT_FALSE(NULL == cost);
   EXPECT_EQ((uint32_t)0, cost[0]);
   mem_free(cost);
 
-  EXPECT_EQ(FAILURE, bfs(1, graph, &cost));
+  EXPECT_EQ(FAILURE, bfs(graph, 1, &cost));
   EXPECT_EQ(NULL, cost);
   graph_finalize(graph);
 
   graph_initialize(DATA_FOLDER("single_node_loop.totem"), false, &graph);
-  EXPECT_EQ(SUCCESS, bfs(0, graph, &cost));
+  EXPECT_EQ(SUCCESS, bfs(graph, 0, &cost));
   EXPECT_FALSE(NULL == cost);
   EXPECT_EQ((uint32_t)0, cost[0]);
   mem_free(cost);
 
-  EXPECT_EQ(FAILURE, bfs(1, graph, &cost));
+  EXPECT_EQ(FAILURE, bfs(graph, 1, &cost));
   EXPECT_EQ(NULL, cost);
   graph_finalize(graph);
 }
@@ -83,7 +83,7 @@ TEST_P(BFSTest, EmptyEdges) {
   // First vertex as source
   id_t source = 0;
   uint32_t* cost;
-  EXPECT_EQ(SUCCESS, bfs(source, graph, &cost));
+  EXPECT_EQ(SUCCESS, bfs(graph, source, &cost));
   EXPECT_FALSE(NULL == cost);
   EXPECT_EQ((uint32_t)0, cost[source]);
   for(id_t vertex = source + 1; vertex < graph->vertex_count; vertex++){
@@ -93,7 +93,7 @@ TEST_P(BFSTest, EmptyEdges) {
 
   // Last vertex as source
   source = graph->vertex_count - 1;
-  EXPECT_EQ(SUCCESS, bfs(source, graph, &cost));
+  EXPECT_EQ(SUCCESS, bfs(graph, source, &cost));
   EXPECT_EQ((uint32_t)0, cost[source]);
   for(id_t vertex = source; vertex < graph->vertex_count - 1; vertex++){
     EXPECT_EQ(INFINITE, cost[vertex]);
@@ -102,14 +102,14 @@ TEST_P(BFSTest, EmptyEdges) {
 
   // A vertex in the middle as source
   source = 199;
-  EXPECT_EQ(SUCCESS, bfs(source, graph, &cost));
+  EXPECT_EQ(SUCCESS, bfs(graph, source, &cost));
   for(id_t vertex = 0; vertex < graph->vertex_count; vertex++) {
     EXPECT_EQ((vertex == source) ? (uint32_t)0 : INFINITE, cost[vertex]);
   }
   mem_free(cost);
 
   // Non existent vertex source
-  EXPECT_EQ(FAILURE, bfs(graph->vertex_count, graph, &cost));
+  EXPECT_EQ(FAILURE, bfs(graph, graph->vertex_count, &cost));
   EXPECT_EQ(NULL, cost);
 
   graph_finalize(graph);
@@ -123,7 +123,7 @@ TEST_P(BFSTest, Chain) {
   // First vertex as source
   id_t source = 0;
   uint32_t* cost;
-  EXPECT_EQ(SUCCESS, bfs(source, graph, &cost));
+  EXPECT_EQ(SUCCESS, bfs(graph, source, &cost));
   EXPECT_FALSE(NULL == cost);
   for(id_t vertex = source; vertex < graph->vertex_count; vertex++){
     EXPECT_EQ(vertex, cost[vertex]);
@@ -132,7 +132,7 @@ TEST_P(BFSTest, Chain) {
 
   // Last vertex as source
   source = graph->vertex_count - 1;
-  EXPECT_EQ(SUCCESS, bfs(source, graph, &cost));
+  EXPECT_EQ(SUCCESS, bfs(graph, source, &cost));
   for(id_t vertex = source; vertex < graph->vertex_count; vertex++){
     EXPECT_EQ(source - vertex, cost[vertex]);
   }
@@ -140,14 +140,14 @@ TEST_P(BFSTest, Chain) {
 
   // A vertex in the middle as source
   source = 199;
-  EXPECT_EQ(SUCCESS, bfs(source, graph, &cost));
+  EXPECT_EQ(SUCCESS, bfs(graph, source, &cost));
   for(id_t vertex = 0; vertex < graph->vertex_count; vertex++) {
     EXPECT_EQ((uint32_t)abs(source - vertex), cost[vertex]);
   }
   mem_free(cost);
 
   // Non existent vertex source
-  EXPECT_EQ(FAILURE, bfs(graph->vertex_count, graph, &cost));
+  EXPECT_EQ(FAILURE, bfs(graph, graph->vertex_count, &cost));
   EXPECT_EQ(NULL, cost);
 
   graph_finalize(graph);
@@ -162,7 +162,7 @@ TEST_P(BFSTest, CompleteGraph) {
   // First vertex as source
   id_t source = 0;
   uint32_t* cost;
-  EXPECT_EQ(SUCCESS, bfs(source, graph, &cost));
+  EXPECT_EQ(SUCCESS, bfs(graph, source, &cost));
   EXPECT_EQ((uint32_t)0, cost[source]);
   for(id_t vertex = source + 1; vertex < graph->vertex_count; vertex++){
     EXPECT_EQ((uint32_t)1, cost[vertex]);
@@ -171,7 +171,7 @@ TEST_P(BFSTest, CompleteGraph) {
 
   // Last vertex as source
   source = graph->vertex_count - 1;
-  EXPECT_EQ(SUCCESS, bfs(source, graph, &cost));
+  EXPECT_EQ(SUCCESS, bfs(graph, source, &cost));
   EXPECT_EQ((uint32_t)0, cost[source]);
   for(id_t vertex = 0; vertex < source; vertex++) {
     EXPECT_EQ((uint32_t)1, cost[vertex]);
@@ -180,14 +180,14 @@ TEST_P(BFSTest, CompleteGraph) {
 
   // A vertex source in the middle
   source = 199;
-  EXPECT_EQ(SUCCESS, bfs(source, graph, &cost));
+  EXPECT_EQ(SUCCESS, bfs(graph, source, &cost));
   for(id_t vertex = 0; vertex < graph->vertex_count; vertex++) {
     EXPECT_EQ((uint32_t)((source == vertex) ? 0 : 1), cost[vertex]);
   }
   mem_free(cost);
 
   // Non existent vertex source
-  EXPECT_EQ(FAILURE, bfs(graph->vertex_count, graph, &cost));
+  EXPECT_EQ(FAILURE, bfs(graph, graph->vertex_count, &cost));
   EXPECT_EQ(NULL, cost);
 
   graph_finalize(graph);
@@ -201,7 +201,7 @@ TEST_P(BFSTest, Star) {
   // First vertex as source
   id_t source = 0;
   uint32_t* cost;
-  EXPECT_EQ(SUCCESS, bfs(source, graph, &cost));
+  EXPECT_EQ(SUCCESS, bfs(graph, source, &cost));
   EXPECT_EQ((uint32_t)0, cost[source]);
   for(id_t vertex = source + 1; vertex < graph->vertex_count; vertex++){
     EXPECT_EQ((uint32_t)1, cost[vertex]);
@@ -210,7 +210,7 @@ TEST_P(BFSTest, Star) {
 
   // Last vertex as source
   source = graph->vertex_count - 1;
-  EXPECT_EQ(SUCCESS, bfs(source, graph, &cost));
+  EXPECT_EQ(SUCCESS, bfs(graph, source, &cost));
   EXPECT_EQ((uint32_t)0, cost[source]);
   EXPECT_EQ((uint32_t)1, cost[0]);
   for(id_t vertex = 1; vertex < source - 1; vertex++) {
@@ -220,7 +220,7 @@ TEST_P(BFSTest, Star) {
 
   // A vertex source in the middle
   source = 199;
-  EXPECT_EQ(SUCCESS, bfs(source, graph, &cost));
+  EXPECT_EQ(SUCCESS, bfs(graph, source, &cost));
   EXPECT_EQ((uint32_t)1, cost[0]);
   for(id_t vertex = 1; vertex < graph->vertex_count; vertex++) {
     EXPECT_EQ((uint32_t)((source == vertex) ? 0 : 2), cost[vertex]);
@@ -228,7 +228,7 @@ TEST_P(BFSTest, Star) {
   mem_free(cost);
 
   // Non existent vertex source
-  EXPECT_EQ(FAILURE, bfs(graph->vertex_count, graph, &cost));
+  EXPECT_EQ(FAILURE, bfs(graph, graph->vertex_count, &cost));
   EXPECT_EQ(NULL, cost);
 
   graph_finalize(graph);

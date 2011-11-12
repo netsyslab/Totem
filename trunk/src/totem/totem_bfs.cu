@@ -209,7 +209,7 @@ void vwarp_bfs_kernel_no_shared(graph_t graph, uint32_t level, bool* finished,
 }
 
 __host__
-error_t bfs_vwarp_gpu(id_t source_id, const graph_t* graph, uint32_t** cost) {
+error_t bfs_vwarp_gpu(const graph_t* graph, id_t source_id, uint32_t** cost) {
   // TODO(lauro,abdullah): Factor out a validate graph function.
   if((graph == NULL) || (source_id >= graph->vertex_count)) {
     *cost = NULL;
@@ -265,7 +265,7 @@ error_t bfs_vwarp_gpu(id_t source_id, const graph_t* graph, uint32_t** cost) {
 }
 
 __host__
-error_t bfs_gpu(id_t source_id, const graph_t* graph, uint32_t** cost) {
+error_t bfs_gpu(const graph_t* graph, id_t source_id, uint32_t** cost) {
   // TODO(lauro,abdullah): Factor out a validate graph function.
   if((graph == NULL) || (source_id >= graph->vertex_count)) {
     *cost = NULL;
@@ -316,7 +316,7 @@ error_t bfs_gpu(id_t source_id, const graph_t* graph, uint32_t** cost) {
 }
 
 __host__
-error_t bfs_cpu(id_t source_id, const graph_t* graph, uint32_t** cost_ret) {
+error_t bfs_cpu(const graph_t* graph, id_t source_id, uint32_t** cost_ret) {
   if((graph == NULL) || (source_id >= graph->vertex_count)) {
     *cost_ret = NULL;
     return FAILURE;

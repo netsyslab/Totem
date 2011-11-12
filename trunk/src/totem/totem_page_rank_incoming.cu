@@ -57,7 +57,8 @@ typedef struct {
  * beginning of public interfaces (GPU and CPU)
 */
 PRIVATE
-error_t check_special_cases(graph_t* graph, float** rank, bool* finished) {
+error_t check_special_cases(const graph_t* graph, float** rank, 
+                            bool* finished) {
   *finished = true;
   if (graph == NULL) {
     return FAILURE;
@@ -77,8 +78,9 @@ error_t check_special_cases(graph_t* graph, float** rank, bool* finished) {
  * initalizes state on the GPU
 */
 PRIVATE
-error_t initialize_gpu(graph_t* graph, float* rank_i, uint64_t rank_length,
-                       graph_t** graph_d, float **rank_d, float** mailbox_d) {
+error_t initialize_gpu(const graph_t* graph, float* rank_i, 
+                       uint64_t rank_length, graph_t** graph_d, float **rank_d, 
+                       float** mailbox_d) {
 
   /* had to define them at the beginning to avoid a compilation problem with
      goto-label error handling mechanism */
@@ -302,7 +304,7 @@ void vwarp_compute_unnormalized_rank_kernel(graph_t graph, float* rank,
 }
 
 __host__
-error_t page_rank_vwarp_incoming_gpu(graph_t* graph, float* rank_i,\
+error_t page_rank_vwarp_incoming_gpu(const graph_t* graph, float* rank_i,\
                                      float** rank) {
 
   // Check for special cases
@@ -363,7 +365,7 @@ error_t page_rank_vwarp_incoming_gpu(graph_t* graph, float* rank_i,\
 }
 
 __host__
-error_t page_rank_incoming_gpu(graph_t* graph, float* rank_i, float** rank) {
+error_t page_rank_incoming_gpu(const graph_t* graph, float* rank_i, float** rank) {
 
   // Check for special cases
   bool finished = false;
@@ -413,7 +415,7 @@ error_t page_rank_incoming_gpu(graph_t* graph, float* rank_i, float** rank) {
   return FAILURE;
 }
 
-error_t page_rank_incoming_cpu(graph_t* graph, float* rank_i,
+error_t page_rank_incoming_cpu(const graph_t* graph, float* rank_i,
                                float** rank_ret) {
 
   // Check for special cases

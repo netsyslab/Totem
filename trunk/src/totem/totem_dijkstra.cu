@@ -43,7 +43,7 @@ typedef struct {
  * beginning of public interfaces (GPU and CPU)
 */
 PRIVATE
-error_t check_special_cases(graph_t* graph, id_t source_id,
+error_t check_special_cases(const graph_t* graph, id_t source_id,
                             weight_t **shortest_distances, bool* finished) {
 
   *finished = true;
@@ -78,8 +78,9 @@ error_t check_special_cases(graph_t* graph, id_t source_id,
  * algorithm. It allocates memory in the device and initalizes state on the GPU.
 */
 PRIVATE
-error_t initialize_gpu(graph_t* graph, id_t source_id, uint64_t distance_length,
-                       graph_t** graph_d, bool** changed_d, bool** has_true_d,
+error_t initialize_gpu(const graph_t* graph, id_t source_id, 
+                       uint64_t distance_length, graph_t** graph_d, 
+                       bool** changed_d, bool** has_true_d, 
                        weight_t** distances_d, weight_t** new_distances_d) {
 
   // Kernel configuration parameters.
@@ -320,7 +321,7 @@ void dijkstra_final_kernel(graph_t graph, bool* to_update, weight_t* distances,
   new_distances[vertex_id] = distances[vertex_id];
 }
 
-error_t dijkstra_gpu(graph_t* graph, id_t source_id,
+error_t dijkstra_gpu(const graph_t* graph, id_t source_id,
                      weight_t** shortest_distances) {
   // Check for special cases
   bool finished = false;
@@ -371,7 +372,7 @@ error_t dijkstra_gpu(graph_t* graph, id_t source_id,
     return FAILURE;
 }
 
-error_t dijkstra_vwarp_gpu(graph_t* graph, id_t source_id,
+error_t dijkstra_vwarp_gpu(const graph_t* graph, id_t source_id,
                            weight_t** shortest_distances) {
 
   // Check for special cases
@@ -430,7 +431,7 @@ error_t dijkstra_vwarp_gpu(graph_t* graph, id_t source_id,
 }
 
 __host__
-error_t dijkstra_cpu(graph_t* graph, id_t source_id,
+error_t dijkstra_cpu(const graph_t* graph, id_t source_id,
                      weight_t** shortest_distances) {
   // Validate input parameters
   if ((graph == NULL) || !graph->weighted
