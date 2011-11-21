@@ -1,0 +1,38 @@
+\section{Problem}
+\label{sec:problem}
+
+Given a set of processors $\mathcal{P}$ and a workload $\mathcal{W}$, the {\em graph workload partitioning} problem of maximizing Equation~\ref{eq:throughput_sys} is equivalent to the following problem:
+
+\begin{equation*}
+  \begin{aligned}
+   \underset{i}{\text{maximize }}
+    & t_i(\mathcal{W}_i) \\
+    \text{subject to}
+    & & |\mathcal{W}_i| \leq |p_i|, \; i = 1, \ldots, c.
+  \end{aligned}
+\end{equation*}
+
+where $|\mathcal{W}_i|$ denotes the memory footprint of a graph workload partition $\mathcal{W}_i$, and $|p_i|$ indicates the memory capacity of processor $p_i$. 
+
+Assuming that the time a processor takes to process a given edge is constant, if the edge's vertices are located in the processor's local memory, the problem can be written as a minimization of the number of edges in each partition that have remote vertices. More formally,   
+
+\begin{equation*}
+  \begin{aligned}
+    \text{minimize }
+    & \sum_i^c|E_i^r| \\
+    \text{subject to}
+    & & |\mathcal{W}_i| \leq |p_i|, \; i = 1, \ldots, c.
+  \end{aligned}
+\end{equation*}
+
+By making some assumptions about $T_i(e)$ (i.e., the time $p_i$ takes to process an edge), we could translate this problem further into a {\em modularity maximization} problem and start with informed graph partioning algorithms based on Newman's approach~\cite{Newman2006} and .
+
+\elizeu{{\sc ToDo}: \\
+        \begin{enumerate}
+          \item Check/improve notation; 
+          \item Prove that this problem is NP-hard by showing it is exactly as a graph partioning problem with constraints;
+          \item List and discuss promising heuristics; 
+          \item Extend the model to compute the partitioning algorithm cost in the total application execution -- the idea is to fold this into the workload $\mathcal{W}^{*} = (\mathcal{A}^{*}, G)$ submitted to $p_0$, where $\mathcal{A}^{*}$ is a particular graph partitioning algorithm;
+          \item Characterize Equation~\ref{eq:throughput_p} with some experiments on a CPU/GPU environment.
+        \end{enumerate}}
+
