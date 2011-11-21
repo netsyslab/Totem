@@ -1,0 +1,74 @@
+\documentclass{acm_proc_article-sp}[10pt]
+\usepackage{cite}
+\usepackage[english]{babel}
+\usepackage{listings}
+\usepackage{subfigure}
+\usepackage{url}
+\lstset{language=C,
+       basicstyle=\small,
+       numbers=left,
+       stepnumber=1,
+       numbersep=5pt,
+       commentstyle=\color{red},
+       escapeinside={(*@}{@*)}}
+
+%%%%%%%%%%%%%%%
+% Commenting on the paper:
+%%%%%%%%%%%%%%%%%
+\definecolor{midblue}{rgb}{0.7,0.9,1}
+\definecolor{orange}{rgb}{1,0.9,0.6}
+\definecolor{lightgreen}{rgb}{0.6,1,0.6}
+\definecolor{grey}{rgb}{0.9,0.9,0.9}
+
+\newcommand{\comment}[2]{\begin{center}\colorbox{#1}{\parbox{0.85\linewidth}{\textit{{#2}}}}\end{center}}
+
+\newcommand{\abdullah}[1]{\comment{orange}{{Abdullah: #1}}}
+\newcommand{\lauro}[1]{\comment{midblue}{{Lauro: #1}}}
+\newcommand{\elizeu}[1]{\comment{lightgreen}{{Elizeu: #1}}}
+\newcommand{\matei}[1]{\comment{grey}{{Matei: #1}}}
+
+%\title{Totem: Massively-Parallel Graph Processing Framework}
+\title{On Scheduling Graph Workloads on Hybrid Massively-Parallel Platforms}
+\subtitle{(or The Graph Workload Partitioning Manifesto)}
+\numberofauthors{1}
+\author{
+% 1st. author
+\alignauthor 
+Authors
+%Lauro Beltr\~ao Costa, Abdullah Gharaibeh, Elizeu
+%Santos-Neto\vspace{3mm}\\
+%       \affaddr{\small{University of British Columbia}}\\
+%       \affaddr{\small{2332 Main Mall, Vancouver, BC, CANADA}}\\
+%       \email{\small{\{lauroc,abdullah,elizeus\}@ece.ubc.ca}}
+}
+\date{November 2011}
+
+\begin{document}
+
+\maketitle
+
+%\abdullah{Comments by Abdullah}
+%\lauro{Comments by Lauro}
+%\elizeu{Comments by Elizeu}
+
+\begin{abstract}
+Graphs have recently attracted the attention of the research and industry communities alike. In particular, the focus has been on how to leverage massively parallel architectures to speed up graph algorithms. Although harnessing architecture-specific characteristics is likely to boost graph algorithms performance on parallel machines, little attention has been devoted to graph workload aspects and their relationship to the performance of particular components in a hybrid parallel processing platform (e.g., CPU-GPU clusters). More importantly, as the workloads become larger than the capacity of shared memory machines, it will be necessary to efficiently partition the graphs such that it maximizes the processing throughput. This draft proposes a formal system model to help reasoning about graph workload partitioning on massively parallel platforms composed of heterogeneous processors and accelerators such as {\sc gpu}s.
+\end{abstract}
+
+% A category with the (minimum) three required fields
+%\category{H.4}{Information Systems Applications}{Miscellaneous}
+%A category including the fourth, optional field follows...
+%\category{D.2.8}{Software Engineering}{Metrics}[complexity measures, performance measures]
+%\terms{Theory}
+%\keywords{ACM proceedings, \LaTeX, text tagging} % NOT required for Proceedings
+
+\input{intro}
+\input{problem}
+\input{related_work}
+\input{conclusions}
+
+%% References
+\bibliographystyle{abbrv}
+\bibliography{graphs}
+\balancecolumns
+\end{document}
