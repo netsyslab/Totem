@@ -188,6 +188,19 @@ error_t dijkstra_vwarp_gpu(const graph_t* graph, id_t source_id,
                            weight_t** shortest_distances);
 
 /**
+ * Given a weighted graph \f$G = (V, E, w)\f$, the All Pairs Shortest Path
+ * algorithm computes the distance from every vertex to every other vertex
+ * in a weighted graph with no negative cycles.
+ *
+ * @param[in] graph an instance of the graph structure
+ * @param[out] path_ret the length of the computed shortest paths for each
+ *                      vertex
+ * @return generic success or failure
+ */
+error_t apsp_cpu(graph_t* graph, weight_t** path_ret);
+error_t apsp_gpu(graph_t* graph, weight_t** path_ret);
+
+/**
  * Implements a version of the simple PageRank algorithm described in
  * [Malewicz 2010] for both CPU and CPU. Algorithm details are described in
  * totem_page_rank.cu. Note that the "incoming" postfixed funtions take into
