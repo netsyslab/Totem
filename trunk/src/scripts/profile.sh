@@ -26,7 +26,9 @@
 ##  9: control flow divergant (cfd): This gives the percentage of thread 
 ##     instructions that were not executed by all threads in the warp, hence 
 ##     causing divergence.
-
+##
+##  Created on: 2011-08-11
+##  Author: Abdullah Gharaibeh
 
 ################################################################################
 # Set environment variables needed by cudaprofile. Note that the profiler is not
@@ -108,7 +110,7 @@ function usage() {
   echo "agnostic to totem, but has one display option that prints the vwarp and"
   echo "standard kernels side by side to enable easy comparison."
   echo ""
-  echo "Usage: $0 [f] <graph file> [regexp]"
+  echo "Usage: $0 [options] <graph file>"
   echo "  -d  <log directory> Profile logs directory (default /local/data/log)"
   echo "  -e  <cuda executable> Executable to profile (default ../totem/totem)"
   echo "  -h  Print this usage message and exit"
@@ -515,7 +517,7 @@ function derive_control_flow_divergence() {
   fi
 
   paste -d" "  $INST_EXEC_LOG $THRDS_INST_EXEC_LOG | \
-    awk '{if ($2 == 0 || $2 == "nan") print "nan"; 
+    awk '{if (!$2 || $2 == 0 || $2 == "nan") print "nan"; 
           else print ((100 * ($1 - $2)) / $1)}' > $OUTPUT
 }
 
@@ -539,7 +541,7 @@ function derive_gm_excess_load() {
   fi
 
   paste -d" "  $GLD_LOG $L2LD_LOG | \
-    awk '{if ($2 == 0 || $2 == "nan") print "nan"; 
+    awk '{if (!$2 || $2 == 0 || $2 == "nan") print "nan"; 
           else print (100 - (100 * $1 / $2))}' > $OUTPUT
 }
 
@@ -556,7 +558,7 @@ function derive_gm_excess_store() {
   fi
 
   paste -d" "  $GST_LOG $L2ST_LOG | \
-    awk '{if ($2 == 0 || $2 == "nan") print "nan"; 
+    awk '{if (!$2 || $2 == 0 || $2 == "nan") print "nan"; 
           else print (100 - (100 * $1 / $2))}' > $OUTPUT
 }
 
