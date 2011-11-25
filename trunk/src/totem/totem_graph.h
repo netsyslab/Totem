@@ -111,6 +111,22 @@ typedef struct graph_s {
 } graph_t;
 
 /**
+ * Defines a data type for a graph's connected components. components are 
+ * identified by numbers [0 - count). The marker array identifies for each
+ * vertex the id of the component the vertex is part of.
+ */
+typedef struct component_set_s {
+  graph_t* graph;        //**< the graph which this component set belongs to */
+  id_t     count;        //**< number of components */
+  id_t*    vertex_count; //**< vertex count of each component (length: count) */
+  id_t*    edge_count;   //**< edge count of each component (length: count) */
+  id_t*    marker;       //**< the component id for each vertex
+                         //**< (length: graph->vertex_count) */
+  id_t     biggest;      //**< the id of the biggest component */
+} component_set_t;
+
+
+/**
  * reads a graph from the given file and builds a graph data type.
  * The function allocates graph data type and the buffers within it.
  * @param[in] graph_file path to the graph file.
@@ -269,5 +285,22 @@ error_t stcon_cpu(const graph_t* graph, id_t source_id, id_t destination_id,
 
 error_t stcon_gpu(const graph_t* graph, id_t source_id, id_t destination_id,
                   bool* connected);
+
+
+/**
+ * Identifies the weakly connected components in the graph
+ * @param[in] graph 
+ * @param[out] comp_set a component set structure which 
+ *             identifies the components in the graph
+ * @return generic success or failure
+ */
+error_t get_components_cpu(graph_t* graph, component_set_t** comp_set_ret);
+
+/**
+ * De-allocates a component_set_t object
+ * @param[in] comp_set a reference to component set type to be de-allocated
+ * @return generic success or failure
+ */
+error_t finalize_component_set(component_set_t* comp_set);
 
 #endif  // TOTEM_GRAPH_H
