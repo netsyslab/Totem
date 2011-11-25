@@ -4,7 +4,9 @@
 # Features (e.g., make MEMORY="PINNED"): 
 #   MEMORY=PAGEABLE // enables using pageable instead of pinned memory
 #   MP=NO           // disables OpenMP 
-#
+#   VERBOSE=YES     // verbose nvcc output (host symbols are always produced)
+#   DEBUG=DEVICE    // produce device debugging symbols
+#   MAXREG=[number] // maximum number of registers per cuda thread (default 16)
 # Created on: 2011-02-28
 # Author: Abdullah Gharaibeh
 #
@@ -14,19 +16,34 @@
 # defines totem's compile time features
 TOTEM_FEATURES =
 ifeq ($(MEMORY), PAGEABLE)
-TOTEM_FEATURES += -DFEATURE_PAGEABLE_MEMORY
+  TOTEM_FEATURES += -DFEATURE_PAGEABLE_MEMORY
 endif
 
 # OpenMP support, default is enabled
 OPENMP    = -fopenmp
 ifeq ($(MP), NO)
-OPENMP    = 
+  OPENMP  = 
 endif
+
+# Set compilation options
+NVCCFLAGS =
+CCFLAGS = 
+# enable verbose output
+ifeq ($(VERBOSE), YES)
+  NVCCFLAGS  += --ptxas-options=-v
+endif
+# set debugging options
+ifeq ($(DEBUG), DEVICE)
+  NVCCFLAGS  += -G
+endif
+
+# Maximum number of registers per cuda thread
+MAXREG ?= 16
 
 # Architecture to compile for
 ARCH = $(shell getconf LONG_BIT)
 ifeq ($(ARCH), 32)
-ARCH = 
+  ARCH = 
 endif
 
 # directory definitions
@@ -40,15 +57,16 @@ NVCC = $(CUDA_INSTALL_PATH)/bin/nvcc
 
 # compilation and linking flags. Note that OPTFLAGS is used only for *.c files
 OPTFLAGS  = -O3 -fno-strict-aliasing
-CCFLAGS    = -g $(OPENMP) $(OPTFLAGS) -Wall -Wno-format \
+CCFLAGS   += -g $(OPENMP) $(OPTFLAGS) -Wall -Wno-format \
              -I$(CUDA_INSTALL_PATH)/include -D__STDC_LIMIT_MACROS
 LFLAGS    =  -lm $(OPENMP) -lcudart -I. -L. -L$(CUDA_INSTALL_PATH)/lib$(ARCH)
-NVCCFLAGS = --ptxas-options=-v -g -Xcompiler "$(OPENMP)" -O3 -I. \
-            -I$(CUDA_INSTALL_PATH)/include  -arch=sm_20 -D__STDC_LIMIT_MACROS \
+NVCCFLAGS += -g -Xcompiler "$(OPENMP)" -O3 -I. \
+             -I$(CUDA_INSTALL_PATH)/include  -arch=sm_20 -D__STDC_LIMIT_MACROS \
+             -maxrregcount=$(MAXREG)
 
 # source files and their corresponding objects and dependencies
-CCSRC	= $(wildcard *.cc)
-CUSRC	= $(wildcard *.cu)
+CCSRC   = $(wildcard *.cc)
+CUSRC   = $(wildcard *.cu)
 CCOBJS  = $(CCSRC:%.cc=$(OBJDIR)/%.o)
 CUOBJS  = $(CUSRC:%.cu=$(OBJDIR)/%.cu_o)
 CCDEPS  = $(wildcard *.h)
