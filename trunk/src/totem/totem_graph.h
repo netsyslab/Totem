@@ -166,6 +166,23 @@ error_t graph_remove_singletons(const graph_t* graph, graph_t** subgraph);
 
 
 /**
+ * Given a given flow graph (ie, a directed graph where for every edge (u,v),
+ * there is no edge (v,u)), creates a bidirected graph having reverse edges
+ * (v,u) with weight 0 for every edge (u,v) in the original graph. Additionally,
+ * for each edge (u,v), it stores the index of the reverse edge (v,u) and vice
+ * versa, such that for each edge (u,v) in the original graph:
+ *
+ *   (v,u) with weight 0 is in the new graph,
+ *   reverse_indices[(u,v)] == index of (v,u), and
+ *   reverse_indices[(v,u)] == index of (u,v)
+ * @param[in] graph the original flow graph
+ * @param[out] reverse_indices a reference to array of indices of reverse edges
+ * @return bidirected graph
+ */
+graph_t* graph_create_bidirectional(graph_t* graph, id_t** reverse_indices);
+
+
+/**
  * Given an undirected, unweighted graph and a source vertex, find the minimum
  * number of edges needed to reach every vertex V from the source vertex.
  * Its implementation follows Breadth First Search variation based on
@@ -241,6 +258,23 @@ error_t page_rank_incoming_gpu(const graph_t* graph, float* rank_i,
 error_t page_rank_vwarp_incoming_gpu(const graph_t* graph, float* rank_i, 
                                      float** rank);
 
+
+/**
+ * Implements the push-relabel algorithm for determining the Maximum flow
+ * through a directed graph for both the CPU and the GPU, as described in
+ * Hong08]. Note that the source graph must be a flow network, that is, for
+ * every edge (u,v) in the graph, there must not exist an edge (v,u).
+ *
+ * @param[in]  graph the graph on which to run Max Flow
+ * @param[in]  source_id the id of the source vertex
+ * @param[in]  sink_id the id of the sink vertex
+ * @param[out] flow_ret the maximum flow through the network
+ * @return generic success or failure
+ */
+error_t maxflow_cpu(graph_t* graph, id_t source_id, id_t sink_id,
+                    weight_t* flow_ret);
+error_t maxflow_gpu(graph_t* graph, id_t source_id, id_t sink_id,
+                    weight_t* flow_ret);
 
 /**
  * Given a weighted and undirected graph, the algorithm identifies for each
