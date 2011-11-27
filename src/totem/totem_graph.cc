@@ -433,6 +433,107 @@ error_t graph_remove_singletons(const graph_t* graph, graph_t** subgraph) {
   return err;
 }
 
+PRIVATE
+void graph_match_bidirected_edges(graph_t* graph, id_t** reverse_indices) {
+  // Calculate the array of indexes matching each edge to its
+  // counterpart reverse edge
+  (*reverse_indices) = (id_t*)mem_alloc(graph->edge_count * 2 * sizeof(id_t));
+  for (id_t v = 0; v < graph->vertex_count; v++) {
+    for (id_t edge_id = graph->vertices[v];
+         edge_id < graph->vertices[v + 1]; edge_id++) {
+      for (id_t rev_edge_id = graph->vertices[graph->edges[edge_id]];
+           rev_edge_id < graph->vertices[graph->edges[edge_id] + 1];
+           rev_edge_id++) {
+        if (graph->edges[rev_edge_id] == v) {
+          (*reverse_indices)[edge_id] = rev_edge_id;
+          break;
+        }
+      }
+    }
+  }
+}
+
+/**
+ * Given a given flow graph (ie, a directed graph where for every edge (u,v),
+ * there is no edge (v,u)), creates a bidirected graph having reverse edges
+ * (v,u) with weight 0 for every edge (u,v) in the original graph. Additionally,
+ * for each edge (u,v), it stores the index of the reverse edge (v,u) and vice
+ * versa, such that for each edge (u,v) in the original graph:
+ *
+ *   (v,u) with weight 0 is in the new graph,
+ *   reverse_indices[(u,v)] == index of (v,u), and
+ *   reverse_indices[(v,u)] == index of (u,v)
+ * @param[in] graph the original flow graph
+ * @param[out] reverse_indices a reference to array of indices of reverse edges
+ * @return bidirected graph
+ */
+graph_t* graph_create_bidirectional(graph_t* graph, id_t** reverse_indices) {
+  // Create the new graph with the new data
+  graph_t* new_graph;
+  allocate_graph(graph->vertex_count, 2 * graph->edge_count, graph->directed,
+                 graph->weighted, graph->valued, &new_graph);
+
+  id_t new_edge_index = 0;
+  for (id_t v = 0; v < graph->vertex_count; v++) {
+    new_graph->vertices[v] = new_edge_index;
+
+    // Add the forward graph edges in order and any reverse edges that might
+    // come before it. Note that this assumes the given edge list is already
+    // in order.
+    // TODO: relax this assumption
+    id_t rev_id = 0;
+    id_t rev_src_v = 0;
+    for (id_t edge_id = graph->vertices[v]; edge_id < graph->vertices[v + 1];
+         edge_id++) {
+      while (rev_id < edge_id) {
+        // If we found a reverse edge, determine its source vertex
+        if (graph->edges[rev_id] == v) {
+          while (!(rev_id >= graph->vertices[rev_src_v] &&
+                   rev_id < graph->vertices[rev_src_v + 1]) &&
+                   rev_src_v < graph->vertex_count)
+            rev_src_v++;
+          new_graph->edges[new_edge_index] = rev_src_v;
+          new_graph->weights[new_edge_index] = 0;
+          new_edge_index++;
+        }
+        rev_id++;
+      }
+
+      // Add the forward edge
+      new_graph->edges[new_edge_index] = graph->edges[edge_id];
+      new_graph->weights[new_edge_index] = graph->weights[edge_id];
+      new_edge_index++;
+    }
+    /**
+     * Handle reverse edges that may come after all forward edges in the graph.
+     * (eg., if (3,2) and (2,1) were forward edges in the graph, (2,3) would
+     * have to be added here).
+     */
+    while (rev_id < graph->edge_count) {
+      // If we found a reverse edge, determine its source vertex
+      if (graph->edges[rev_id] == v) {
+        while (!(rev_id >= graph->vertices[rev_src_v] &&
+                 rev_id < graph->vertices[rev_src_v + 1]) &&
+                 rev_src_v < graph->vertex_count)
+          rev_src_v++;
+        new_graph->edges[new_edge_index] = rev_src_v;
+        new_graph->weights[new_edge_index] = 0;
+        new_edge_index++;
+      }
+      rev_id++;
+    }
+  }
+
+  // Add the upper bound to the vertices array
+  new_graph->vertices[graph->vertex_count] = new_edge_index;
+  assert(new_edge_index == new_graph->edge_count);
+
+  // Index the reverse edges
+  graph_match_bidirected_edges(new_graph, reverse_indices);
+
+  return new_graph;
+}
+
 error_t graph_finalize(graph_t* graph) {
   assert(graph);
 
