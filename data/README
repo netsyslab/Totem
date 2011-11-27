@@ -1,0 +1,26 @@
+Some of the following graphs were randomly generated using generator tools from
+the 1st DIMACS Challenge (ftp://dimacs.rutgers.edu/pub/netflow).
+
+
+acyclic_100_nodes.totem
+  A 100 node acyclic dense graph with no edge weights greater than 1000.
+  Generated from the DIMACS Acyclic generator.
+
+chain_100_nodes_weight_directed.totem
+  A 100 node directed chain with each node having an arc toward the next
+    successive node.
+
+rmf_100_nodes.totem
+  A 100 node randomly generated RMFGEN network developed by Goldfarb and
+    Grigoriadis - "A computational comparison of the Dinic and Network Simplex
+    methods for maximum flow". Annals of Operations Research 13 (1988),
+    pp 83--123.
+  Generated from the DIMACS GenRMF generator.
+
+source_sink_maxflow.totem
+  A trivial directed weighted graph.
+
+washington_random.totem
+  A rectangular grid of 100 nodes where each vertex in a row is connected to
+    three randomly chosen vertices in the next row.
+  Generated using the DIMACS Washington generator.
