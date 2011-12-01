@@ -1,26 +1,24 @@
 \section{Introduction}
 \label{sec:intro}
-Let us consider a collection of processors $\mathcal{P} = \{p_0\} \cup \{p_1,\ldots,p_c\}$, where $p_i$ denotes a processor, and $c$ indicates the number of processors in the sytem, while $p_0$ is a special processor that has the sole responsibility of distributing the workload and gathering the results, unless stated otherwise all the dicussion focuses on processors $p_i$ for $i>0$. Every two processors $p_i,p_j \in \mathcal{P}$ are connected by a set of bidirectional links $\mathcal{L} = \{l_{ij}\}$, where $i \neq j$, and $l_{ij} = l_{ji}$. Currently, we assume the bandwidth is homogeneous across links and it is represented by $B$.
+Consider a set of processors $\mathcal{P} = \{p_0\} \cup \{p_1,\ldots,p_c\}$, where $p_i$ denotes a processor, and $c$ indicates the number of processors in the system, while $p_0$ is a special processor that has the sole responsibility of distributing the workload and gathering the results. Unless stated otherwise, all the discussion focuses on processors $p_i$ for $i>0$. Every two processors $p_i,p_j \in \mathcal{P}$ are connected by a set of bidirectional links $\mathcal{L} = \{l_{ij}\}$, where $i \neq j$, and $l_{ij} = l_{ji}$. Currently, we assume the bandwidth is homogeneous across links and it is represented by $B$.
 
-The platform of interest is composed of processors with varying processing speeds. Moreover, the speed of a given processor $p_i$ is a function of the workload submited to it. To account for this system characteristic, we represent the processing throughput of a processor $p_i$ by a function $t_i(\mathcal{W}_k)$, where $\mathcal{W}_k$ is a partition of the total workload $\mathcal{W}$ submitted to the system. 
+The platform of interest is composed of processors with varying processing speeds. Moreover, the speed of a given processor $p_i$ is a function of the workload submitted to it. To account for this system characteristic, we represent the processing throughput of a processor $p_i$ by a function $t_i(\mathcal{W}_k)$, where $\mathcal{W}_k$ is a partition of the total workload $\mathcal{W}$ submitted to the system. 
 
 A workload is represented by a pair ({\em algorithm, graph}) denoted by $\mathcal{W} = (\mathcal{A}, G)$, where $\mathcal{A}$ is any relevant algorithm such as {\sc bfs}, and $G$ is a graph, defined as follows: let $G = (V, E, w)$ be weighted directed graph, where, as usual, $V = \{v_i, \ldots,v_n\}$ is the set of vertices, $E$ is the set of directed edges (i.e., $(v_i,v_j) \neq (v_j, v_i)$ for $i \neq j$, and $w: E \mapsto \mathbb{R}$ is a weight function. Without loss of generality, we assume that $|V| = n$ and $|E| = m$.
 
-Therefore, a workload partition $\mathcal{W}_k$ is, in practical terms, a pair with an algorithm $\mathcal{A}$ and a graph partition $G_k = (V_k, E_k) \subseteq G$. It is worth noting that edges in $E_k$ may have source and destination vertices that are not in $V_k$. This assumption impacts the performance of a processor under a given workload, as the algorithm may need to access vertices located at a different processor via the interconnection link. More formally, the throughput function of processor $p_i$ under a workload partition $\mathcal{W}_k$ is given by:
+Therefore, a workload partition $\mathcal{W}_k$ is, in practical terms, a pair with an algorithm $\mathcal{A}$ and a graph partition $G_k = (V_k, E_k) \subseteq G$. It is worth noting that edges in $E_k$ may have source and destination vertices that are not in $V_k$. This assumption impacts the performance of a processor under a given workload, as the algorithm may need to access vertices located at a different processor via the interconnection link. More formally, the throughput function of processor $p_i$ in edges per second (EPS) under a workload partition $\mathcal{W}_k$ is given by:
 
 \begin{equation}
-t_i(\mathcal{W}_k) = \frac{|E_k|}{\sum_{e \in E_k}T_i(e) + |E_k^{r}|B}
+t_i(\mathcal{W}_k) = \frac{|E_k|}{T_i(V_k) + \frac{|E_k^{r}|}{B}}
 \end{equation}\label{eq:throughput_p}
 
-where $T_i(e)$ is the time processor $p_i$ takes to process an edge $e$ when the edge is located in its local memory, and $E_k^{r} = \{(v_i,v_j) | v_i \vee v_j \notin V_k\} \subseteq E_k$ represents the subset of edges s.t. either the source or destination vertice is not located in $p_i$'s local memory. Intuitively, the less communication a processor needs to access the edges in the graph partition assigned to it, the higher is the achievable throughput.
+where $T_i(V_k)$ is the time processor $p_i$ takes to process the vertices in the partition, $B$ is the interconnect transfer throughput in EPS, and $E_k^{r} = \{(v_i,v_j) | v_i \vee v_j \notin V_k\} \subseteq E_k$ represents the subset of edges s.t. either the source or destination vertex is not located in $p_i$'s local memory. Intuitively, the less communication a processor needs to access the edges in the graph partition assigned to it, the higher is the achievable throughput.
 
 Assuming that the workload $\mathcal{W}$ size is smaller than, or equal to, the aggregated memory available in each processor, we define the throughput of a system $\mathcal{P}$, as follows: 
 
 \begin{equation}
-t(\mathcal{P}, \mathcal{W}) = \min_{i}\left\{t_i(\mathcal{W}_i\right\}, i = {1, \ldots, c}
+t(\mathcal{P}, \mathcal{W}) = \min_{i}\left\{t_i(\mathcal{W})\right\}, i = {1, \ldots, c}
 \label{eq:throughput_sys}
 \end{equation}
 
-The intuition behind Equation~\ref{eq:throughput_sys} is that the maximum performance of a parallel system is always limited by its slowest component. In the scenarios we investigate, the performance of a component is limited by the worload partition assigned to it by the master node. As described in the next section, the problem of partioning the graph is can be framed as a global system optimization problem that aim to minimize the amount of communication needed across processors for a given graph workload.
-
-
+The intuition behind Equation~\ref{eq:throughput_sys} is that the maximum performance of a parallel system is always limited by its slowest component. In the scenarios we investigate, the performance of a component is limited by the workload partition assigned to it by the master node. As described in the next section, the problem of partitioning the graph can be framed as a global system optimization problem that aim to (i) balance the work between the processors, and (ii) minimize the amount of communication needed across the processors for a given graph workload.
