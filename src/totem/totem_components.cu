@@ -120,7 +120,7 @@ error_t get_components_cpu(graph_t* graph, component_set_t** comp_set_ret) {
   int comp_count = 0;
   for (id_t vid = 0; vid < graph->vertex_count; vid++) {
     if (comp_set->marker[vid] == (id_t)-1) {
-      bfs(graph, vid, comp_set->marker, comp_count);
+      mark_component(graph, vid, comp_set->marker, comp_count);
       comp_count++;
     }
   }
