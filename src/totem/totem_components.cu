@@ -59,14 +59,18 @@ error_t check_special_cases(graph_t* graph, component_set_t** comp_set_ret,
  * @param[in] marker vertices visited will be marked with comp
  * @param[in] comp the id of the current component
  */
-PRIVATE void bfs(const graph_t* graph, id_t src, id_t* marker, int comp) {
+PRIVATE void mark_component(const graph_t* graph, id_t src, id_t* marker, 
+                            int comp) {
 
-  // TODO(abdullah): integrate with bfs_* functions implemented in totem_bfs.cu.
-  // The difference between this bfs implementation and the ones in totem_bfs.cu
-  // is that this one marks the vertices with their component id on the fly
-  // which has the potential to improve performance in the case of graphs
-  // with large number of components. One way to enable such a thing in the 
-  // original bfs implementation is to have callbacks.
+  // TODO(abdullah): use bfs_* functions implemented in totem_bfs.cu to minimize
+  // code maintenance overhead. The difference between this bfs-like  
+  // iplementation and the ones in totem_bfs.cu is that this one marks the 
+  // vertices with their component id on the fly which has the potential to 
+  // improve performance in the case of graphs with large number of components. 
+  // Also, it assumes that all the vertices less than src has already been 
+  // visited, hence it skips iterating over them. An advantage of using the 
+  // bfs_* functions is modularity. One way to enable such a thing in the 
+  // original bfs implementation is to have callbacks in them.
 
   assert(graph && (src < graph->vertex_count) && (marker[src] == (id_t)-1));
 
@@ -83,11 +87,12 @@ PRIVATE void bfs(const graph_t* graph, id_t src, id_t* marker, int comp) {
     #ifdef _OPENMP
     #pragma omp parallel for
     #endif // _OPENMP
-    for (id_t vid = 0; vid < graph->vertex_count; vid++) {
+    for (id_t vid = src; vid < graph->vertex_count; vid++) {
+      // the assumption is that all the vertices less than src has alredy been 
+      // marked, therefore we can safely skip them and start the loop from src.
       if (marker[vid] != level) continue;
       marker[vid] = comp;
-      for (id_t i = graph->vertices[vid];
-           i < graph->vertices[vid + 1]; i++) {
+      for (id_t i = graph->vertices[vid]; i < graph->vertices[vid + 1]; i++) {
         const id_t nbr = graph->edges[i];
         if (marker[nbr] == (id_t)-1) {
           finished = false;
