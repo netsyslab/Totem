@@ -19,6 +19,11 @@
 #include "totem_graph.h"
 #include "totem_mem.h"
 
+// Externed function declarations for dijkstra kernel functions
+__global__ void has_true_kernel(bool*, uint32_t, bool*);
+__global__ void dijkstra_kernel(graph_t, bool*, weight_t*, weight_t*);
+__global__ void dijkstra_final_kernel(graph_t, bool*, weight_t*, weight_t*);
+
 
 /**
  * Checks for input parameters and special cases. This is invoked at the
@@ -61,39 +66,179 @@ error_t check_special_cases(graph_t* graph, weight_t **distances,
 }
 
 /**
+ * An initialization function for the GPU implementation of APSP. This function
+ * allocates memory for use with Dijkstra's algorithm.
+*/
+PRIVATE
+error_t initialize_gpu(graph_t* graph, uint64_t distance_length,
+                       graph_t** graph_d, weight_t** distances_d,
+                       weight_t** new_distances_d, bool** changed_d,
+                       bool** has_true_d) {
+  // Initialize the graph
+  CHK_SUCCESS(graph_initialize_device(graph, graph_d), err);
+
+  // The distance array from the source vertex to every node in the graph.
+  CHK_CU_SUCCESS(cudaMalloc((void**)distances_d, distance_length *
+                            sizeof(weight_t)), err_free_graph);
+
+  // An array that contains the newly computed array of distances.
+  CHK_CU_SUCCESS(cudaMalloc((void**)new_distances_d, distance_length *
+                            sizeof(weight_t)), err_free_distances);
+  // An entry in this array indicate whether the corresponding vertex should
+  // try to compute new distances.
+  CHK_CU_SUCCESS(cudaMalloc((void **)changed_d, distance_length * sizeof(bool)),
+                 err_free_new_distances);
+  // Initialize the flags that indicate whether the distances were updated
+  CHK_CU_SUCCESS(cudaMalloc((void **)has_true_d, sizeof(bool)),
+                 err_free_all);
+
+  return SUCCESS;
+
+  // error handlers
+  err_free_all:
+    cudaFree(*changed_d);
+  err_free_new_distances:
+    cudaFree(*new_distances_d);
+  err_free_distances:
+    cudaFree(*distances_d);
+  err_free_graph:
+    graph_finalize_device(*graph_d);
+  err:
+    return FAILURE;
+}
+
+
+/**
+ * An initialization function for GPU implementations of APSP. This function
+ * initializes state for running an iteration of Dijkstra's algorithm on a
+ * source vertex.
+*/
+PRIVATE
+error_t initialize_source_gpu(id_t source_id, uint64_t distance_length,
+                              bool** changed_d, bool** has_true_d,
+                              weight_t** distances_d,
+                              weight_t** new_distances_d) {
+
+  // Kernel configuration parameters.
+  dim3 block_count;
+  dim3 threads_per_block;
+
+  // Compute the number of blocks.
+  KERNEL_CONFIGURE(distance_length, block_count, threads_per_block);
+
+  // Set all distances to infinite.
+  memset_device<<<block_count, threads_per_block>>>
+      (*distances_d, WEIGHT_MAX, distance_length);
+  memset_device<<<block_count, threads_per_block>>>
+      (*new_distances_d, WEIGHT_MAX, distance_length);
+
+  // Set the distance to the source to zero.
+  CHK_CU_SUCCESS(cudaMemset(&((*distances_d)[source_id]), (weight_t)0,
+                 sizeof(weight_t)), err);
+
+  // Activate the source vertex to compute distances.
+  CHK_CU_SUCCESS(cudaMemset(&((*changed_d)[source_id]), true, sizeof(bool)),
+                 err);
+
+  // Initialize the flags that indicate whether the distances were updated
+  CHK_CU_SUCCESS(cudaMemset(*has_true_d, false, sizeof(bool)), err);
+
+  return SUCCESS;
+
+  // error handlers
+  err:
+    return FAILURE;
+}
+
+
+/**
+ * A common finalize function for GPU implementations. It frees up the GPU
+ * resources.
+*/
+PRIVATE
+void finalize_gpu(graph_t* graph, graph_t* graph_d, weight_t* distances_d,
+                  bool* changed_d, weight_t* new_distances_d,
+                  bool* has_true_d) {
+
+  // Finalize GPU
+  graph_finalize_device(graph_d);
+  // Release the allocated memory
+  cudaFree(distances_d);
+  cudaFree(changed_d);
+  cudaFree(new_distances_d);
+  cudaFree(has_true_d);
+}
+
+
+/**
  * All Pairs Shortest Path algorithm on the GPU.
  */
 error_t apsp_gpu(graph_t* graph, weight_t** path_ret) {
-  if ((graph == NULL) || (graph->vertex_count <= 0) || (!graph->weighted)) {
-    *path_ret = NULL;
-    return FAILURE;
-  }
-  // TODO(Greg): Avoid extra copies between this and Dijkstra.
+  bool finished;
+  error_t ret_val = check_special_cases(graph, path_ret, &finished);
+  if (finished) return ret_val;
 
-  uint32_t v_count = graph->vertex_count;
   // The distances array mimics a static array to avoid the overhead of
   // creating an array of pointers. Thus, accessing index [i][j] will be
-  // done as distances[(i * v_count) + j]
-  weight_t* distances = (weight_t*)mem_alloc(v_count * v_count *
+  // done as distances[(i * vertex_count) + j]
+  weight_t* distances = (weight_t*)mem_alloc(graph->vertex_count *
+                                             graph->vertex_count *
                                              sizeof(weight_t));
+
+  // Allocate and initialize GPU state
+  bool *changed_d;
+  bool *has_true_d;
+  graph_t* graph_d;
+  weight_t* distances_d;
+  weight_t* new_distances_d;
+  CHK_SUCCESS(initialize_gpu(graph, graph->vertex_count, &graph_d, &distances_d,
+                             &new_distances_d, &changed_d, &has_true_d), err);
+
+  {
   dim3 block_count, threads_per_block;
   KERNEL_CONFIGURE(graph->vertex_count, block_count, threads_per_block);
-
-  for (id_t i = 0; i < graph->vertex_count; i++) {
-    weight_t* paths = NULL;
+  for (id_t source_id = 0; source_id < graph->vertex_count; source_id++) {
     // Run SSSP for the selected vertex
-    CHK_SUCCESS(dijkstra_gpu(graph, i, &paths), err_free_distances);
-    // Copy the result into the adjacency matrix
-    memcpy(&(distances[(i * v_count)]), paths, v_count * sizeof(weight_t));
-    mem_free(paths);
-  }
+    CHK_SUCCESS(initialize_source_gpu(source_id, graph->vertex_count,
+                                      &changed_d, &has_true_d, &distances_d,
+                                      &new_distances_d), err_free_all);
+    bool has_true = true;
+    while (has_true) {
+      dijkstra_kernel<<<block_count, threads_per_block>>>
+        (*graph_d, changed_d, distances_d, new_distances_d);
+      dijkstra_final_kernel<<<block_count, threads_per_block>>>
+        (*graph_d, changed_d, distances_d, new_distances_d);
+      has_true_kernel<<<block_count, threads_per_block>>>
+        (changed_d, graph_d->vertex_count, has_true_d);
+      CHK_CU_SUCCESS(cudaMemcpy(&has_true, has_true_d, sizeof(bool),
+                                cudaMemcpyDeviceToHost), err_free_all);
+    }
+    // Copy the output shortest distances from the device mem to the host
+    weight_t* base = &(distances[(source_id * graph->vertex_count)]);
+    CHK_CU_SUCCESS(cudaMemcpy(base, distances_d, graph->vertex_count *
+                              sizeof(weight_t), cudaMemcpyDeviceToHost),
+                   err_free_all);
+
+  }}
+
+  // Free GPU resources
+  finalize_gpu(graph, graph_d, distances_d, changed_d, new_distances_d,
+               has_true_d);
+  // Return the constructed shortest distances array
   *path_ret = distances;
   return SUCCESS;
 
-err_free_distances:
-  mem_free(distances);
-  *path_ret = NULL;
-  return FAILURE;
+  // error handlers
+  err_free_all:
+   cudaFree(changed_d);
+   cudaFree(has_true_d);
+   cudaFree(distances_d);
+   cudaFree(new_distances_d);
+   graph_finalize_device(graph_d);
+  err:
+   mem_free(distances);
+   *path_ret = NULL;
+   return FAILURE;
 }
 
 /**
