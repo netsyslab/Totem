@@ -275,6 +275,8 @@ error_t maxflow_cpu(graph_t* graph, id_t source_id, id_t sink_id,
                     weight_t* flow_ret);
 error_t maxflow_gpu(graph_t* graph, id_t source_id, id_t sink_id,
                     weight_t* flow_ret);
+error_t maxflow_vwarp_gpu(graph_t* graph, id_t source_id, id_t sink_id,
+                          weight_t* flow_ret);
 
 /**
  * Given a weighted and undirected graph, the algorithm identifies for each
