@@ -31,6 +31,7 @@
 typedef struct {
   id_t vertices[VWARP_BATCH_SIZE + 1];
   weight_t distances[VWARP_BATCH_SIZE];
+  bool to_update[VWARP_BATCH_SIZE];
   // the following ensures 64-bit alignment, it assumes that the cost and
   // vertices arrays are of 32-bit elements.
   // TODO(abdullah) a portable way to do this (what if id_t is 64-bit?)
@@ -119,6 +120,8 @@ error_t initialize_gpu(const graph_t* graph, id_t source_id,
                  sizeof(weight_t)), err_free_new_distances);
 
   // Activate the source vertex to compute distances.
+  CHK_CU_SUCCESS(cudaMemset(*changed_d, false, distance_length * sizeof(bool)),
+                 err_free_new_distances);
   CHK_CU_SUCCESS(cudaMemset(&((*changed_d)[source_id]), true, sizeof(bool)),
                  err_free_new_distances);
 
@@ -174,24 +177,6 @@ error_t finalize_gpu(graph_t* graph_d, weight_t* distances_d, bool* changed_d,
 }
 
 /**
- * Tests whether any of the array elements is set to true.
- * @param[in] array a boolean array
- * @param[in] size the number of element in the array
- * @param[out] result indicates whether the kernel found a true element.
- */
-__global__
-void has_true_kernel(bool* array, uint32_t size, bool* result) {
-  const id_t vertex_id = THREAD_GLOBAL_INDEX;
-  *result = false;
-  if (vertex_id >= size) {    
-    return;
-  }
-  if (array[vertex_id]) {
-    *result = true;
-  }
-}
-
-/**
  * Computes the new distances for each neighbor in the graph.
  * @param[in] graph the input graph used to compute the distances
  * @param[in] to_update an array to indicate which nodes will update distances
@@ -208,22 +193,14 @@ void dijkstra_kernel(graph_t graph, bool* to_update, weight_t* distances,
   id_t* edges        = graph.edges;
   weight_t* weights  = graph.weights;
 
-  // TODO(abdullah): May be there is an opportunity for optimization here.
-  //                 Threads (vertices) that do not have the to_update set will
-  //                 exit at this point, and they will stay idle until their
-  //                 mates are done. I was wondering how we can keep them busy.
-  //                 For BFS, the Stanford paper uses a work queue and they get
-  //                 marginal improvement. It is not clear if SSSP will have the
-  //                 same behavior.
   const id_t vertex_id = THREAD_GLOBAL_INDEX;
   if ((vertex_id >= vertex_count) || !to_update[vertex_id]) {
     return;
   }
-  to_update[vertex_id] = false;
 
   id_t* neighbors = &(edges[vertices[vertex_id]]);
   weight_t* local_weights = &(weights[vertices[vertex_id]]);
-  uint64_t neighbor_count = vertices[vertex_id + 1] - vertices[vertex_id];
+  id_t neighbor_count = vertices[vertex_id + 1] - vertices[vertex_id];
   weight_t distance_to_vertex = distances[vertex_id];
 
   for (id_t i = 0; i < neighbor_count; i++) {
@@ -244,8 +221,8 @@ void dijkstra_kernel(graph_t graph, bool* to_update, weight_t* distances,
  * while thread 1 in the warp processes neighbors 1, (1 + VWARP_WARP_SIZE),
  * (1 + 2 * VWARP_WARP_SIZE) and so on.
 */
-__device__
-void vwarp_process_neighbors(int warp_offset, int neighbor_count,
+inline __device__
+void vwarp_process_neighbors(int warp_offset, id_t neighbor_count,
                              id_t* neighbors, weight_t* weights,
                              weight_t distance_to_vertex,
                              weight_t* new_distances) {
@@ -280,17 +257,16 @@ void vwarp_dijkstra_kernel(graph_t graph, bool* to_update, weight_t* distances,
                warp_offset);
   vwarp_memcpy(my_space->vertices, &(graph.vertices[v_]), VWARP_BATCH_SIZE + 1, 
                warp_offset);
+  vwarp_memcpy(my_space->to_update, &(to_update[v_]), VWARP_BATCH_SIZE, 
+               warp_offset);
 
   // iterate over my work
-  bool* local_to_update = &(to_update[v_]);
   for(uint32_t v = 0; v < VWARP_BATCH_SIZE; v++) {
-    if (local_to_update[v]) {
-      local_to_update[v] = false;
+    weight_t distance_to_vertex = my_space->distances[v];
+    if (my_space->to_update[v]) {      
       id_t* neighbors = &(graph.edges[my_space->vertices[v]]);
       weight_t* local_weights = &(graph.weights[my_space->vertices[v]]);
-      uint64_t neighbor_count = my_space->vertices[v + 1]
-                                - my_space->vertices[v];
-      weight_t distance_to_vertex = my_space->distances[v];
+      id_t neighbor_count = my_space->vertices[v + 1] - my_space->vertices[v];
       vwarp_process_neighbors(warp_offset, neighbor_count, neighbors,
                               local_weights, distance_to_vertex, new_distances);
     }
@@ -309,7 +285,7 @@ void vwarp_dijkstra_kernel(graph_t graph, bool* to_update, weight_t* distances,
  */
 __global__
 void dijkstra_final_kernel(graph_t graph, bool* to_update, weight_t* distances,
-                           weight_t* new_distances) {
+                           weight_t* new_distances, bool* has_true) {
   const uint32_t vertex_id = THREAD_GLOBAL_INDEX;
   if (vertex_id >= graph.vertex_count) {
     return;
@@ -317,6 +293,7 @@ void dijkstra_final_kernel(graph_t graph, bool* to_update, weight_t* distances,
   if (new_distances[vertex_id] < distances[vertex_id]) {
     distances[vertex_id] = new_distances[vertex_id];
     to_update[vertex_id] = true;
+    *has_true = true;
   }
   new_distances[vertex_id] = distances[vertex_id];
 }
@@ -346,15 +323,16 @@ error_t dijkstra_gpu(const graph_t* graph, id_t source_id,
   while (has_true) {
     dijkstra_kernel<<<block_count, threads_per_block>>>
       (*graph_d, changed_d, distances_d, new_distances_d);
+    CHK_CU_SUCCESS(cudaMemset(changed_d, false, graph->vertex_count * 
+                              sizeof(bool)), err_free_all);
+    CHK_CU_SUCCESS(cudaMemset(has_true_d, false, sizeof(bool)), err_free_all);
     dijkstra_final_kernel<<<block_count, threads_per_block>>>
-      (*graph_d, changed_d, distances_d, new_distances_d);
-    has_true_kernel<<<block_count, threads_per_block>>>
-      (changed_d, graph_d->vertex_count, has_true_d);
+      (*graph_d, changed_d, distances_d, new_distances_d, has_true_d);
     CHK_CU_SUCCESS(cudaMemcpy(&has_true, has_true_d, sizeof(bool),
                               cudaMemcpyDeviceToHost), err_free_all);
   }
   }
-
+  
   // Copy the output shortest distances from the device mem to the host
   // Finalize GPU
   CHK_SUCCESS(finalize_gpu(graph_d, distances_d, changed_d, new_distances_d,
@@ -405,10 +383,11 @@ error_t dijkstra_vwarp_gpu(const graph_t* graph, id_t source_id,
   while (has_true) {
     vwarp_dijkstra_kernel<<<block_count, threads_per_block>>>
       (*graph_d, changed_d, distances_d, new_distances_d, thread_count);
+    CHK_CU_SUCCESS(cudaMemset(changed_d, false, distance_length * sizeof(bool)),
+                   err_free_all);
+    CHK_CU_SUCCESS(cudaMemset(has_true_d, false, sizeof(bool)), err_free_all);
     dijkstra_final_kernel<<<block_count_final, threads_per_block_final>>>
-      (*graph_d, changed_d, distances_d, new_distances_d);
-    has_true_kernel<<<block_count_final, threads_per_block_final>>>
-      (changed_d, graph_d->vertex_count, has_true_d);
+      (*graph_d, changed_d, distances_d, new_distances_d, has_true_d);
     CHK_CU_SUCCESS(cudaMemcpy(&has_true, has_true_d, sizeof(bool),
                               cudaMemcpyDeviceToHost), err_free_all);
   }
@@ -470,10 +449,6 @@ error_t dijkstra_cpu(const graph_t* graph, id_t source_id,
   id_t* vertices     = graph->vertices;
   id_t* edges        = graph->edges;
   weight_t* weights  = graph->weights;
-
-  // Initialize the mutex.
-  int mutex = 0;
-  mutex += 0;
 
   bool changed = true;
   while (changed) {
