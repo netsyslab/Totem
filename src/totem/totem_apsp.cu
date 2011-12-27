@@ -20,9 +20,9 @@
 #include "totem_mem.h"
 
 // Externed function declarations for dijkstra kernel functions
-__global__ void has_true_kernel(bool*, uint32_t, bool*);
 __global__ void dijkstra_kernel(graph_t, bool*, weight_t*, weight_t*);
-__global__ void dijkstra_final_kernel(graph_t, bool*, weight_t*, weight_t*);
+__global__ void dijkstra_final_kernel(graph_t, bool*, weight_t*, weight_t*,
+                                      bool* has_true);
 
 
 /**
@@ -206,10 +206,11 @@ error_t apsp_gpu(graph_t* graph, weight_t** path_ret) {
     while (has_true) {
       dijkstra_kernel<<<block_count, threads_per_block>>>
         (*graph_d, changed_d, distances_d, new_distances_d);
+      CHK_CU_SUCCESS(cudaMemset(changed_d, false, graph->vertex_count *
+                                sizeof(bool)), err_free_all);
+      CHK_CU_SUCCESS(cudaMemset(has_true_d, false, sizeof(bool)), err_free_all);
       dijkstra_final_kernel<<<block_count, threads_per_block>>>
-        (*graph_d, changed_d, distances_d, new_distances_d);
-      has_true_kernel<<<block_count, threads_per_block>>>
-        (changed_d, graph_d->vertex_count, has_true_d);
+        (*graph_d, changed_d, distances_d, new_distances_d, has_true_d);
       CHK_CU_SUCCESS(cudaMemcpy(&has_true, has_true_d, sizeof(bool),
                                 cudaMemcpyDeviceToHost), err_free_all);
     }
@@ -219,7 +220,8 @@ error_t apsp_gpu(graph_t* graph, weight_t** path_ret) {
                               sizeof(weight_t), cudaMemcpyDeviceToHost),
                    err_free_all);
 
-  }}
+  }
+  }
 
   // Free GPU resources
   finalize_gpu(graph, graph_d, distances_d, changed_d, new_distances_d,
