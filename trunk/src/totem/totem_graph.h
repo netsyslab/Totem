@@ -145,7 +145,6 @@ error_t graph_initialize(const char* graph_file, bool weighted,
  */
 error_t graph_finalize(graph_t* graph);
 
-
 /**
  * Creates a subgraph from a graph. the graph is de-allocated via graph_finalize
  * @param[in] graph the graph to extract the subgraph from
@@ -164,7 +163,6 @@ error_t get_subgraph(const graph_t* graph, bool* mask, graph_t** subgraph);
  */
 error_t graph_remove_singletons(const graph_t* graph, graph_t** subgraph);
 
-
 /**
  * Given a given flow graph (ie, a directed graph where for every edge (u,v),
  * there is no edge (v,u)), creates a bidirected graph having reverse edges
@@ -181,6 +179,21 @@ error_t graph_remove_singletons(const graph_t* graph, graph_t** subgraph);
  */
 graph_t* graph_create_bidirectional(graph_t* graph, id_t** reverse_indices);
 
+/**
+ * Split the graph into the specified number of partitions by randomly assigning
+ * vertices to each partition.
+ *
+ * @param[in] graph the input graph
+ * @param[in] number_of_partitions the number of partitions the vertices should
+ *                                 be assigned to
+ * @param[in] seed a number to seed the pseudorandom number generator
+ * @param[out] partition_labels an array with a partition id for each vertex as
+ *                              identified by the array position. It is set to
+ *                              NULL in case of failure.
+ * @return SUCCESS if the partitions are assigned, FAILURE otherwise.
+ */
+error_t graph_random_partition(graph_t* graph, int number_of_partitions,
+                               unsigned int seed, id_t** partition_labels);
 
 /**
  * Given an undirected, unweighted graph and a source vertex, find the minimum

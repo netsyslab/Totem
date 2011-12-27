@@ -11,9 +11,16 @@
 
 class GraphHelper : public ::testing::Test {
  protected:
+  id_t* partitions_;
   virtual void SetUp() {
     // Ensure the minimum CUDA architecture is supported
     CUDA_CHECK_VERSION();
+    partitions_ = NULL;
+  }
+  virtual void TearDown() {
+    if (partitions_ != NULL) {
+      free(partitions_);
+    }
   }
 };
 
@@ -274,4 +281,31 @@ TEST_F(GraphHelper, AtomicOperations) {
     __sync_fetch_and_min_double(&p_min_double, value);
   }
   EXPECT_EQ(p_min_double, min_double);
+}
+
+TEST_F(GraphHelper, RandomPartitionInvalidPartitionNumber) {
+  graph_t* graph;
+  EXPECT_EQ(SUCCESS, graph_initialize(DATA_FOLDER("single_node.totem"),
+                                      false, &graph));
+  EXPECT_EQ(FAILURE, graph_random_partition(graph, -1, 13, &partitions_));
+}
+
+
+TEST_F(GraphHelper, RandomPartitionSingleNodeGraph) {
+  graph_t* graph;
+  EXPECT_EQ(SUCCESS, graph_initialize(DATA_FOLDER("single_node.totem"),
+                                      false, &graph));
+  EXPECT_EQ(SUCCESS, graph_random_partition(graph, 10, 13, &partitions_));
+  printf(" %d \n", partitions_[0]);
+  EXPECT_TRUE((partitions_[0] >= 0) && (partitions_[0] < 10));
+}
+
+TEST_F(GraphHelper, RandomPartitionChainGraph) {
+  graph_t* graph;
+  EXPECT_EQ(SUCCESS, graph_initialize(DATA_FOLDER("chain_1000_nodes.totem"),
+                                      false, &graph));
+  EXPECT_EQ(SUCCESS, graph_random_partition(graph, 10, 13, &partitions_));
+  for (id_t i = 0; i < graph->vertex_count; i++) {
+    EXPECT_TRUE((partitions_[i] >= 0) && (partitions_[i] < 10));
+  }
 }
