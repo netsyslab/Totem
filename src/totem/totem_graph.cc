@@ -548,3 +548,36 @@ error_t graph_finalize(graph_t* graph) {
 
   return SUCCESS;
 }
+
+error_t graph_random_partition(graph_t* graph, int number_of_partitions,
+                               unsigned int seed, id_t** partition_labels) {
+  // Check pre-conditions
+  if (graph == NULL) {
+    // TODO(elizeu): Use Lauro's beautiful logging library.
+    printf("ERROR: Graph object is NULL, cannot proceed with partitioning.\n");
+    *partition_labels = NULL;
+    return FAILURE;
+  }
+  // The requested number of partitions should be positive
+  if ((number_of_partitions <= 0) || (graph->vertex_count == 0)) {
+    printf("ERROR: Invalid number of partitions or empty graph: %d (|V|),",
+           graph->vertex_count);
+    printf(" %d (partitions).\n", number_of_partitions);
+    *partition_labels = NULL;
+    return FAILURE;
+  }
+
+  // Allocate the partition vector
+  id_t* partitions = (id_t*)malloc((graph->vertex_count) * sizeof(id_t));
+
+  // Initialize the random number generator
+  srand(seed);
+
+  for (uint64_t vertex_id = 0; vertex_id < graph->vertex_count; vertex_id++) {
+    // Assign each vertex to a random partition within the range
+    // (0, NUMBER_OF_PARTITIONS - 1)
+    partitions[vertex_id] = rand() % number_of_partitions;
+  }
+  *partition_labels = partitions;
+  return SUCCESS;
+}
