@@ -7,6 +7,7 @@
 #   VERBOSE=YES     // verbose nvcc output (host symbols are always produced)
 #   DEBUG=DEVICE    // produce device debugging symbols
 #   MAXREG=[number] // maximum number of registers per cuda thread (default 16)
+#   L1=YES          // enable using GPU L1 cache (default disabled)
 # Created on: 2011-02-28
 # Author: Abdullah Gharaibeh
 #
@@ -39,6 +40,11 @@ endif
 
 # Maximum number of registers per cuda thread
 MAXREG ?= 16
+
+# Enable/disable GPU L1 cache
+ifneq ($(L1), YES)
+  NVCCFLAGS += -Xptxas -dlcm=cg
+endif
 
 # Architecture to compile for
 ARCH = $(shell getconf LONG_BIT)
