@@ -14,12 +14,6 @@
  * the values arriving into sum and sets its own tentative PageRank to
  * ((1 - DAMPING_FACTOR) / vertex_count + DAMPING_FACTOR * sum).
  *
- * TODO (abdullah): The implementation assumes that the edges array in the graph
- *                  data structure are incoming edges. The implementation should
- *                  be consistent with the description of the graph data
- *                  structure which assumes the edges array stores outgoing
- *                  edges.
- *
  *  Created on: 2011-03-06
  *  Author: Abdullah Gharaibeh
  */
@@ -48,7 +42,8 @@
  * beginning of public interfaces (GPU and CPU)
 */
 PRIVATE
-error_t check_special_cases(const graph_t* graph, float** rank, bool* finished) {
+error_t check_special_cases(const graph_t* graph, float** rank, 
+                            bool* finished) {
   *finished = true;
   if (graph == NULL) {
     return FAILURE;
@@ -71,7 +66,6 @@ error_t check_special_cases(const graph_t* graph, float** rank, bool* finished) 
  */
 inline __device__ 
 double sum_neighbors_ranks(graph_t* graph, id_t vertex_id, float* ranks) {
-  //id_t vertex_id = THREAD_GLOBAL_INDEX;
   double sum = 0;
   for (uint64_t i = graph->vertices[vertex_id];
        i < graph->vertices[vertex_id + 1]; i++) {
