@@ -12,22 +12,26 @@
 class GraphHelper : public ::testing::Test {
  protected:
   id_t* partitions_;
+  partition_set_t* partition_set_;
   virtual void SetUp() {
     // Ensure the minimum CUDA architecture is supported
     CUDA_CHECK_VERSION();
     partitions_ = NULL;
+    partition_set_ = NULL;
   }
   virtual void TearDown() {
     if (partitions_ != NULL) {
       free(partitions_);
     }
+    if (partition_set_ != NULL) {
+      finalize_partition_set(partition_set_);
+    }    
   }
 };
 
 // Tests for initialize helper function.
 TEST_F(GraphHelper, Initialize) {
   graph_t* graph;
-
   EXPECT_EQ(SUCCESS, graph_initialize(DATA_FOLDER("single_node.totem"),
                                       false, &graph));
   EXPECT_EQ((uint32_t)1, graph->vertex_count);
@@ -288,6 +292,7 @@ TEST_F(GraphHelper, RandomPartitionInvalidPartitionNumber) {
   EXPECT_EQ(SUCCESS, graph_initialize(DATA_FOLDER("single_node.totem"),
                                       false, &graph));
   EXPECT_EQ(FAILURE, graph_random_partition(graph, -1, 13, &partitions_));
+  EXPECT_EQ(SUCCESS,  graph_finalize(graph));
 }
 
 
@@ -296,8 +301,8 @@ TEST_F(GraphHelper, RandomPartitionSingleNodeGraph) {
   EXPECT_EQ(SUCCESS, graph_initialize(DATA_FOLDER("single_node.totem"),
                                       false, &graph));
   EXPECT_EQ(SUCCESS, graph_random_partition(graph, 10, 13, &partitions_));
-  printf(" %d \n", partitions_[0]);
   EXPECT_TRUE((partitions_[0] >= 0) && (partitions_[0] < 10));
+  EXPECT_EQ(SUCCESS,  graph_finalize(graph));
 }
 
 TEST_F(GraphHelper, RandomPartitionChainGraph) {
@@ -308,4 +313,42 @@ TEST_F(GraphHelper, RandomPartitionChainGraph) {
   for (id_t i = 0; i < graph->vertex_count; i++) {
     EXPECT_TRUE((partitions_[i] >= 0) && (partitions_[i] < 10));
   }
+  EXPECT_EQ(SUCCESS,  graph_finalize(graph));
+}
+
+TEST_F(GraphHelper, GetPartitionsSingleNodeGraph) {
+  graph_t* graph;
+  EXPECT_EQ(SUCCESS, graph_initialize(DATA_FOLDER("single_node.totem"),
+                                      false, &graph));
+  EXPECT_EQ(SUCCESS, graph_random_partition(graph, 1, 13, &partitions_));
+  EXPECT_EQ(SUCCESS, graph_get_partitions(graph, partitions_, 1, 
+                                          &partition_set_));
+  EXPECT_EQ(partition_set_->partition_count, 1);
+  partition_t* partition = &partition_set_->partitions[0];
+  EXPECT_EQ(partition->vertex_count, (uint32_t)1);
+  EXPECT_EQ(partition->edge_count, (uint32_t)0);
+  EXPECT_EQ(SUCCESS,  graph_finalize(graph));
+}
+
+TEST_F(GraphHelper, GetPartitionsChainGraph) {
+  graph_t* graph;
+  EXPECT_EQ(SUCCESS, graph_initialize(DATA_FOLDER("chain_1000_nodes.totem"),
+                                      false, &graph));
+  EXPECT_EQ(SUCCESS, graph_random_partition(graph, 3, 13, &partitions_));
+  EXPECT_EQ(SUCCESS, graph_get_partitions(graph, partitions_, 3, 
+                                          &partition_set_));
+  for (int pid = 0; pid < partition_set_->partition_count; pid++) {
+    partition_t* partition = &partition_set_->partitions[pid];
+    for (id_t vid = 0; vid < partition->vertex_count; vid++) {
+      for (id_t i = partition->vertices[vid]; 
+           i < partition->vertices[vid + 1]; i++) {
+        int nbr_pid = GET_PARTITION_ID(partition->edges[i]);
+        EXPECT_TRUE((nbr_pid < partition_set_->partition_count));
+        partition_t* nbr_partition = &partition_set_->partitions[nbr_pid];
+        id_t nbr_id = GET_VERTEX_ID(partition->edges[i]);
+        EXPECT_TRUE((nbr_id < nbr_partition->vertex_count));
+      }
+    }
+  }
+  EXPECT_EQ(SUCCESS,  graph_finalize(graph));
 }
