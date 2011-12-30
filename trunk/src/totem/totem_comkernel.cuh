@@ -34,17 +34,17 @@
 /**
  * the number of threads a warp consists of
  */
-#define VWARP_WARP_SIZE 8
+#define VWARP_WARP_SIZE 32
 
 /**
  * the size of the batch of work assigned to each virtual warp
  */
-#define VWARP_BATCH_SIZE 16
+#define VWARP_BATCH_SIZE 32
 
 /**
  * Determines the maximum number of threads per block.
  */
-#define MAX_THREADS_PER_BLOCK 128
+#define MAX_THREADS_PER_BLOCK 192
 
 /**
  * Determines the maximum number of dimensions of a grid block.
