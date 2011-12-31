@@ -1,5 +1,5 @@
 /**
- * Implements the partition interface defined in totem_partition.h
+ * Implements the graph partitionining interface defined in totem_partition.h
  *
  *  Created on: 2011-12-29
  *  Author: Abdullah Gharaibeh
@@ -8,7 +8,6 @@
 // totem includes
 #include "totem_partition.h"
 #include "totem_mem.h"
-
 
 error_t partition_random(graph_t* graph, int number_of_partitions,
                          unsigned int seed, id_t** partition_labels) {
@@ -109,7 +108,6 @@ error_t partition_set_initialize(graph_t* graph, id_t* labels,
   for (id_t vid = 0; vid < graph->vertex_count; vid++) {
     partition_t* partition = &partition_set->partitions[labels[vid]];
     partition->vertices[partition->vertex_count] = partition->edge_count;
-    partition->vertices[partition->vertex_count + 1] = partition->edge_count;
     for (id_t i = graph->vertices[vid]; i < graph->vertices[vid + 1]; i++) {
       int nbr_pid = labels[graph->edges[i]];
       id_t nbr_new_id = map[graph->edges[i]];
@@ -120,6 +118,7 @@ error_t partition_set_initialize(graph_t* graph, id_t* labels,
       }
       partition->edge_count++;
     }
+    partition->vertices[partition->vertex_count + 1] = partition->edge_count;
     partition->vertex_count++;
   }
   

@@ -86,3 +86,26 @@ TEST_F(GraphPartitionTest, GetPartitionsChainGraph) {
     }
   }
 }
+
+TEST_F(GraphPartitionTest, GetPartitionsImbalancedChainGraph) {
+  EXPECT_EQ(SUCCESS, graph_initialize(DATA_FOLDER("chain_1000_nodes.totem"),
+                                      false, &graph));
+  // Divide the in two partitions -- one node in one partition and the other 999
+  // in the second partition.
+  partitions_ = (id_t*)calloc(1000, sizeof(id_t));
+  partitions_[0] = 1;
+  EXPECT_EQ(SUCCESS, partition_set_initialize(graph, partitions_, 2,
+                     &partition_set_));
+
+  for (int pid = 0; pid < partition_set_->partition_count; pid++) {
+    partition_t* partition = &partition_set_->partitions[pid];
+    for (id_t vid = 0; vid < partition->vertex_count; vid++) {
+      // Only the vertex-0 and vertex-999 in the original graph have a single
+      // neighbor. Vertex-0 is in partition-1, and vertex-999 is renamed to 998
+      // in partition-0.
+      id_t expected = (pid == 1 || vid == 998 ? 1 : 2);
+      EXPECT_EQ(expected,
+                partition->vertices[vid + 1] - partition->vertices[vid]);
+    }
+  }
+}
