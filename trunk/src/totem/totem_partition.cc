@@ -9,6 +9,38 @@
 #include "totem_partition.h"
 #include "totem_mem.h"
 
+error_t partition_modularity(graph_t* graph, partition_set_t* partition_set,
+                             double* modularity) {
+  assert(graph && partition_set);
+  if ((graph->edge_count == 0) || (partition_set->partition_count <= 1)) {
+    *modularity = 0;
+    return SUCCESS;
+  }
+  // The final modularity value
+  double Q = 0.0;
+  for (int p = 0; p < partition_set->partition_count; p++) {
+    uint32_t local_edges = 0;
+    uint32_t remote_edges = 0;
+    partition_t* partition = &partition_set->partitions[p];
+    for (id_t v = 0; v < partition->vertex_count; v++) {
+      for (id_t e = partition->vertices[v]; e < partition->vertices[v + 1];
+           e++) {
+        if ((uint64_t)p == GET_PARTITION_ID(partition->edges[e])) {
+          local_edges++;
+        } else {
+          remote_edges++;
+        }
+      }
+    }
+    double local = local_edges / (double)graph->edge_count;
+    double remote = (remote_edges * remote_edges)
+                    / (double)(graph->edge_count * graph->edge_count);
+    Q += local - remote;
+  }
+  *modularity = Q;
+  return SUCCESS;
+}
+
 error_t partition_random(graph_t* graph, int number_of_partitions,
                          unsigned int seed, id_t** partition_labels) {
   // Check pre-conditions

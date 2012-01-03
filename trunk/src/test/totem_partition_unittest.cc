@@ -109,3 +109,32 @@ TEST_F(GraphPartitionTest, GetPartitionsImbalancedChainGraph) {
     }
   }
 }
+
+TEST_F(GraphPartitionTest, GetPartitionZeroModularity) {
+  EXPECT_EQ(SUCCESS, graph_initialize(DATA_FOLDER("single_node.totem"),
+                                      false, &graph));
+  id_t* partition_labels = (id_t*)calloc(1, sizeof(id_t));
+  double modularity = -1;
+  EXPECT_EQ(SUCCESS, partition_set_initialize(graph, partition_labels, 1,
+                     &partition_set_));
+  EXPECT_EQ(SUCCESS,
+            partition_modularity(graph, partition_set_, &modularity));
+  EXPECT_EQ(0.0, modularity);
+  free(partition_labels);
+}
+
+TEST_F(GraphPartitionTest, GetPartitionModularity) {
+  EXPECT_EQ(SUCCESS, graph_initialize(DATA_FOLDER("chain_1000_nodes.totem"),
+                                      false, &graph));
+  // Divide the in two partitions -- one node in one partition and the other 999
+  // in the second partition.
+  partitions_ = (id_t*)calloc(1000, sizeof(id_t));
+  partitions_[0] = 1;
+  EXPECT_EQ(SUCCESS, partition_set_initialize(graph, partitions_, 2,
+                     &partition_set_));
+
+  double modularity = -1;
+  EXPECT_EQ(SUCCESS,
+            partition_modularity(graph, partition_set_, &modularity));
+  EXPECT_NEAR(0.99899, modularity, 0.00001);
+}
