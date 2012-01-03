@@ -78,6 +78,25 @@ typedef struct partition_set_s {
 } partition_set_t;
 
 /**
+ * Computes the modularity of the specified graph partitioning configuration.
+ * Modularity measures the fraction of edges that falls within a given partition
+ * minus the expected number of such edges if the graph was randomly generated.
+ * More formally, Q = (\sum_i=1^m e_{ii} - a_i^2, where m is the number of
+ * partitions, e_{ii} is the fraction of edges (from the entire network) that
+ * have their sources and destination inside the same partition, and a_i^2 is
+ * the expected fraction of edges if the graph was randomly generated. This
+ * implementation follows the specification from Newman-Girvan [Physical Review
+ * E 69, 026113, 2004].
+ *
+ * @param[in] graph The graph data structure with the network information
+ * @param[in] partition_set the partitioning information
+ * @param[out] modularity the result modularity value for the given partition
+ *             \in [0,1].
+ */
+error_t partition_modularity(graph_t* graph, partition_set_t* partition_set,
+                             double* modularity);
+
+/**
  * Split the graph into the specified number of partitions by randomly assigning
  * vertices to each partition.
  *
