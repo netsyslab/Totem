@@ -8,7 +8,7 @@
 
 // totem includes
 #include "totem_common_unittest.h"
-#include "totem_hash_table.cuh"
+#include "totem_hash_table.h"
 
 #if GTEST_HAS_PARAM_TEST
 
@@ -25,9 +25,9 @@ using ::testing::Values;
  * of both cpu and gpu versions
  */
 typedef struct {
-  error_t(*initialize)(int*, uint32_t*, int, hash_table_t**);
+  error_t(*initialize)(uint32_t*, uint32_t, hash_table_t**);
   error_t(*finalize)(hash_table_t*);
-  error_t(*get)(hash_table_t*, uint32_t*, int, int**);
+  error_t(*get)(hash_table_t*, uint32_t*, uint32_t, int**);
 } HashTableFunctions;
 
 HashTableFunctions hash_table_cpu = {
@@ -54,34 +54,66 @@ class HashTableTest : public TestWithParam<HashTableFunctions*> {
 TEST_P(HashTableTest, BuildAndRetrieveRandom) {
   // create random keys and correponding values
   srand(13);
-  int count = 100000;
+  uint32_t count = 100000;
   uint32_t* keys = (uint32_t*)calloc(count, sizeof(int));
-  int* values = (int*)mem_alloc(count * sizeof(int));
-  for (int k = 0; k < count; k++) {
+  for (uint32_t k = 0; k < count; k++) {
     // generate unique random keys
     keys[k] = (uint32_t)((rand()) << 24 | k);
-    values[k] = rand();
   }
 
   // build the hash table
   hash_table_t* hash_table;
-  EXPECT_EQ(SUCCESS, hash_table_funcs->initialize(values, keys, count, 
-                                                  &hash_table));
+  EXPECT_EQ(SUCCESS, hash_table_funcs->initialize(keys, count, &hash_table));
 
   // retrieve the values and check
-  int* retrieved_values = NULL;
-  CALL_SAFE(hash_table_funcs->get(hash_table, keys, count, &retrieved_values));
-  for (int k = 0; k < count; k++) {
-    EXPECT_EQ(values[k], retrieved_values[k]);
+  int* values = NULL;
+  CALL_SAFE(hash_table_funcs->get(hash_table, keys, count, &values));
+  for (uint32_t k = 0; k < count; k++) {
+    EXPECT_EQ(k, (uint32_t)values[k]);
   }
 
   // clean up
   EXPECT_EQ(SUCCESS, hash_table_funcs->finalize(hash_table));
-  mem_free(retrieved_values);
   mem_free(values);
   free(keys);
 }
 
+class HashTableCPUTests : public ::testing::Test {
+};
+
+TEST_F(HashTableCPUTests, PutGet) {
+  srand(13);
+  uint32_t count = 100;
+  hash_table_t* hash_table;
+  EXPECT_EQ(SUCCESS, hash_table_initialize_cpu(count, &hash_table));
+
+  uint32_t* keys = (uint32_t*)calloc(count, sizeof(uint32_t));
+  for (uint32_t k = 0; k < count; k++) {
+    // just to increase the probability that we get unique keys!
+    keys[k] = rand() * rand();
+    int value;
+    EXPECT_EQ(FAILURE, hash_table_get_cpu(hash_table, keys[k], &value));
+    EXPECT_EQ(SUCCESS, hash_table_put_cpu(hash_table, keys[k], k));
+    EXPECT_EQ(SUCCESS, hash_table_get_cpu(hash_table, keys[k], &value));
+    EXPECT_EQ(k, (uint32_t)value);
+  }
+
+  uint32_t  count_got;
+  uint32_t* keys_got;
+  EXPECT_EQ(SUCCESS, hash_table_get_keys(hash_table, &keys_got, &count_got));
+  EXPECT_EQ(count, count_got);
+  for (uint32_t k = 0; k < count; k++) {
+    bool found = false;
+    for (uint32_t j = 0; j < count; j++) {
+      if (keys_got[k] == keys[j]) {
+        found = true;
+        break;
+      }
+    }
+    EXPECT_EQ(true, found);
+  }
+  EXPECT_EQ(SUCCESS, hash_table_finalize_cpu(hash_table));
+}
 
 // From Google documentation:
 // In order to run value-parameterized tests, we need to instantiate them,
