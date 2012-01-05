@@ -226,6 +226,7 @@ void vwarp_process_neighbors(int warp_offset, int warp_id, int neighbor_count,
       uint32_t h_pprime = height[neighbor_id];
       while (*lowest_height > h_pprime) {
         *lowest_height = h_pprime;
+        // TODO: remove synchronization when VWARP_WARP_SIZE <= 32
         __threadfence();
         if (height[neighbor_id] == *lowest_height) {
           *best_edge_id = i;
@@ -276,6 +277,7 @@ void vwarp_push_relabel_kernel(graph_t graph, weight_t* flow, weight_t* excess,
                                                     VWARP_WARP_SIZE)]);
         *best_edge_id = INFINITE;
         *lowest_height = INFINITE;
+        // TODO: remove synchronization when VWARP_WARP_SIZE <= 32
         __threadfence();
 
         id_t* edges = &(graph.edges[my_space->vertices[v]]);
@@ -287,6 +289,7 @@ void vwarp_push_relabel_kernel(graph_t graph, weight_t* flow, weight_t* excess,
         vwarp_process_neighbors(warp_offset, warp_id, neighbor_count, edges,
                                 flows, weights, height, lowest_height,
                                 best_edge_id);
+        // TODO: remove synchronization when VWARP_WARP_SIZE <= 32
         __threadfence();
 
         // Only one thread does this per vertex
