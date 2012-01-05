@@ -23,7 +23,7 @@
  * The ratio of the space to be allocated in the table with respect to the 
  * maximum number of entries to be hosted in the table.
  */
-#define HT_SPACE_EXPANSION_RATIO 1.25
+#define HT_SPACE_EXPANSION_RATIO 1.4
 
 /**
  * A special key used to indicate an empty spot
