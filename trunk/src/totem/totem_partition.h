@@ -10,7 +10,6 @@
 // totem includes
 #include "totem_graph.h"
 
-
 /**
  * Log (base 2) of the maximum number of partitions. Practically, it specifies
  * the number of bits allocated for the partition identifier when encoded in the
@@ -50,7 +49,6 @@
  */
 #define SET_PARTITION_ID(_vid, _pid) \
   ((_vid) | ((_pid) << MAX_LOG_VERTEX_COUNT))
-
 
 /**
  * A graph partition type based on adjacency list representation. The vertex ids

@@ -74,74 +74,87 @@ error_t partition_random(graph_t* graph, int number_of_partitions,
   return SUCCESS;
 }
 
-error_t partition_set_initialize(graph_t* graph, id_t* labels, 
-                                 int partition_count, 
-                                 partition_set_t** partition_set_ret) {
-  assert(graph && labels);
-  if (partition_count > MAX_PARTITION_COUNT) return FAILURE;
+PRIVATE error_t init_allocate_struct_space(graph_t* graph, int pcount, 
+                                           partition_set_t** pset) {
+  *pset = (partition_set_t*)calloc(1, sizeof(partition_set_t));
+  if (!*pset) return FAILURE;
+  (*pset)->partitions = (partition_t*)calloc(pcount, sizeof(partition_t));
+  if (!(*pset)->partitions) return FAILURE;
+  (*pset)->graph = graph;
+  (*pset)->partition_count = pcount;
+  (*pset)->weighted = graph->weighted;  
+  return SUCCESS;
+}
 
-  // Setup space and initialize the partition set data structure
-  partition_set_t* partition_set = 
-    (partition_set_t*)calloc(1, sizeof(partition_set_t));
-  if (!partition_set) return FAILURE;
-  partition_set->partitions = 
-    (partition_t*)calloc(partition_count, sizeof(partition_t));
-  if (!partition_set->partitions) return FAILURE;
-
-  // Get the partition sizes
+PRIVATE void init_compute_partitions_sizes(partition_set_t* pset, 
+                                           id_t* plabels) {
+  graph_t* graph = pset->graph;
   for (id_t vid = 0; vid < graph->vertex_count; vid++) {
     id_t nbr_count = graph->vertices[vid + 1] - graph->vertices[vid];
-    int pid = labels[vid];
-    partition_t* partition = &(partition_set->partitions[pid]);
+    int pid = plabels[vid];
+    partition_t* partition = &(pset->partitions[pid]);
     partition->vertex_count += 1;
     partition->edge_count += nbr_count;
   }
-  
-  // Allocate partitions space
-  for (int pid = 0; pid < partition_count; pid++) {
-    partition_t* partition = &partition_set->partitions[pid];
+}
+
+PRIVATE void init_allocate_partitions_space(partition_set_t* pset) {
+  for (int pid = 0; pid < pset->partition_count; pid++) {
+    partition_t* partition = &pset->partitions[pid];
     if (partition->vertex_count > 0) {
       partition->vertices = (id_t*)mem_alloc(sizeof(id_t) * 
                                              (partition->vertex_count + 1));
       if (partition->edge_count > 0) {
         partition->edges = (id_t*)mem_alloc(sizeof(id_t) * 
                                             partition->edge_count);
-        if (graph->weighted) {
-          partition->weights =
-            (weight_t*)mem_alloc(sizeof(weight_t) * partition->edge_count);
+        if (pset->graph->weighted) {
+          partition->weights = (weight_t*)mem_alloc(sizeof(weight_t) * 
+                                                    partition->edge_count);
         }
       }
     }
-    // Reset the vertex and edge count, will be set again while building the
-    // partitions vertex and edge lists
-    partition->edge_count = 0;
-    partition->vertex_count = 0;
   }
+}
 
+PRIVATE error_t init_build_map(partition_set_t* pset, id_t* plabels, 
+                               id_t** map) {
+  // Reset the vertex and edge count, will be set again while building the map
+  for (int pid = 0; pid < pset->partition_count; pid++) {
+    pset->partitions[pid].vertex_count = 0;
+  }
+  *map = (id_t*)calloc(pset->graph->vertex_count, sizeof(id_t));
+  if (!*map) return FAILURE;
+  for (id_t vid = 0; vid < pset->graph->vertex_count; vid++) {
+    id_t pid = plabels[vid];
+    partition_t* partition = &pset->partitions[pid];
+    (*map)[vid] = partition->vertex_count;
+    partition->vertex_count++;
+  }
+  return SUCCESS;
+}
+
+PRIVATE error_t init_build_partitions(partition_set_t* pset, id_t* plabels) {
   // build the map. The map maps the old vertex id to its new id in the 
   // partition. This is necessary because the vertices assigned to a 
   // partition will be renamed so that the ids are contiguous from 0 to
   // partition->vertex_count - 1.
-  id_t* map = (id_t*)calloc(graph->vertex_count, sizeof(id_t));
-  if (!map) return FAILURE;
-  for (id_t vid = 0; vid < graph->vertex_count; vid++) {
-    id_t pid = labels[vid];
-    partition_t* partition = &partition_set->partitions[pid];
-    map[vid] = partition->vertex_count;
-    partition->vertex_count++;
-  }
+  id_t* map;
+  CHK_SUCCESS(init_build_map(pset, plabels, &map), err);
 
   // Reset the vertex count, will be set again next
-  for (int pid = 0; pid < partition_count; pid++) {
-    partition_set->partitions[pid].vertex_count = 0;
+  for (int pid = 0; pid < pset->partition_count; pid++) {
+    pset->partitions[pid].edge_count = 0;
+    pset->partitions[pid].vertex_count = 0;
   }
 
-  // Construct the partitions vertex, edge and weight lists 
+  // Construct the partitions vertex, edge and weight lists
+  {
+  graph_t* graph = pset->graph;
   for (id_t vid = 0; vid < graph->vertex_count; vid++) {
-    partition_t* partition = &partition_set->partitions[labels[vid]];
+    partition_t* partition = &pset->partitions[plabels[vid]];
     partition->vertices[partition->vertex_count] = partition->edge_count;
     for (id_t i = graph->vertices[vid]; i < graph->vertices[vid + 1]; i++) {
-      int nbr_pid = labels[graph->edges[i]];
+      int nbr_pid = plabels[graph->edges[i]];
       id_t nbr_new_id = map[graph->edges[i]];
       partition->edges[partition->edge_count] = 
         SET_PARTITION_ID(nbr_new_id, nbr_pid);
@@ -153,15 +166,38 @@ error_t partition_set_initialize(graph_t* graph, id_t* labels,
     partition->vertices[partition->vertex_count + 1] = partition->edge_count;
     partition->vertex_count++;
   }
-  
+  }
   // clean up
   free(map);
-
-  partition_set->graph = graph;
-  partition_set->partition_count = partition_count;
-  partition_set->weighted = graph->weighted;  
-  *partition_set_ret = partition_set;
   return SUCCESS;
+ err:
+  return FAILURE;
+}
+
+error_t partition_set_initialize(graph_t* graph, id_t* labels, 
+                                 int partition_count, 
+                                 partition_set_t** partition_set) {
+  assert(graph && labels);
+  if (partition_count > MAX_PARTITION_COUNT) return FAILURE;
+
+  // Setup space and initialize the partition set data structure
+  CHK_SUCCESS(init_allocate_struct_space(graph, partition_count, partition_set),
+              err);
+
+  // Get the partition sizes
+  init_compute_partitions_sizes(*partition_set, labels);
+  
+  // Allocate partitions space
+  init_allocate_partitions_space(*partition_set);
+
+  // build the state of each partition
+  CHK_SUCCESS(init_build_partitions(*partition_set, labels), err_free_space);
+  
+  return SUCCESS;
+ err_free_space:
+  partition_set_finalize(*partition_set);
+ err:
+  return FAILURE;
 }
 
 error_t partition_set_finalize(partition_set_t* partition_set) {
