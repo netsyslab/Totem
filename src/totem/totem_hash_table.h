@@ -23,7 +23,7 @@
 // totem includes
 #include "totem_comdef.h"
 
-/** 
+/**
  * Macros to manage hash table entries. An entry is a 64-bit that combines a 
  * key (32 higher-order bits) and the value (32 lower-order bits)
 */
@@ -37,13 +37,13 @@
 #define HT_PRIME_NUMBER          334214459
 
 /**
- * Weak hash functions following the form (A*KEY + B) mod P % SIZE, where
+ * Weak hash functions following the form (A^KEY + B) mod P % SIZE, where
  * A and B are random numbers, P is a prime number and SIZE is the table size
 */
-#define HT_FUNC1(ht, k) (((9600*(k) + 11517) % HT_PRIME_NUMBER) % (ht)->size)
-#define HT_FUNC2(ht, k) (((16726*(k) + 6274) % HT_PRIME_NUMBER) % (ht)->size)
-#define HT_FUNC3(ht, k) (((8334*(k) + 19108) % HT_PRIME_NUMBER) % (ht)->size)
-#define HT_FUNC4(ht, k) (((23720*(k) + 7860) % HT_PRIME_NUMBER) % (ht)->size)
+#define HT_FUNC1(ht, k) ((((9600^(k)) + 11517) % HT_PRIME_NUMBER) % (ht)->size)
+#define HT_FUNC2(ht, k) ((((16726^(k)) + 6274) % HT_PRIME_NUMBER) % (ht)->size)
+#define HT_FUNC3(ht, k) ((((8334^(k)) + 19108) % HT_PRIME_NUMBER) % (ht)->size)
+#define HT_FUNC4(ht, k) ((((23720^(k)) + 7860) % HT_PRIME_NUMBER) % (ht)->size)
 
 /**
  * Macro to look up a value index from the hash table. This macro can be used
@@ -66,7 +66,6 @@
     _value = HT_GET_VALUE(_entry);                                      \
   } while(0)
 
-
 /**
  * Defines a hash table data structure. Note that users are not supposed to 
  * directly manipulate the state.
@@ -75,15 +74,13 @@ typedef struct hash_table_s {
   uint32_t  size;    /**< the size of the table */
   uint64_t* entries; /**< an entry in the array encodes two things: a key 
                         (higher-order 32-bits) and the value (lower-order 
-                        32-bits) */
+                        32-bits) */  
 } hash_table_t;
 
 /**
- * Initializes a hash table. It allocates space for the keys only
- * @param[in] values an array of values to be inserted in the table
- * @param[in] keys   the corresponding keys of the values
+ * Initializes a hash table
  * @param[in] count  the number of values
- * @param[out] hash_table_ret a reference to the created hash table
+ * @param[out] hash_table a reference to the created hash table
  * @return generic success or failure
  */
 error_t hash_table_initialize_cpu(uint32_t count, hash_table_t** hash_table);
@@ -135,7 +132,7 @@ error_t hash_table_get_cpu(hash_table_t* hash_table, uint32_t key, int* value);
  * @param[out] values the list of values retrieved (allocated via mem_alloc)
  * @return SUCCESS if all are found, FAILURE otherwise
  */
-error_t hash_table_get_cpu(hash_table_t* hash_table, uint32_t* keys, 
+error_t hash_table_get_cpu(hash_table_t* hash_table, uint32_t* keys,
                            uint32_t count, int** values);
 
 /**
@@ -145,8 +142,8 @@ error_t hash_table_get_cpu(hash_table_t* hash_table, uint32_t* keys,
  * @param[out] count number of keys
  * @return SUCCESS if all are found, FAILURE otherwise
  */
-error_t hash_table_get_keys(hash_table_t* hash_table, uint32_t** keys, 
-                            uint32_t* count);
+error_t hash_table_get_keys_cpu(hash_table_t* hash_table, uint32_t** keys, 
+                                uint32_t* count);
 
 /**
  * Initializes a hash table on the gpu. It allocates the state on the cpu and 
