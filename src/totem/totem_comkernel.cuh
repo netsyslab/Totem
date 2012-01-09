@@ -119,6 +119,19 @@
   } while(0)
 
 /**
+ * A wrapper that asserts the success of cuda calls
+ */
+#define CALL_CU_SAFE(cuda_call)                                         \
+  do {                                                                  \
+    if ((cuda_call) != cudaSuccess) {                                   \
+      cudaError_t err = cudaGetLastError();                             \
+      fprintf(stderr, "Cuda Error in file '%s' in line %i : %s.\n",     \
+              __FILE__, __LINE__, cudaGetErrorString(err));             \
+      assert(false);                                                    \
+    }                                                                   \
+  } while(0)
+
+/**
  * A SIMD version of memcpy for the virtual warp technique. The assumption is
  * that the threads of a warp invoke this function to copy their batch of work 
  * from global memory (src) to shared memory (dst). In each iteration of the for
