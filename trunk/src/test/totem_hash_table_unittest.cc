@@ -100,7 +100,8 @@ TEST_F(HashTableCPUTests, PutGet) {
 
   uint32_t  count_got;
   uint32_t* keys_got;
-  EXPECT_EQ(SUCCESS, hash_table_get_keys(hash_table, &keys_got, &count_got));
+  EXPECT_EQ(SUCCESS, hash_table_get_keys_cpu(hash_table, &keys_got, 
+                                             &count_got));
   EXPECT_EQ(count, count_got);
   for (uint32_t k = 0; k < count; k++) {
     bool found = false;

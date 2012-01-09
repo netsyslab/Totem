@@ -23,7 +23,7 @@
  * The ratio of the space to be allocated in the table with respect to the 
  * maximum number of entries to be hosted in the table.
  */
-#define HT_SPACE_EXPANSION_RATIO 1.4
+#define HT_SPACE_EXPANSION_RATIO 1.25
 
 /**
  * A special key used to indicate an empty spot
@@ -80,6 +80,7 @@ error_t hash_table_put_cpu(hash_table_t* hash_table, uint32_t key, int value) {
   uint64_t entry = HT_MAKE_ENTRY(key, value);
   uint32_t location = HT_FUNC1(hash_table, key);
   int its = 0;
+
   for (; its < HT_MAX_ITERATIONS; its++) {
     // Insert the new item
     entry = __sync_lock_test_and_set(&(hash_table->entries[location]), entry);
@@ -122,8 +123,8 @@ error_t hash_table_get_cpu(hash_table_t* hash_table, uint32_t* keys,
   return FAILURE;
 }
 
-error_t hash_table_get_keys(hash_table_t* hash_table, uint32_t** keys, 
-                            uint32_t* count) {
+error_t hash_table_get_keys_cpu(hash_table_t* hash_table, uint32_t** keys, 
+                                uint32_t* count) {
   assert(hash_table && count);
   if (hash_table->size <= 0) return FAILURE;
 
