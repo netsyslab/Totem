@@ -56,11 +56,13 @@
  * This allows for a vertex to have a neighbor in another partition.
  */
 typedef struct partition_s {
-  id_t*        vertices;        /**< the vertices list. */
-  id_t*        edges;           /**< the edges list. */
-  weight_t*    weights;         /**< stores the weights of the edges. */
-  uint64_t     vertex_count;    /**< number of vertices. */
-  uint64_t     edge_count;      /**< number of edges. */
+  id_t*       vertices;         /**< the vertices list. */
+  id_t*       edges;            /**< the edges list. */
+  weight_t*   weights;          /**< stores the weights of the edges. */
+  uint64_t    vertex_count;     /**< number of vertices. */
+  uint64_t    edge_count;       /**< number of edges. */
+  processor_t processor;        /**< the processor this partition will be 
+                                   processed on. */
 } partition_t;
 
 /**
@@ -122,6 +124,7 @@ error_t partition_random(graph_t* graph, int partition_count,
  * @return SUCCESS if the partitions are assigned, FAILURE otherwise.
  */
 error_t partition_set_initialize(graph_t* graph, id_t* partition_labels, 
+                                 processor_t* partition_processor,
                                  int partition_count, 
                                  partition_set_t** partition_set);
 
