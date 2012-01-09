@@ -133,7 +133,8 @@ PRIVATE error_t init_build_map(partition_set_t* pset, id_t* plabels,
   return SUCCESS;
 }
 
-PRIVATE error_t init_build_partitions(partition_set_t* pset, id_t* plabels) {
+PRIVATE error_t init_build_partitions(partition_set_t* pset, id_t* plabels, 
+                                      processor_t* pproc) {
   // build the map. The map maps the old vertex id to its new id in the 
   // partition. This is necessary because the vertices assigned to a 
   // partition will be renamed so that the ids are contiguous from 0 to
@@ -141,8 +142,10 @@ PRIVATE error_t init_build_partitions(partition_set_t* pset, id_t* plabels) {
   id_t* map;
   CHK_SUCCESS(init_build_map(pset, plabels, &map), err);
 
-  // Reset the vertex count, will be set again next
+  // Set the processor type and reset the vertex count, will be set again next
   for (int pid = 0; pid < pset->partition_count; pid++) {
+    memcpy(&(pset->partitions[pid].processor), 
+           &pproc[pid], sizeof(processor_t));
     pset->partitions[pid].edge_count = 0;
     pset->partitions[pid].vertex_count = 0;
   }
@@ -156,8 +159,8 @@ PRIVATE error_t init_build_partitions(partition_set_t* pset, id_t* plabels) {
     for (id_t i = graph->vertices[vid]; i < graph->vertices[vid + 1]; i++) {
       int nbr_pid = plabels[graph->edges[i]];
       id_t nbr_new_id = map[graph->edges[i]];
-      partition->edges[partition->edge_count] = 
-        SET_PARTITION_ID(nbr_new_id, nbr_pid);
+      partition->edges[partition->edge_count] = SET_PARTITION_ID(nbr_new_id, 
+                                                                 nbr_pid);
       if (graph->weighted) {
         partition->weights[partition->edge_count] = graph->weights[i];
       }
@@ -174,44 +177,45 @@ PRIVATE error_t init_build_partitions(partition_set_t* pset, id_t* plabels) {
   return FAILURE;
 }
 
-error_t partition_set_initialize(graph_t* graph, id_t* labels, 
-                                 int partition_count, 
-                                 partition_set_t** partition_set) {
-  assert(graph && labels);
-  if (partition_count > MAX_PARTITION_COUNT) return FAILURE;
+error_t partition_set_initialize(graph_t* graph, id_t* plabels, 
+                                 processor_t* pproc, 
+                                 int pcount, 
+                                 partition_set_t** pset) {
+  assert(graph && plabels);
+  if (pcount > MAX_PARTITION_COUNT) return FAILURE;
 
   // Setup space and initialize the partition set data structure
-  CHK_SUCCESS(init_allocate_struct_space(graph, partition_count, partition_set),
-              err);
+  CHK_SUCCESS(init_allocate_struct_space(graph, pcount, pset),
+                                           err);
 
   // Get the partition sizes
-  init_compute_partitions_sizes(*partition_set, labels);
+  init_compute_partitions_sizes(*pset, plabels);
   
   // Allocate partitions space
-  init_allocate_partitions_space(*partition_set);
+  init_allocate_partitions_space(*pset);
 
   // build the state of each partition
-  CHK_SUCCESS(init_build_partitions(*partition_set, labels), err_free_space);
+  CHK_SUCCESS(init_build_partitions(*pset, plabels, pproc), err_free_space);
   
   return SUCCESS;
  err_free_space:
-  partition_set_finalize(*partition_set);
+  partition_set_finalize(*pset);
  err:
   return FAILURE;
 }
 
-error_t partition_set_finalize(partition_set_t* partition_set) {
-  assert(partition_set);
-  assert(partition_set->partitions);
-  for (int pid = 0; pid < partition_set->partition_count; pid++) {
-    partition_t* partition = &partition_set->partitions[pid];
+error_t partition_set_finalize(partition_set_t* pset) {
+  assert(pset);
+  assert(pset->partitions);
+  for (int pid = 0; pid < pset->partition_count; pid++) {
+    partition_t* partition = &pset->partitions[pid];
     if (partition->vertices) mem_free(partition->vertices);
     if (partition->edges) mem_free(partition->edges);
-    if (partition_set->weighted && partition->weights) {
+    if (pset->weighted && partition->weights) {
       mem_free(partition->weights);
     }
   }
-  free(partition_set->partitions);
-  free(partition_set);
+  free(pset->partitions);
+  free(pset);
   return SUCCESS;
 }
