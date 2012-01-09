@@ -30,6 +30,20 @@ typedef enum {
 } error_t;
 
 /**
+ * Processor types. This is used as to identify the the processor on which
+ * a partition is processed on.
+ */
+typedef enum {
+  PROCESSOR_CPU, /**< CPU processor. */
+  PROCESSOR_GPU /**< GPU processor. */
+} processor_type_t;
+
+typedef struct processor_s {
+  processor_type_t type;
+  uint32_t         id;
+} processor_t;
+
+/**
  * Command line options
  */
 typedef struct options_s {
