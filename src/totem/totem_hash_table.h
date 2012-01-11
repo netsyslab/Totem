@@ -12,8 +12,8 @@
  * 2) this implementation does not support inserting individual items
  * to the table for the gpu version, it allows for only building the hash table 
  * at once (i.e., all (key,value) pairs to be inserted in the table should be 
- * known at initialization time).
-
+ * known at initialization time). But allows for individual retrieval of items.
+ *
  *  Created on: 2011-12-30
  *  Author: Abdullah Gharaibeh
  */
@@ -71,19 +71,29 @@
  * directly manipulate the state.
  */
 typedef struct hash_table_s {
-  uint32_t  size;    /**< the size of the table */
-  uint64_t* entries; /**< an entry in the array encodes two things: a key 
-                        (higher-order 32-bits) and the value (lower-order 
-                        32-bits) */  
+  uint32_t  size;       /**< the size of the table */
+  uint64_t* entries;    /**< an entry in the array encodes two things: a key 
+                           (higher-order 32-bits) and the value (lower-order 
+                           32-bits) */
+  bool      allocated;  /**< indicates whether the hash_table is allocated
+                           by the interface or not */
 } hash_table_t;
 
 /**
- * Initializes a hash table
+ * Initializes a hash table. The function allocates the hash_table struct.
  * @param[in] count  the number of values
  * @param[out] hash_table a reference to the created hash table
  * @return generic success or failure
  */
 error_t hash_table_initialize_cpu(uint32_t count, hash_table_t** hash_table);
+
+/**
+ * Initializes a hash table. The hash table struct is allocated by the caller 
+ * @param[in] count  the number of values
+ * @param[out] hash_table a reference to the created hash table
+ * @return generic success or failure
+ */
+error_t hash_table_initialize_cpu(uint32_t count, hash_table_t* hash_table);
 
 /**
  * Overloaded initialization. It allocates the state and builds the hash table
@@ -159,13 +169,25 @@ error_t hash_table_initialize_gpu(uint32_t* keys, uint32_t count,
 
 /**
  * Initializes a hash table on the gpu from a hash table that already exists 
- * on the host
+ * on the host. The structure of the newly created hash table is allocated
+ * by the function.
  * @param[in] hash_table a reference to the host hash table
  * @param[out] hash_table_d a reference to the created hash table on the gpu
  * @return generic success or failure
  */
 error_t hash_table_initialize_gpu(hash_table_t* hash_table,
                                   hash_table_t** hash_table_d);
+
+/**
+ * Initializes a hash table on the gpu from a hash table that already exists 
+ * on the host. The structure of the newly created hash table is allocated
+ * by the caller.
+ * @param[in] hash_table a reference to the host hash table
+ * @param[out] hash_table_d a reference to the created hash table on the gpu
+ * @return generic success or failure
+ */
+error_t hash_table_initialize_gpu(hash_table_t* hash_table,
+                                  hash_table_t* hash_table_d);
 
 /**
  * Frees the state allocated for the gpu-based hash table
