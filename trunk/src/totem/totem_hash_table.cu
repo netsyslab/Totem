@@ -36,15 +36,20 @@
  */
 #define HT_MAX_ITERATIONS        100
 
+error_t hash_table_initialize_cpu(uint32_t count, hash_table_t* hash_table) {  
+  hash_table->size = count * HT_SPACE_EXPANSION_RATIO;
+  hash_table->allocated = false;
+  hash_table->entries = (uint64_t*)calloc(hash_table->size, sizeof(uint64_t));
+  memset(hash_table->entries, -1, hash_table->size * sizeof(uint64_t));
+  return SUCCESS;
+}
 
 error_t hash_table_initialize_cpu(uint32_t count, hash_table_t** hash_table) {
   // allocate hash table state
   *hash_table = (hash_table_t*)calloc(1, sizeof(hash_table_t));
-  (*hash_table)->size = count * HT_SPACE_EXPANSION_RATIO;
-  (*hash_table)->entries = (uint64_t*)calloc(((*hash_table)->size), 
-                                             sizeof(uint64_t));
-  memset((*hash_table)->entries, -1, (*hash_table)->size * sizeof(uint64_t));
-  return SUCCESS;
+  error_t rc = hash_table_initialize_cpu(count, *hash_table);
+  (*hash_table)->allocated = true;
+  return rc;
 }
 
 error_t hash_table_initialize_cpu(uint32_t* keys, uint32_t count,
@@ -72,7 +77,11 @@ error_t hash_table_finalize_cpu(hash_table_t* hash_table) {
   assert(hash_table);
   assert(hash_table->entries);
   free(hash_table->entries);
-  free(hash_table);
+  if (hash_table->allocated) {
+    free(hash_table);
+  } else {
+    memset(hash_table, 0, sizeof(hash_table_t));
+  }
   return SUCCESS;
 }
 
@@ -201,30 +210,43 @@ error_t hash_table_get_gpu(hash_table_t* hash_table, uint32_t* keys,
 }
 
 error_t hash_table_finalize_gpu(hash_table_t* hash_table) {
-  assert(hash_table && hash_table->entries);
+  assert(hash_table);
+  assert(hash_table->entries);
   cudaFree(hash_table->entries);
-  free(hash_table);
+  if (hash_table->allocated) {
+    free(hash_table);  
+  } else {
+    memset(hash_table, 0, sizeof(hash_table_t));
+  }
   return SUCCESS;
+}
+
+error_t hash_table_initialize_gpu(hash_table_t* hash_table,
+                                  hash_table_t* hash_table_d) {
+  hash_table_d->size = hash_table->size;
+  hash_table_d->allocated = false;
+  CHK_CU_SUCCESS(cudaMalloc((void**)&(hash_table_d->entries), 
+                            hash_table_d->size * sizeof(uint64_t)), err);
+  CHK_CU_SUCCESS(cudaMemcpy(hash_table_d->entries, hash_table->entries, 
+                            hash_table_d->size * sizeof(uint64_t), 
+                            cudaMemcpyHostToDevice), err_free_entries);
+  return SUCCESS;
+
+  // error handling
+ err_free_entries:
+  cudaFree(hash_table_d->entries);
+ err:
+  return FAILURE;
 }
 
 error_t hash_table_initialize_gpu(hash_table_t* hash_table,
                                   hash_table_t** hash_table_d) {
   *hash_table_d = (hash_table_t*)calloc(1, sizeof(hash_table_t));
   CHK(*hash_table_d, err);
-  (*hash_table_d)->size = hash_table->size;
-  CHK_CU_SUCCESS(cudaMalloc((void**)&((*hash_table_d)->entries), 
-                            (*hash_table_d)->size * sizeof(uint64_t)),
-                 err_free_host_state);
-  CHK_CU_SUCCESS(cudaMemcpy((*hash_table_d)->entries, hash_table->entries, 
-                            (*hash_table_d)->size * sizeof(uint64_t), 
-                            cudaMemcpyHostToDevice), err_free_entries);
-  return SUCCESS;
-
-  // error handling
- err_free_entries:
-  cudaFree((*hash_table_d)->entries);
- err_free_host_state:
-  free(*hash_table_d);
+  error_t rc;
+  rc = hash_table_initialize_gpu(hash_table, *hash_table_d);
+  (*hash_table_d)->allocated = true;
+  return rc;
  err:
   return FAILURE;
 }
