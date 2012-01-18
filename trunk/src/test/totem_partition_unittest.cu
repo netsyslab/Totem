@@ -9,6 +9,7 @@
 // totem includes
 #include "totem_common_unittest.h"
 #include "totem_comkernel.cuh"
+#include "totem_grooves.h"
 
 /**
  * A simple macro to do basic true/false condition testing for kernels
@@ -23,7 +24,7 @@
 #define KERNEL_EXPECT_TRUE(stmt)                \
   do {                                          \
     if (!(stmt)) {                              \
-      printf("%d\n", __LINE__);                 \
+      printf("Error line: %d\n", __LINE__);     \
       return;                                   \
     }                                           \
   } while(0)
@@ -33,21 +34,20 @@ __global__ void VerifyPartitionGPUKernel(partition_t partition, uint32_t pid,
   const graph_t* subgraph = &partition.subgraph;
   const int vid = THREAD_GLOBAL_INDEX;
   if (vid >= subgraph->vertex_count) return;
-  for (id_t i = subgraph->vertices[vid]; i < subgraph->vertices[vid + 1]; i++) {
-    uint32_t nbr_pid = GET_PARTITION_ID(subgraph->edges[i]);
+  for (id_t i = subgraph->vertices[vid]; 
+       i < subgraph->vertices[vid + 1]; i++) {
+    uint32_t nbr = subgraph->edges[i];
+    uint32_t nbr_pid = GET_PARTITION_ID(nbr);
     KERNEL_EXPECT_TRUE(nbr_pid < pcount);
-    uint32_t nbr_id = GET_VERTEX_ID(subgraph->edges[i]);
-    if (nbr_pid == pid) KERNEL_EXPECT_TRUE(nbr_id < subgraph->vertex_count);
+    if (nbr_pid != pid) {
+      grooves_box_table_t* outbox =
+        &partition.outbox[GROOVES_BOX_INDEX(nbr_pid, pid, pcount)];
+      KERNEL_EXPECT_TRUE(outbox->count > 0);
+      int value = 1;
+      GROOVES_LOOKUP(outbox, nbr, value);
+      KERNEL_EXPECT_TRUE(value != -1);
+    }
   }
-}
-
-void VerifyPartitionGPU(partition_set_t* partition_set_, uint32_t pid) {
-  dim3 blocks, threads_per_block;
-  KERNEL_CONFIGURE(partition_set_->partitions[pid].subgraph.vertex_count,
-                   blocks, threads_per_block);
-  VerifyPartitionGPUKernel<<<blocks, 
-    threads_per_block>>>(partition_set_->partitions[pid], pid, 
-                         partition_set_->partition_count);
 }
 
 class GraphPartitionTest : public ::testing::Test {
@@ -85,6 +85,15 @@ class GraphPartitionTest : public ::testing::Test {
     }
   }
 
+  void VerifyPartitionGPU(uint32_t pid) {
+    dim3 blocks, threads_per_block;
+    VerifyPartitionGPUKernel<<<blocks, 
+      threads_per_block>>>(partition_set_->partitions[pid], pid, 
+                           partition_set_->partition_count);
+    assert(cudaGetLastError() == cudaSuccess);
+    assert(cudaThreadSynchronize() == cudaSuccess);
+  }  
+
   void VerifyPartitionCPU(uint32_t pid) {
     partition_t* partition = &partition_set_->partitions[pid];
     graph_t* subgraph = &partition->subgraph;
@@ -97,6 +106,14 @@ class GraphPartitionTest : public ::testing::Test {
         partition_t* nbr_partition = &partition_set_->partitions[nbr_pid];
         id_t nbr_id = GET_VERTEX_ID(subgraph->edges[i]);
         EXPECT_TRUE((nbr_id < nbr_partition->subgraph.vertex_count));
+        if (nbr_pid != pid) {
+          grooves_box_table_t* outbox = 
+            &partition->outbox[GROOVES_BOX_INDEX(nbr_pid, pid, pcount)];
+          EXPECT_GT(outbox->count, (uint32_t)0);
+          int value;
+          GROOVES_LOOKUP(outbox, subgraph->edges[i], value);
+          EXPECT_NE(-1, value);
+        }
       }
     }
   }
@@ -116,7 +133,7 @@ class GraphPartitionTest : public ::testing::Test {
       // TODO(abdullah): test the gpu-based partitions
       if (partition->processor.type == PROCESSOR_CPU) VerifyPartitionCPU(pid);
       if (partition->processor.type == PROCESSOR_GPU) 
-        VerifyPartitionGPU(partition_set_, pid);
+        VerifyPartitionGPU(pid);
     }
   }
 };

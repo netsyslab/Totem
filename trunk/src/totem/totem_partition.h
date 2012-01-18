@@ -9,6 +9,7 @@
 
 // totem includes
 #include "totem_graph.h"
+#include "totem_grooves.h"
 
 /**
  * Log (base 2) of the maximum number of partitions. Practically, it specifies
@@ -54,12 +55,24 @@
  * A graph partition type based on adjacency list representation. The vertex ids
  * in the edges list have the partition id encoded in the most significant bits.
  * This allows for a vertex to have a neighbor in another partition.
+ *
+ * The outbox and inbox parameters represent the communication stubs of Grooves.
+ * Outbox is a list of tables where each table stores the state to be 
+ * communicated with another partition; therefore, the length of this array is
+ * partition_count - 1, where partition_count is the number of partitions
+ * in the partition set this partition belongs to.
+ * Similarly, inbox is a list of tables where each table stores the state 
+ * communicated by each remote partition to this partition.
  */
 typedef struct partition_s {
   graph_t              subgraph;   /**< the subgraph this partition 
-                                        represents */
+                                      represents */
+  grooves_box_table_t* outbox;     /**< table of messages to be sent to 
+                                      remote nbrs */
+  grooves_box_table_t* inbox;      /**< table of messages received from 
+                                      other partitions */
   processor_t          processor;  /**< the processor this partition will be
-                                        processed on. */
+                                      processed on. */
 } partition_t;
 
 /**
