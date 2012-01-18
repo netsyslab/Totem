@@ -214,6 +214,9 @@ error_t partition_set_initialize(graph_t* graph, id_t* plabels,
   // Build the state of each partition
   init_build_partitions(*pset, plabels, pproc);
 
+  // Initialize grooves' inbox and outbox state
+  grooves_initialize(*pset);
+
   // Build the state on the GPU(s) for GPU residing partitions
   init_build_partitions_gpu(*pset);
   
@@ -242,6 +245,7 @@ error_t partition_set_finalize(partition_set_t* pset) {
       }
     }
   }
+  grooves_finalize(pset);
   free(pset->partitions);
   free(pset);
   return SUCCESS;
