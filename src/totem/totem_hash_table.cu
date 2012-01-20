@@ -135,11 +135,11 @@ error_t hash_table_get_cpu(hash_table_t* hash_table, uint32_t* keys,
 error_t hash_table_get_keys_cpu(hash_table_t* hash_table, uint32_t** keys, 
                                 uint32_t* count) {
   assert(hash_table && count);
-  if (hash_table->size <= 0) return FAILURE;
+  *count = 0;
+  if (hash_table->size == 0) return SUCCESS;
 
   *keys = (uint32_t*)calloc(hash_table->size, sizeof(uint32_t));
   if (!(*keys)) return FAILURE;
-  *count = 0;
   for (int e = 0; e < hash_table->size; e++) {
     uint32_t key = HT_GET_KEY((hash_table->entries[e]));
     if (key != HT_KEY_EMPTY) {
