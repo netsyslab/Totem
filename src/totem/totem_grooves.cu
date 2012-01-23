@@ -51,7 +51,7 @@ PRIVATE void init_get_remote_nbrs(partition_t* partition, int pid,
 PRIVATE void init_allocate_table(grooves_box_table_t* btable, uint32_t pid, 
                                  uint32_t pcount, uint32_t* count_per_par) {
   // initialize the outbox hash tables
-  for (int remote_pid = pid + 1; remote_pid != pid; 
+  for (int remote_pid = (pid + 1) % pcount; remote_pid != pid; 
        remote_pid = (remote_pid + 1) % pcount) {
     int bindex = GROOVES_BOX_INDEX(remote_pid, pid, pcount);
     if (count_per_par[bindex]) {
@@ -63,22 +63,27 @@ PRIVATE void init_allocate_table(grooves_box_table_t* btable, uint32_t pid,
 
 PRIVATE void init_table_gpu(grooves_box_table_t* btable, uint32_t bcount, 
                             grooves_box_table_t** btable_d) {
-  // initialize the tables on the gpu
+  grooves_box_table_t* btable_h = 
+    (grooves_box_table_t*)calloc(bcount, sizeof(grooves_box_table_t));
+  memcpy(btable_h, btable, bcount * sizeof(grooves_box_table_t));
+
+  // initialize the tables on the gpu  
   for (uint32_t bindex = 0; bindex < bcount; bindex++) {
     hash_table_t hash_table_d;
-    if (btable[bindex].ht.size) {
-      CALL_SAFE(hash_table_initialize_gpu(&(btable[bindex].ht), &hash_table_d));
-      hash_table_finalize_cpu(&(btable[bindex].ht));
-      btable[bindex].ht = hash_table_d;
+    if (btable_h[bindex].count) {
+      CALL_SAFE(hash_table_initialize_gpu(&(btable_h[bindex].ht), 
+                                          &hash_table_d));
+      btable_h[bindex].ht = hash_table_d;
     }
   }
 
   // transfer the table array
   CALL_CU_SAFE(cudaMalloc((void**)(btable_d), bcount * 
                           sizeof(grooves_box_table_t)));
-  CALL_CU_SAFE(cudaMemcpy(*btable_d, btable, 
+  CALL_CU_SAFE(cudaMemcpy(*btable_d, btable_h, 
                           bcount * sizeof(grooves_box_table_t), 
                           cudaMemcpyHostToDevice));
+  free(btable_h);
 }
 
 PRIVATE void init_outbox_table(partition_t* partition, uint32_t pid, 
@@ -95,25 +100,19 @@ PRIVATE void init_outbox_table(partition_t* partition, uint32_t pid,
                                  outbox[bindex].count));
     outbox[bindex].count++;
   }
-
-  if (partition->processor.type == PROCESSOR_GPU) {
-    grooves_box_table_t* outbox_d = NULL;
-    init_table_gpu(partition->outbox, pcount - 1, &outbox_d);
-    free(partition->outbox);
-    partition->outbox = outbox_d;
-  }
 }
 
 PRIVATE void init_outbox(partition_set_t* pset) {
   uint32_t pcount = pset->partition_count;
   for (int pid = 0; pid < pcount; pid++) {
     partition_t* partition = &pset->partitions[pid];
-    if (!partition->subgraph.vertex_count || 
-        !partition->subgraph.edge_count) continue;
 
     // each remote partition has a slot in the outbox array
     partition->outbox = 
       (grooves_box_table_t*)calloc(pcount - 1, sizeof(grooves_box_table_t));
+
+    if (!partition->subgraph.vertex_count || 
+        !partition->subgraph.edge_count) continue;
 
     // identify the remote nbrs and their count per remote partition
     id_t*     remote_nbrs   = NULL;
@@ -135,9 +134,91 @@ PRIVATE void init_outbox(partition_set_t* pset) {
   }
 }
 
+PRIVATE void init_inbox(partition_set_t* pset) {
+  uint32_t pcount = pset->partition_count;
+  for (int pid = 0; pid < pcount; pid++) {
+    partition_t* partition = &pset->partitions[pid];
+
+    // each remote partition has a slot in the inbox array
+    partition->inbox = 
+      (grooves_box_table_t*)calloc(pcount - 1, sizeof(grooves_box_table_t));
+
+    if (!partition->subgraph.vertex_count || 
+        !partition->subgraph.edge_count) continue;
+    
+    for (int src_pid = (pid + 1) % pcount; src_pid != pid; 
+         src_pid = (src_pid + 1) % pcount) {
+      partition_t* remote_par = &pset->partitions[src_pid];
+      // An inbox in a partition is an outbox in the source partition. 
+      // Therefore, we just need to copy the state of the already built
+      // source partition's outbox into the destination partition's inbox.
+      // This includes copying a reference to the hash table that maintains
+      // the set of boundary vertices (vertices that belong to this partition, 
+      // and are the destination of a remote edge that originates in another 
+      // partition, and are maintained in the outbox of that other partition).
+      int src_bindex = GROOVES_BOX_INDEX(pid, src_pid, pcount);
+      int dst_bindex = GROOVES_BOX_INDEX(src_pid, pid, pcount);      
+      partition->inbox[dst_bindex] = remote_par->outbox[src_bindex];
+    }
+  }
+}
+
+PRIVATE void init_gpu_state(partition_set_t* pset) {
+  uint32_t pcount = pset->partition_count;
+
+  // The following array will maintain pointers to the gpu-partitions' ouboxes
+  // state on the host after they are copied to the gpu. These references are 
+  // maintained in order to free their state safely.
+  // Outboxes are shared by the destination partitions as an inbox. Outboxes
+  // that are shared between a gpu partition and a cpu one will not be freed. It
+  // will be freed at finalization as part of finalizing the inboxes of the 
+  // destination cpu partition. However, outboxes shared between two gpu 
+  // partitions will be freed right after they are copied to the gpu (they will 
+  // be copied once as an outbox in the source partitions and as an inbox to the
+  // destination).
+  grooves_box_table_t** host_outboxes = 
+    (grooves_box_table_t**)calloc(pcount, sizeof(grooves_box_table_t*));
+
+  for (int pid = 0; pid < pcount; pid++) {
+    partition_t* partition = &pset->partitions[pid];
+    if (partition->processor.type == PROCESSOR_GPU) {
+      grooves_box_table_t* outbox_d = NULL;
+      init_table_gpu(partition->outbox, pcount - 1, &outbox_d);
+      host_outboxes[pid] = partition->outbox;
+      partition->outbox = outbox_d;
+
+      grooves_box_table_t* inbox_d = NULL;
+      init_table_gpu(partition->inbox, pcount - 1, &inbox_d);
+      free(partition->inbox);
+      partition->inbox = inbox_d;
+    }
+  }
+
+  // Clean up the state on the host. As mentioned before, only the outboxes
+  // that are shared between two gpu-based partitions are freed.
+  for (int pid = 0; pid < pcount; pid++) {
+    partition_t* partition = &pset->partitions[pid];
+    grooves_box_table_t* outbox = host_outboxes[pid];
+    if (partition->processor.type == PROCESSOR_GPU) {
+      for (int bindex = 0; bindex < pcount - 1; bindex++) {
+        partition_t* remote_par = &pset->partitions[(pid + 1 + bindex)%pcount];
+        if (remote_par->processor.type == PROCESSOR_GPU &&
+            outbox[bindex].count) {
+          hash_table_finalize_cpu(&(outbox[bindex].ht));
+        }
+      }      
+      free(host_outboxes[pid]);
+    }
+  }
+  free(host_outboxes);
+}
+
 error_t grooves_initialize(partition_set_t* pset) {  
-  init_outbox(pset);
-  // TODO(abdullah): inbox the inbox stubs
+  if (pset->partition_count > 1) {
+    init_outbox(pset);
+    init_inbox(pset);
+    init_gpu_state(pset);
+  }
   return SUCCESS;
 }
 
@@ -153,36 +234,58 @@ PRIVATE void finalize_table_gpu(grooves_box_table_t* btable_d,
 
   // finalize the tables on the gpu
   for (uint32_t bindex = 0; bindex < bcount; bindex++) {
-    hash_table_finalize_gpu(&(btable_h[bindex].ht));
+    if (btable_h[bindex].count) hash_table_finalize_gpu(&(btable_h[bindex].ht));
   }
   free(btable_h);
-}
-
-PRIVATE void finalize_table_cpu(grooves_box_table_t* btable, uint32_t bcount) {
-  for (uint32_t pid = 0; pid < bcount; pid++) {
-    if (btable[pid].ht.size) hash_table_finalize_cpu(&(btable[pid].ht));
-  }
-  free(btable);
 }
 
 PRIVATE void finalize_outbox(partition_set_t* pset) {
   uint32_t pcount = pset->partition_count;
   for (int pid = 0; pid < pcount; pid++) {
     partition_t* partition = &pset->partitions[pid];
-    if (!partition->subgraph.vertex_count || 
-        !partition->subgraph.edge_count) continue;
     assert(partition->outbox);
     if (partition->processor.type == PROCESSOR_GPU) {
       finalize_table_gpu(partition->outbox, pcount - 1);
     } else {
       assert(partition->processor.type == PROCESSOR_CPU);
-      finalize_table_cpu(partition->outbox, pcount - 1);
+      for (uint32_t bindex = 0; bindex < pcount - 1; bindex++) {
+        if (partition->outbox[bindex].count) {
+          hash_table_finalize_cpu(&(partition->outbox[bindex].ht));
+        }
+      }
+      free(partition->outbox);
+    }
+  }
+}
+
+PRIVATE void finalize_inbox(partition_set_t* pset) {
+  uint32_t pcount = pset->partition_count;
+  for (int pid = 0; pid < pcount; pid++) {
+    partition_t* partition = &pset->partitions[pid];
+    assert(partition->inbox);
+    if (partition->processor.type == PROCESSOR_GPU) {
+      finalize_table_gpu(partition->inbox, pcount - 1);
+    } else {
+      assert(partition->processor.type == PROCESSOR_CPU);
+      for (int bindex = 0; bindex < pcount - 1; bindex++) {
+        partition_t* remote_par = &pset->partitions[(pid + 1 + bindex)%pcount];
+        // free only the inboxes that are the destination of an outbox of a gpu-
+        // partition. Others that are destinations to a cpu-partition will be 
+        // freed as an outbox in the source partition.
+        if (remote_par->processor.type == PROCESSOR_GPU &&
+            partition->inbox[bindex].count) {          
+          hash_table_finalize_cpu(&(partition->inbox[bindex].ht));
+        }
+      }
+      free(partition->inbox);
     }
   }
 }
 
 error_t grooves_finalize(partition_set_t* pset) {
-  finalize_outbox(pset);
-  // TODO(abdullah): finalize the inbox state
+  if (pset->partition_count > 1) {
+    finalize_outbox(pset);
+    finalize_inbox(pset);
+  }
   return SUCCESS;
 }
