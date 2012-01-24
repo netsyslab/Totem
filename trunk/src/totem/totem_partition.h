@@ -85,6 +85,7 @@ typedef struct partition_set_s {
   bool         weighted;        /**< indicates if edges have weights. */
   partition_t* partitions;      /**< the partitions list */
   int          partition_count; /**< number of partitions in the set */
+  size_t       value_size;      /**< the size of a communication element */
 } partition_set_t;
 
 /**
@@ -130,12 +131,14 @@ error_t partition_random(graph_t* graph, int partition_count,
  * @param[in] partition_labels an array with a partition id for each vertex as
  *                   identified by the array position
  * @param[in] partition_count the number of partitions
+ * @param[in] value_size  the size of a communication element
  * @param[out] partition_set the set of resulting graphs
  * @return SUCCESS if the partitions are assigned, FAILURE otherwise.
  */
 error_t partition_set_initialize(graph_t* graph, id_t* partition_labels, 
                                  processor_t* partition_processor,
                                  int partition_count, 
+                                 size_t value_size,
                                  partition_set_t** partition_set);
 
 /**

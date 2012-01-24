@@ -77,6 +77,7 @@ error_t partition_random(graph_t* graph, int number_of_partitions,
 }
 
 PRIVATE error_t init_allocate_struct_space(graph_t* graph, int pcount, 
+                                           size_t value_size, 
                                            partition_set_t** pset) {
   *pset = (partition_set_t*)calloc(1, sizeof(partition_set_t));
   if (!*pset) return FAILURE;
@@ -84,6 +85,7 @@ PRIVATE error_t init_allocate_struct_space(graph_t* graph, int pcount,
   if (!(*pset)->partitions) return FAILURE;
   (*pset)->graph = graph;
   (*pset)->partition_count = pcount;
+  (*pset)->value_size = value_size;
   (*pset)->weighted = graph->weighted;  
   return SUCCESS;
 }
@@ -198,12 +200,13 @@ PRIVATE void init_build_partitions_gpu(partition_set_t* pset) {
 
 error_t partition_set_initialize(graph_t* graph, id_t* plabels, 
                                  processor_t* pproc, int pcount, 
+                                 size_t value_size,
                                  partition_set_t** pset) {
   assert(graph && plabels && pproc);
   if (pcount > MAX_PARTITION_COUNT) return FAILURE;
 
   // Setup space and initialize the partition set data structure
-  CHK_SUCCESS(init_allocate_struct_space(graph, pcount, pset), err);
+  CHK_SUCCESS(init_allocate_struct_space(graph, pcount, value_size, pset), err);
 
   // Get the partition sizes
   init_compute_partitions_sizes(*pset, plabels);
