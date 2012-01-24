@@ -158,6 +158,7 @@ class GraphPartitionTest : public ::testing::Test {
     EXPECT_EQ(SUCCESS, partition_set_initialize(graph_, partitions_, 
                                                 partition_processor_,
                                                 partition_count_, 
+                                                sizeof(int),
                                                 &partition_set_));
     uint32_t pcount = partition_set_->partition_count;
     for (uint32_t pid = 0; pid < pcount; pid++) {
@@ -201,6 +202,7 @@ TEST_F(GraphPartitionTest , GetPartitionsSingleNodeGraph) {
   EXPECT_EQ(SUCCESS, partition_set_initialize(graph_, partitions_, 
                                               partition_processor_,
                                               partition_count_, 
+                                              sizeof(int),
                                               &partition_set_));
   EXPECT_EQ(partition_set_->partition_count, 1);
   partition_t* partition = &partition_set_->partitions[0];
@@ -238,6 +240,7 @@ TEST_F(GraphPartitionTest, GetPartitionsImbalancedChainGraph) {
   EXPECT_EQ(SUCCESS, partition_set_initialize(graph_, partitions_, 
                                               partition_processor_,
                                               partition_count_, 
+                                              sizeof(int),
                                               &partition_set_));
   for (int pid = 0; pid < partition_set_->partition_count; pid++) {
     partition_t* partition = &partition_set_->partitions[pid];

@@ -8,6 +8,7 @@
 // totem includes
 #include "totem_comkernel.cuh"
 #include "totem_grooves.h"
+#include "totem_mem.h"
 #include "totem_partition.h"
 
 PRIVATE void init_get_remote_nbrs(partition_t* partition, int pid, 
@@ -62,7 +63,7 @@ PRIVATE void init_allocate_table(grooves_box_table_t* btable, uint32_t pid,
 }
 
 PRIVATE void init_table_gpu(grooves_box_table_t* btable, uint32_t bcount, 
-                            grooves_box_table_t** btable_d) {
+                            size_t value_size, grooves_box_table_t** btable_d) {
   grooves_box_table_t* btable_h = 
     (grooves_box_table_t*)calloc(bcount, sizeof(grooves_box_table_t));
   memcpy(btable_h, btable, bcount * sizeof(grooves_box_table_t));
@@ -74,6 +75,8 @@ PRIVATE void init_table_gpu(grooves_box_table_t* btable, uint32_t bcount,
       CALL_SAFE(hash_table_initialize_gpu(&(btable_h[bindex].ht), 
                                           &hash_table_d));
       btable_h[bindex].ht = hash_table_d;
+      CALL_CU_SAFE(cudaMalloc((void**)&(btable_h[bindex].values), 
+                              btable_h[bindex].count * value_size));
     }
   }
 
@@ -88,8 +91,9 @@ PRIVATE void init_table_gpu(grooves_box_table_t* btable, uint32_t bcount,
 
 PRIVATE void init_outbox_table(partition_t* partition, uint32_t pid, 
                                uint32_t pcount, uint32_t* remote_nbrs,
-                               uint32_t count_total) {
+                               uint32_t count_total, size_t value_size) {
   grooves_box_table_t* outbox = partition->outbox;
+  // build the outboxs hash tables
   for (uint32_t i = 0; i < count_total; i++) {
     uint32_t nbr = remote_nbrs[i];
     uint32_t nbr_pid = GET_PARTITION_ID(nbr);
@@ -99,6 +103,15 @@ PRIVATE void init_outbox_table(partition_t* partition, uint32_t pid,
     CALL_SAFE(hash_table_put_cpu(&(outbox[bindex].ht), nbr, 
                                  outbox[bindex].count));
     outbox[bindex].count++;
+  }
+  // Allocate the values array for the cpu-based partitions. The gpu-based
+  // partitions will have their values array allocated later when their
+  // state is initialized on the gpu
+  if (partition->processor.type == PROCESSOR_GPU) return;
+  for (int rpid = 0; rpid < pcount - 1; rpid++) {
+    if (outbox[rpid].count) {
+      outbox[rpid].values = mem_alloc(outbox[rpid].count * value_size);
+    }
   }
 }
 
@@ -127,7 +140,8 @@ PRIVATE void init_outbox(partition_set_t* pset) {
       // initialize the outbox hash tables
       init_allocate_table(partition->outbox, pid, pcount, count_per_par);
       // build the outbox hash tables
-      init_outbox_table(partition, pid, pcount, remote_nbrs, count_total);
+      init_outbox_table(partition, pid, pcount, remote_nbrs, count_total, 
+                        pset->value_size);
       free(remote_nbrs);
       free(count_per_par);
     }
@@ -183,12 +197,13 @@ PRIVATE void init_gpu_state(partition_set_t* pset) {
     partition_t* partition = &pset->partitions[pid];
     if (partition->processor.type == PROCESSOR_GPU) {
       grooves_box_table_t* outbox_d = NULL;
-      init_table_gpu(partition->outbox, pcount - 1, &outbox_d);
+      init_table_gpu(partition->outbox, pcount - 1, pset->value_size, 
+                     &outbox_d);
       host_outboxes[pid] = partition->outbox;
       partition->outbox = outbox_d;
 
       grooves_box_table_t* inbox_d = NULL;
-      init_table_gpu(partition->inbox, pcount - 1, &inbox_d);
+      init_table_gpu(partition->inbox, pcount - 1, pset->value_size, &inbox_d);
       free(partition->inbox);
       partition->inbox = inbox_d;
     }
@@ -206,14 +221,14 @@ PRIVATE void init_gpu_state(partition_set_t* pset) {
             outbox[bindex].count) {
           hash_table_finalize_cpu(&(outbox[bindex].ht));
         }
-      }      
+      }
       free(host_outboxes[pid]);
     }
   }
   free(host_outboxes);
 }
 
-error_t grooves_initialize(partition_set_t* pset) {  
+error_t grooves_initialize(partition_set_t* pset) {
   if (pset->partition_count > 1) {
     init_outbox(pset);
     init_inbox(pset);
@@ -234,7 +249,10 @@ PRIVATE void finalize_table_gpu(grooves_box_table_t* btable_d,
 
   // finalize the tables on the gpu
   for (uint32_t bindex = 0; bindex < bcount; bindex++) {
-    if (btable_h[bindex].count) hash_table_finalize_gpu(&(btable_h[bindex].ht));
+    if (btable_h[bindex].count) {
+      hash_table_finalize_gpu(&(btable_h[bindex].ht));
+      CALL_CU_SAFE(cudaFree(btable_h[bindex].values));
+    }
   }
   free(btable_h);
 }
@@ -251,6 +269,7 @@ PRIVATE void finalize_outbox(partition_set_t* pset) {
       for (uint32_t bindex = 0; bindex < pcount - 1; bindex++) {
         if (partition->outbox[bindex].count) {
           hash_table_finalize_cpu(&(partition->outbox[bindex].ht));
+          mem_free(partition->outbox[bindex].values);
         }
       }
       free(partition->outbox);
@@ -273,8 +292,9 @@ PRIVATE void finalize_inbox(partition_set_t* pset) {
         // partition. Others that are destinations to a cpu-partition will be 
         // freed as an outbox in the source partition.
         if (remote_par->processor.type == PROCESSOR_GPU &&
-            partition->inbox[bindex].count) {          
+            partition->inbox[bindex].count) {
           hash_table_finalize_cpu(&(partition->inbox[bindex].ht));
+          mem_free(partition->inbox[bindex].values);
         }
       }
       free(partition->inbox);
