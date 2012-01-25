@@ -40,7 +40,7 @@ __global__ void VerifyPartitionGPUKernel(partition_t partition, uint32_t pid,
     KERNEL_EXPECT_TRUE(nbr_pid < pcount);
     if (nbr_pid != pid) {
       grooves_box_table_t* outbox =
-        &partition.outbox[GROOVES_BOX_INDEX(nbr_pid, pid, pcount)];
+        &partition.outbox_d[GROOVES_BOX_INDEX(nbr_pid, pid, pcount)];
       KERNEL_EXPECT_TRUE(outbox->count > 0);
       int value = 1;
       GROOVES_LOOKUP(outbox, nbr, value);
@@ -53,7 +53,7 @@ __global__ void VerifyPartitionInboxGPUKernel(partition_t partition,
                                               uint32_t pid, uint32_t pcount) {
   const int index = THREAD_GLOBAL_INDEX;
   for (int r = 0; r < pcount - 1; r++) {
-    grooves_box_table_t* inbox = &partition.inbox[r];
+    grooves_box_table_t* inbox = &partition.inbox_d[r];
     if (index >= inbox->ht.size) continue;
     uint64_t entry = inbox->ht.entries[index];
     if (entry != ((uint64_t)-1))  {
