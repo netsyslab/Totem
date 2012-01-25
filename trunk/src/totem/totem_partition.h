@@ -65,14 +65,28 @@
  * communicated by each remote partition to this partition.
  */
 typedef struct partition_s {
-  graph_t              subgraph;   /**< the subgraph this partition 
-                                      represents */
-  grooves_box_table_t* outbox;     /**< table of messages to be sent to 
-                                      remote nbrs */
-  grooves_box_table_t* inbox;      /**< table of messages received from 
-                                      other partitions */
-  processor_t          processor;  /**< the processor this partition will be
-                                      processed on. */
+  graph_t              subgraph;     /**< the subgraph this partition 
+                                        represents */
+  grooves_box_table_t* outbox;       /**< table of messages to be sent to 
+                                        remote nbrs */
+  grooves_box_table_t* inbox;        /**< table of messages received from 
+                                        other partitions */
+  grooves_box_table_t* outbox_d;     /**< a mirror of the outbox table on the 
+                                        GPU for GPU-resident partitions. Note 
+                                        that this just maintains the references 
+                                        to the gpu-allocated state (i.e., the 
+                                        state itself is not mirrored on both  
+                                        the host and the GPU). This is needed
+                                        to allow easy management of the state, 
+                                        which sometimes is managed by the host 
+                                        (e.g., to initiate transfers where
+                                        in/outbox references should be used) 
+                                        and sometimes by the GPU (e.g., during
+                                        actual processing where in/outbox_d 
+                                        should be used) */
+  grooves_box_table_t* inbox_d;      /**< a mirror of the inbox table */
+  processor_t          processor;    /**< the processor this partition will be
+                                        processed on. */
 } partition_t;
 
 /**

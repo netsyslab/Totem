@@ -63,30 +63,28 @@ PRIVATE void init_allocate_table(grooves_box_table_t* btable, uint32_t pid,
 }
 
 PRIVATE void init_table_gpu(grooves_box_table_t* btable, uint32_t bcount, 
-                            size_t value_size, grooves_box_table_t** btable_d) {
-  grooves_box_table_t* btable_h = 
-    (grooves_box_table_t*)calloc(bcount, sizeof(grooves_box_table_t));
-  memcpy(btable_h, btable, bcount * sizeof(grooves_box_table_t));
-
+                            size_t value_size, grooves_box_table_t** btable_d,
+                            grooves_box_table_t** btable_h) {
+  *btable_h = (grooves_box_table_t*)calloc(bcount, sizeof(grooves_box_table_t));
+  memcpy(*btable_h, btable, bcount * sizeof(grooves_box_table_t));
   // initialize the tables on the gpu  
   for (uint32_t bindex = 0; bindex < bcount; bindex++) {
     hash_table_t hash_table_d;
-    if (btable_h[bindex].count) {
-      CALL_SAFE(hash_table_initialize_gpu(&(btable_h[bindex].ht), 
+    if ((*btable_h)[bindex].count) {
+      CALL_SAFE(hash_table_initialize_gpu(&((*btable_h)[bindex].ht), 
                                           &hash_table_d));
-      btable_h[bindex].ht = hash_table_d;
-      CALL_CU_SAFE(cudaMalloc((void**)&(btable_h[bindex].values), 
-                              btable_h[bindex].count * value_size));
+      (*btable_h)[bindex].ht = hash_table_d;
+      CALL_CU_SAFE(cudaMalloc((void**)&((*btable_h)[bindex].values), 
+                              (*btable_h)[bindex].count * value_size));
     }
   }
 
   // transfer the table array
   CALL_CU_SAFE(cudaMalloc((void**)(btable_d), bcount * 
                           sizeof(grooves_box_table_t)));
-  CALL_CU_SAFE(cudaMemcpy(*btable_d, btable_h, 
+  CALL_CU_SAFE(cudaMemcpy(*btable_d, (*btable_h), 
                           bcount * sizeof(grooves_box_table_t), 
                           cudaMemcpyHostToDevice));
-  free(btable_h);
 }
 
 PRIVATE void init_outbox_table(partition_t* partition, uint32_t pid, 
@@ -196,16 +194,17 @@ PRIVATE void init_gpu_state(partition_set_t* pset) {
   for (int pid = 0; pid < pcount; pid++) {
     partition_t* partition = &pset->partitions[pid];
     if (partition->processor.type == PROCESSOR_GPU) {
-      grooves_box_table_t* outbox_d = NULL;
+      grooves_box_table_t* outbox_h = NULL;
       init_table_gpu(partition->outbox, pcount - 1, pset->value_size, 
-                     &outbox_d);
+                     &partition->outbox_d, &outbox_h);
       host_outboxes[pid] = partition->outbox;
-      partition->outbox = outbox_d;
+      partition->outbox = outbox_h;
 
-      grooves_box_table_t* inbox_d = NULL;
-      init_table_gpu(partition->inbox, pcount - 1, pset->value_size, &inbox_d);
+      grooves_box_table_t* inbox_h = NULL;
+      init_table_gpu(partition->inbox, pcount - 1, pset->value_size, 
+                     &partition->inbox_d, &inbox_h);
       free(partition->inbox);
-      partition->inbox = inbox_d;
+      partition->inbox = inbox_h;
     }
   }
 
@@ -238,15 +237,9 @@ error_t grooves_initialize(partition_set_t* pset) {
 }
 
 PRIVATE void finalize_table_gpu(grooves_box_table_t* btable_d, 
+                                grooves_box_table_t* btable_h,
                                 uint32_t bcount) {
-  // transfer the table array
-  grooves_box_table_t* btable_h = 
-    (grooves_box_table_t*)calloc(bcount, sizeof(grooves_box_table_t));
-  CALL_CU_SAFE(cudaMemcpy(btable_h, btable_d, 
-                          bcount * sizeof(grooves_box_table_t), 
-                          cudaMemcpyDeviceToHost));
   cudaFree(btable_d);
-
   // finalize the tables on the gpu
   for (uint32_t bindex = 0; bindex < bcount; bindex++) {
     if (btable_h[bindex].count) {
@@ -263,7 +256,7 @@ PRIVATE void finalize_outbox(partition_set_t* pset) {
     partition_t* partition = &pset->partitions[pid];
     assert(partition->outbox);
     if (partition->processor.type == PROCESSOR_GPU) {
-      finalize_table_gpu(partition->outbox, pcount - 1);
+      finalize_table_gpu(partition->outbox_d, partition->outbox, pcount - 1);
     } else {
       assert(partition->processor.type == PROCESSOR_CPU);
       for (uint32_t bindex = 0; bindex < pcount - 1; bindex++) {
@@ -283,7 +276,7 @@ PRIVATE void finalize_inbox(partition_set_t* pset) {
     partition_t* partition = &pset->partitions[pid];
     assert(partition->inbox);
     if (partition->processor.type == PROCESSOR_GPU) {
-      finalize_table_gpu(partition->inbox, pcount - 1);
+      finalize_table_gpu(partition->inbox_d, partition->inbox, pcount - 1);
     } else {
       assert(partition->processor.type == PROCESSOR_CPU);
       for (int bindex = 0; bindex < pcount - 1; bindex++) {
