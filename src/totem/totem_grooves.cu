@@ -175,6 +175,19 @@ PRIVATE void init_inbox(partition_set_t* pset) {
   }
 }
 
+PRIVATE void init_gpu_enable_peer_access(uint32_t pid, partition_set_t* pset) {
+  uint32_t pcount = pset->partition_count;
+  partition_t* partition = &pset->partitions[pid];
+  for (int remote_pid = (pid + 1) % pcount; remote_pid != pid; 
+       remote_pid = (remote_pid + 1) % pcount) {
+    partition_t* remote_par = &pset->partitions[remote_pid];
+    if (remote_par->processor.type == PROCESSOR_GPU &&
+        remote_par->processor.id != partition->processor.id) {
+      CALL_CU_SAFE(cudaDeviceEnablePeerAccess(remote_par->processor.id, 0));
+    }
+  }
+}
+
 PRIVATE void init_gpu_state(partition_set_t* pset) {
   uint32_t pcount = pset->partition_count;
 
@@ -194,6 +207,7 @@ PRIVATE void init_gpu_state(partition_set_t* pset) {
   for (int pid = 0; pid < pcount; pid++) {
     partition_t* partition = &pset->partitions[pid];
     if (partition->processor.type == PROCESSOR_GPU) {
+      CALL_CU_SAFE(cudaSetDevice(partition->processor.id));
       grooves_box_table_t* outbox_h = NULL;
       init_table_gpu(partition->outbox, pcount - 1, pset->value_size, 
                      &partition->outbox_d, &outbox_h);
@@ -205,6 +219,7 @@ PRIVATE void init_gpu_state(partition_set_t* pset) {
                      &partition->inbox_d, &inbox_h);
       free(partition->inbox);
       partition->inbox = inbox_h;
+      init_gpu_enable_peer_access(pid, pset);
     }
   }
 
@@ -256,6 +271,7 @@ PRIVATE void finalize_outbox(partition_set_t* pset) {
     partition_t* partition = &pset->partitions[pid];
     assert(partition->outbox);
     if (partition->processor.type == PROCESSOR_GPU) {
+      CALL_CU_SAFE(cudaSetDevice(partition->processor.id));
       finalize_table_gpu(partition->outbox_d, partition->outbox, pcount - 1);
     } else {
       assert(partition->processor.type == PROCESSOR_CPU);
@@ -276,6 +292,7 @@ PRIVATE void finalize_inbox(partition_set_t* pset) {
     partition_t* partition = &pset->partitions[pid];
     assert(partition->inbox);
     if (partition->processor.type == PROCESSOR_GPU) {
+      CALL_CU_SAFE(cudaSetDevice(partition->processor.id));
       finalize_table_gpu(partition->inbox_d, partition->inbox, pcount - 1);
     } else {
       assert(partition->processor.type == PROCESSOR_CPU);
@@ -302,3 +319,4 @@ error_t grooves_finalize(partition_set_t* pset) {
   }
   return SUCCESS;
 }
+

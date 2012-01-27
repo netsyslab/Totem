@@ -99,6 +99,8 @@ class GraphPartitionTest : public ::testing::Test {
   }
 
   void VerifyPartitionGPU(uint32_t pid) {
+    ASSERT_EQ(cudaSuccess, 
+              cudaSetDevice(partition_set_->partitions[pid].processor.id));
     dim3 blocks, threads_per_block;
     KERNEL_CONFIGURE(partition_set_->partitions[pid].subgraph.vertex_count, 
                      blocks, threads_per_block);
