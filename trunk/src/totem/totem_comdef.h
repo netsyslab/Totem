@@ -35,12 +35,12 @@ typedef enum {
  */
 typedef enum {
   PROCESSOR_CPU, /**< CPU processor. */
-  PROCESSOR_GPU /**< GPU processor. */
+  PROCESSOR_GPU  /**< GPU processor. */
 } processor_type_t;
 
 typedef struct processor_s {
-  processor_type_t type;
-  uint32_t         id;
+  processor_type_t type; /**< Processor type (CPU or GPU). */
+  uint32_t         id;   /**< Used to id GPU devices */
 } processor_t;
 
 /**
