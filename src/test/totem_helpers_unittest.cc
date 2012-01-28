@@ -11,21 +11,9 @@
 
 class GraphHelper : public ::testing::Test {
  protected:
-  id_t* partitions_;
-  partition_set_t* partition_set_;
   virtual void SetUp() {
     // Ensure the minimum CUDA architecture is supported
     CUDA_CHECK_VERSION();
-    partitions_ = NULL;
-    partition_set_ = NULL;
-  }
-  virtual void TearDown() {
-    if (partitions_ != NULL) {
-      free(partitions_);
-    }
-    if (partition_set_ != NULL) {
-      partition_set_finalize(partition_set_);
-    }
   }
 };
 
