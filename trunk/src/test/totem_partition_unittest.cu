@@ -10,6 +10,7 @@
 #include "totem_common_unittest.h"
 #include "totem_comkernel.cuh"
 #include "totem_grooves.h"
+#include "totem_partition.h"
 
 /**
  * A simple macro to do basic true/false condition testing for kernels
