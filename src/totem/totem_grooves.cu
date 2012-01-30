@@ -171,6 +171,12 @@ PRIVATE void init_inbox(partition_set_t* pset) {
       int src_bindex = GROOVES_BOX_INDEX(pid, src_pid, pcount);
       int dst_bindex = GROOVES_BOX_INDEX(src_pid, pid, pcount);      
       partition->inbox[dst_bindex] = remote_par->outbox[src_bindex];
+      if (remote_par->processor.type == PROCESSOR_GPU) {
+        // if the remote processor is GPU, then a values array for this inbox
+        // needs to be allocated on the host
+        partition->inbox[dst_bindex].values = 
+          mem_alloc(partition->inbox[dst_bindex].count * pset->value_size);
+      }
     }
   }
 }
