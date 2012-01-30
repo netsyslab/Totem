@@ -265,6 +265,20 @@ PRIVATE void finalize_table_gpu(grooves_box_table_t* btable_d,
   free(btable_h);
 }
 
+PRIVATE void finalize_gpu_disable_peer_access(uint32_t pid, 
+                                              partition_set_t* pset) {
+  uint32_t pcount = pset->partition_count;
+  partition_t* partition = &pset->partitions[pid];
+  for (int remote_pid = (pid + 1) % pcount; remote_pid != pid; 
+       remote_pid = (remote_pid + 1) % pcount) {
+    partition_t* remote_par = &pset->partitions[remote_pid];
+    if (remote_par->processor.type == PROCESSOR_GPU &&
+        remote_par->processor.id != partition->processor.id) {
+      CALL_CU_SAFE(cudaDeviceDisablePeerAccess(remote_par->processor.id));
+    }
+  }
+}
+
 PRIVATE void finalize_outbox(partition_set_t* pset) {
   uint32_t pcount = pset->partition_count;
   for (int pid = 0; pid < pcount; pid++) {
@@ -272,6 +286,7 @@ PRIVATE void finalize_outbox(partition_set_t* pset) {
     assert(partition->outbox);
     if (partition->processor.type == PROCESSOR_GPU) {
       CALL_CU_SAFE(cudaSetDevice(partition->processor.id));
+      finalize_gpu_disable_peer_access(pid, pset);
       finalize_table_gpu(partition->outbox_d, partition->outbox, pcount - 1);
     } else {
       assert(partition->processor.type == PROCESSOR_CPU);
