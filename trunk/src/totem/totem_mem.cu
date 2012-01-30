@@ -25,6 +25,7 @@ void* mem_alloc(size_t size) {
 }
 
 void mem_free(void* buf) {
+  assert(buf);
 #ifdef FEATURE_PAGEABLE_MEMORY
   free(buf);
 #else
