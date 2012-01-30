@@ -306,14 +306,13 @@ inline error_t graph_initialize_device(const graph_t* graph_h,
   return SUCCESS;
   
  err_free_weights:
-  if ((*graph_d)->weighted) cudaFree((*graph_d)->weights);
+  if ((*graph_d)->weighted) CALL_CU_SAFE(cudaFree((*graph_d)->weights));
  err_free_edges:
-  cudaFree((*graph_d)->edges);
+  CALL_CU_SAFE(cudaFree((*graph_d)->edges));
  err_free_vertices:
-  cudaFree((*graph_d)->vertices);
+  CALL_CU_SAFE(cudaFree((*graph_d)->vertices));
  err:
   free(*graph_d);
-  printf("%d\n", cudaGetLastError());
   return FAILURE;
 }
 
@@ -323,9 +322,9 @@ inline error_t graph_initialize_device(const graph_t* graph_h,
  */
 inline void graph_finalize_device(graph_t* graph_d) {
   assert(graph_d);
-  cudaFree(graph_d->edges);
-  cudaFree(graph_d->vertices);
-  if (graph_d->weighted) cudaFree(graph_d->weights);
+  CALL_CU_SAFE(cudaFree(graph_d->edges));
+  CALL_CU_SAFE(cudaFree(graph_d->vertices));
+  if (graph_d->weighted) CALL_CU_SAFE(cudaFree(graph_d->weights));
   free(graph_d);
 }
 

@@ -194,17 +194,17 @@ error_t hash_table_get_gpu(hash_table_t* hash_table, uint32_t* keys,
                             cudaMemcpyDeviceToHost), err_free_values);
   }
   // clean up and return
-  cudaFree(values_d);
-  cudaFree(keys_d);
+  CALL_CU_SAFE(cudaFree(values_d));
+  CALL_CU_SAFE(cudaFree(keys_d));
   return SUCCESS;
 
   // error handling
  err_free_values:
   mem_free(*values);
  err_free_values_d:
-  cudaFree(values_d);
+  CALL_CU_SAFE(cudaFree(values_d));
  err_free_keys_d:
-  cudaFree(keys_d);
+  CALL_CU_SAFE(cudaFree(keys_d));
  err:
   return FAILURE;
 }
@@ -212,7 +212,7 @@ error_t hash_table_get_gpu(hash_table_t* hash_table, uint32_t* keys,
 error_t hash_table_finalize_gpu(hash_table_t* hash_table) {
   assert(hash_table);
   assert(hash_table->entries);
-  cudaFree(hash_table->entries);
+  CALL_CU_SAFE(cudaFree(hash_table->entries));
   if (hash_table->allocated) {
     free(hash_table);  
   } else {
@@ -234,7 +234,7 @@ error_t hash_table_initialize_gpu(hash_table_t* hash_table,
 
   // error handling
  err_free_entries:
-  cudaFree(hash_table_d->entries);
+  CALL_CU_SAFE(cudaFree(hash_table_d->entries));
  err:
   return FAILURE;
 }
