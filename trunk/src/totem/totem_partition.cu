@@ -187,6 +187,7 @@ PRIVATE void init_build_partitions_gpu(partition_set_t* pset) {
   for (uint32_t pid = 0; pid < pcount; pid++) {
     partition_t* partition = &pset->partitions[pid];
     if (partition->processor.type != PROCESSOR_GPU) continue;
+    CALL_CU_SAFE(cudaSetDevice(partition->processor.id));
     graph_t* subgraph_h = (graph_t*)malloc(sizeof(graph_t));
     assert(subgraph_h);
     memcpy(subgraph_h, &partition->subgraph, sizeof(graph_t));
@@ -235,10 +236,11 @@ error_t partition_set_finalize(partition_set_t* pset) {
     partition_t* partition = &pset->partitions[pid];
     graph_t* subgraph = &partition->subgraph;
     if (partition->processor.type == PROCESSOR_GPU) {
-      cudaFree(subgraph->edges);
-      cudaFree(subgraph->vertices);
+      CALL_CU_SAFE(cudaSetDevice(partition->processor.id));
+      CALL_CU_SAFE(cudaFree(subgraph->edges));
+      CALL_CU_SAFE(cudaFree(subgraph->vertices));
       if (subgraph->weighted && subgraph->weights) 
-        cudaFree(subgraph->weights);
+        CALL_CU_SAFE(cudaFree(subgraph->weights));
     } else {
       assert(partition->processor.type == PROCESSOR_CPU);
       if (subgraph->vertices) mem_free(subgraph->vertices);

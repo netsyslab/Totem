@@ -9,15 +9,15 @@
 
 
 // totem includes
+#include "totem_comkernel.cuh"
 #include "totem_mem.h"
-#include "cuda.h"
 
 void* mem_alloc(size_t size) {
   void* buf;
 #ifdef FEATURE_PAGEABLE_MEMORY
   buf = malloc(size);
 #else
-  cudaMallocHost(&buf, size);
+  CALL_CU_SAFE(cudaMallocHost(&buf, size, cudaHostAllocPortable));
 #endif // FEATURE_PAGEABLE_MEMORY
 
   assert(buf);
@@ -28,6 +28,6 @@ void mem_free(void* buf) {
 #ifdef FEATURE_PAGEABLE_MEMORY
   free(buf);
 #else
-  cudaFreeHost(buf);
+  CALL_CU_SAFE(cudaFreeHost(buf));
 #endif // FEATURE_PAGEABLE_MEMORY
 }
