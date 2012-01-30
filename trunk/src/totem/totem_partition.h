@@ -71,6 +71,8 @@ typedef struct partition_s {
                                         remote nbrs */
   grooves_box_table_t* inbox;        /**< table of messages received from 
                                         other partitions */
+  processor_t          processor;    /**< the processor this partition will be
+                                        processed on. */
   grooves_box_table_t* outbox_d;     /**< a mirror of the outbox table on the 
                                         GPU for GPU-resident partitions. Note 
                                         that this just maintains the references 
@@ -85,8 +87,13 @@ typedef struct partition_s {
                                         actual processing where in/outbox_d 
                                         should be used) */
   grooves_box_table_t* inbox_d;      /**< a mirror of the inbox table */
-  processor_t          processor;    /**< the processor this partition will be
-                                        processed on. */
+  cudaStream_t         streams[2];   /**< used in GPU-resident partitions to 
+                                        enable overlapped operations (e.g.,
+                                        communication among all devices or with
+                                        computation). The first stream is used
+                                        for launch communication operations,
+                                        while the second one is used to launch
+                                        kernel calls (computation) */
 } partition_t;
 
 /**

@@ -56,8 +56,17 @@ error_t grooves_initialize(partition_set_t* pset);
  */
 error_t grooves_finalize(partition_set_t* pset);
 
-// TODO(abdullah): define and implement the cross processsor communication
-//                 interface. This interface is supposed to transfer an
-//                 outbox table in one partition to an inbox table in another.
+/**
+ * Launches outbox-->inbox communications across partitions. This is done by
+ * launching asynchronous transfers of the values array of a partition's outbox
+ * to its corresponding inbox in a target partition.
+ */
+error_t grooves_launch_communications(partition_set_t* pset);
+
+/**
+ * Blocks until all data transfers initiated by grooves_launch_communications
+ * have finished.
+ */
+error_t grooves_synchronize(partition_set_t* pset);
 
 #endif  // TOTEM_GROOVES_H

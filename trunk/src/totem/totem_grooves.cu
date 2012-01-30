@@ -213,7 +213,10 @@ PRIVATE void init_gpu_state(partition_set_t* pset) {
   for (int pid = 0; pid < pcount; pid++) {
     partition_t* partition = &pset->partitions[pid];
     if (partition->processor.type == PROCESSOR_GPU) {
+      // set device context, create the streams and the tables for this gpu
       CALL_CU_SAFE(cudaSetDevice(partition->processor.id));
+      CALL_CU_SAFE(cudaStreamCreate(&partition->streams[0]));
+      CALL_CU_SAFE(cudaStreamCreate(&partition->streams[1]));
       grooves_box_table_t* outbox_h = NULL;
       init_table_gpu(partition->outbox, pcount - 1, pset->value_size, 
                      &partition->outbox_d, &outbox_h);
@@ -260,7 +263,7 @@ error_t grooves_initialize(partition_set_t* pset) {
 PRIVATE void finalize_table_gpu(grooves_box_table_t* btable_d, 
                                 grooves_box_table_t* btable_h,
                                 uint32_t bcount) {
-  cudaFree(btable_d);
+  CALL_CU_SAFE(cudaFree(btable_d));
   // finalize the tables on the gpu
   for (uint32_t bindex = 0; bindex < bcount; bindex++) {
     if (btable_h[bindex].count) {
@@ -292,6 +295,8 @@ PRIVATE void finalize_outbox(partition_set_t* pset) {
     assert(partition->outbox);
     if (partition->processor.type == PROCESSOR_GPU) {
       CALL_CU_SAFE(cudaSetDevice(partition->processor.id));
+      CALL_CU_SAFE(cudaStreamDestroy(partition->streams[0]));
+      CALL_CU_SAFE(cudaStreamDestroy(partition->streams[1]));
       finalize_gpu_disable_peer_access(pid, pset);
       finalize_table_gpu(partition->outbox_d, partition->outbox, pcount - 1);
     } else {
@@ -341,3 +346,44 @@ error_t grooves_finalize(partition_set_t* pset) {
   return SUCCESS;
 }
 
+error_t grooves_launch_communications(partition_set_t* pset) {
+  uint32_t pcount = pset->partition_count;
+  for (int src_pid = 0; src_pid < pcount; src_pid++) {
+    for (int dst_pid = (src_pid + 1) % pcount; dst_pid != src_pid; 
+         dst_pid = (dst_pid + 1) % pcount) {
+      // if both partitions are on the host, then, by design the source
+      // partition's outbox is shared with the destination partition's inbox,
+      // hence no need to copy data
+      if ((pset->partitions[src_pid].processor.type == PROCESSOR_CPU) &&
+          (pset->partitions[dst_pid].processor.type == PROCESSOR_CPU)) continue;
+
+      cudaStream_t* stream = &pset->partitions[src_pid].streams[0];
+      grooves_box_table_t* src_box = 
+        &pset->partitions[src_pid].outbox[GROOVES_BOX_INDEX(dst_pid, src_pid, 
+                                                           pcount)];
+      // if the two partitions share nothing, then we have nothing to do
+      if (!src_box->count) continue;
+
+      if (pset->partitions[dst_pid].processor.type == PROCESSOR_GPU) {
+        stream = &pset->partitions[dst_pid].streams[0];
+      }
+      grooves_box_table_t* dst_box = 
+        &pset->partitions[dst_pid].inbox[GROOVES_BOX_INDEX(src_pid, dst_pid, 
+                                                           pcount)];      
+      assert(src_box->count == dst_box->count);
+      CALL_CU_SAFE(cudaMemcpyAsync(dst_box->values, src_box->values,
+                                   dst_box->count * pset->value_size,
+                                   cudaMemcpyDefault, *stream));
+    }
+  }
+  return SUCCESS;
+}
+
+error_t grooves_synchronize(partition_set_t* pset) {
+  for (int pid = 0; pid < pset->partition_count; pid++) {
+    partition_t* partition = &pset->partitions[pid];
+    if (partition->processor.type == PROCESSOR_CPU) continue;
+    CALL_CU_SAFE(cudaStreamSynchronize(partition->streams[0]));
+  }
+  return SUCCESS;
+}
