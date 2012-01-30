@@ -63,7 +63,6 @@ __global__ void VerifyPartitionInboxGPUKernel(partition_t partition,
   }
 }
 
-
 class GraphPartitionTest : public ::testing::Test {
  protected:
   graph_t* graph_;
@@ -75,15 +74,19 @@ class GraphPartitionTest : public ::testing::Test {
   virtual void SetUp() {
     // Ensure the minimum CUDA architecture is supported
     CUDA_CHECK_VERSION();
+    int gpu_count = 0;
+    CALL_CU_SAFE(cudaGetDeviceCount(&gpu_count));
     graph_ = NULL;
     partitions_ = NULL;
     partition_set_ = NULL;
-    partition_count_ = 3;
+    partition_count_ = gpu_count + 1;
     partition_processor_ = 
       (processor_t*)calloc(partition_count_, sizeof(processor_t));
     partition_processor_[0].type = PROCESSOR_CPU;
-    partition_processor_[1].type = PROCESSOR_GPU;
-    partition_processor_[2].type = PROCESSOR_GPU;
+    for (int gpu = 0; gpu < gpu_count; gpu++) {
+      partition_processor_[gpu + 1].type = PROCESSOR_GPU;
+      partition_processor_[gpu + 1].id = gpu;
+    }
   }
 
   virtual void TearDown() {
