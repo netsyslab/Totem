@@ -1,6 +1,6 @@
 /* TODO(lauro,abdullah,elizeu): Add license.
  *
- * Contains unit tests for totem helper functions.
+ * Contains unit tests for partition.
  *
  *  Created on: 2011-12-30
  *      Author: Elizeu Santos-Neto
@@ -61,6 +61,13 @@ __global__ void VerifyPartitionInboxGPUKernel(partition_t partition,
       KERNEL_EXPECT_TRUE(GET_PARTITION_ID(HT_GET_KEY(entry)) == pid);
     }
   }
+}
+
+__global__ void CheckInboxValuesGPUKernel(uint32_t pid, int* values, 
+                                          uint32_t count) {
+  const int index = THREAD_GLOBAL_INDEX;
+  if (index >= count) return;
+  KERNEL_EXPECT_TRUE(values[index] == pid);
 }
 
 class GraphPartitionTest : public ::testing::Test {
@@ -158,14 +165,7 @@ class GraphPartitionTest : public ::testing::Test {
     }
   }
 
-  void TestGraph() {
-    EXPECT_EQ(SUCCESS, partition_random(graph_, partition_count_, 13, 
-                                        &partitions_));
-    EXPECT_EQ(SUCCESS, partition_set_initialize(graph_, partitions_, 
-                                                partition_processor_,
-                                                partition_count_, 
-                                                sizeof(int),
-                                                &partition_set_));
+  void TestState() {
     uint32_t pcount = partition_set_->partition_count;
     for (uint32_t pid = 0; pid < pcount; pid++) {
       partition_t* partition = &partition_set_->partitions[pid];
@@ -174,6 +174,80 @@ class GraphPartitionTest : public ::testing::Test {
       if (partition->processor.type == PROCESSOR_CPU) VerifyPartitionCPU(pid);
       if (partition->processor.type == PROCESSOR_GPU) VerifyPartitionGPU(pid);
     }
+  }
+
+  void InitOutboxValues() {
+    for (uint32_t pid = 0; pid < partition_set_->partition_count; pid++) {
+      partition_t* partition = &partition_set_->partitions[pid];
+      uint32_t pcount = partition_set_->partition_count;
+      for (uint32_t remote_pid = (pid + 1) % pcount; remote_pid != pid; 
+           remote_pid = (remote_pid + 1) % pcount) {
+        grooves_box_table_t* remote_outbox = 
+          &partition->outbox[GROOVES_BOX_INDEX(remote_pid, pid, pcount)];
+        if (remote_outbox->count == 0) continue;
+        if (partition->processor.type == PROCESSOR_GPU) {
+          dim3 blocks, threads_per_block;
+          KERNEL_CONFIGURE(remote_outbox->count, blocks, threads_per_block);
+          memset_device<<<blocks, threads_per_block>>>
+            ((int*)remote_outbox->values, (int)remote_pid, 
+             remote_outbox->count);
+          ASSERT_EQ(cudaSuccess, cudaGetLastError());
+          ASSERT_EQ(cudaSuccess, cudaThreadSynchronize());
+        } else {
+          ASSERT_EQ(PROCESSOR_CPU, partition->processor.type);
+          int* values = (int*)remote_outbox->values;
+          for (int i = 0; i < remote_outbox->count; i++) {
+            values[i] = remote_pid;
+          }
+        }
+      }
+    }
+  }
+  
+  void CheckInboxValues() {
+    for (uint32_t pid = 0; pid < partition_set_->partition_count; pid++) {
+      partition_t* partition = &partition_set_->partitions[pid];
+      grooves_box_table_t* inbox = partition->inbox;
+      uint32_t bcount = partition_set_->partition_count - 1;
+      for (uint32_t bindex = 0; bindex < bcount; bindex++) {
+        if (inbox[bindex].count == 0) continue;
+        if (partition->processor.type == PROCESSOR_GPU) {
+          dim3 blocks, threads_per_block;
+          KERNEL_CONFIGURE(inbox[bindex].count, blocks, threads_per_block);
+          CheckInboxValuesGPUKernel<<<blocks, threads_per_block>>>
+            (pid, (int*)inbox[bindex].values, inbox[bindex].count);
+          ASSERT_EQ(cudaSuccess, cudaGetLastError());
+          ASSERT_EQ(cudaSuccess, cudaThreadSynchronize());
+        } else {
+          ASSERT_EQ(PROCESSOR_CPU, partition->processor.type);
+          for (uint32_t bindex = 0; bindex < bcount; bindex++) {
+            int* values = (int*)inbox[pid].values;
+            for (int i = 0; i < inbox[bindex].count; i++) {
+              EXPECT_EQ(pid, values[i]);
+            }
+          }
+        }
+      }
+    }
+  }
+  
+  void TestCommunication() {
+    InitOutboxValues();
+    EXPECT_EQ(SUCCESS, grooves_launch_communications(partition_set_));
+    EXPECT_EQ(SUCCESS, grooves_synchronize(partition_set_));
+    CheckInboxValues();
+  }
+
+  void TestGraph() {
+    EXPECT_EQ(SUCCESS, partition_random(graph_, partition_count_, 13, 
+                                        &partitions_));
+    EXPECT_EQ(SUCCESS, partition_set_initialize(graph_, partitions_, 
+                                                partition_processor_,
+                                                partition_count_, 
+                                                sizeof(int),
+                                                &partition_set_));
+    TestState();
+    TestCommunication();
   }
 };
 
