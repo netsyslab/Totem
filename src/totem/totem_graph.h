@@ -246,14 +246,13 @@ error_t page_rank_cpu(const graph_t* graph, float* rank_i, float** rank);
 
 error_t page_rank_gpu(const graph_t* graph, float* rank_i, float** rank);
 
+error_t page_rank_vwarp_gpu(const graph_t* graph, float* rank_i, float** rank);
+
 error_t page_rank_incoming_cpu(const graph_t* graph, float* rank_i, 
                                float** rank);
 
 error_t page_rank_incoming_gpu(const graph_t* graph, float* rank_i, 
                                float** rank);
-
-error_t page_rank_vwarp_incoming_gpu(const graph_t* graph, float* rank_i, 
-                                     float** rank);
 
 
 /**
