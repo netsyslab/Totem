@@ -25,8 +25,8 @@
  *  Function return code types
  */
 typedef enum {
-  SUCCESS = 0, /**< generic success return code. */
-  FAILURE = -1 /**< generic failure return code. */
+  SUCCESS = 0, /**< generic success return code */
+  FAILURE = -1 /**< generic failure return code */
 } error_t;
 
 /**
@@ -34,8 +34,9 @@ typedef enum {
  * a partition is processed on.
  */
 typedef enum {
-  PROCESSOR_CPU, /**< CPU processor. */
-  PROCESSOR_GPU  /**< GPU processor. */
+  PROCESSOR_CPU = 0, /**< CPU processor */
+  PROCESSOR_GPU,     /**< GPU processor */
+  PROCESSOR_MAX      /**< Indicates the number of supported processor types */
 } processor_type_t;
 
 typedef struct processor_s {
