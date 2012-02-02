@@ -1,7 +1,7 @@
 /**
  * Implements the Grooves interface.
  *
- *  Created on: 2011-01-05
+ *  Created on: 2012-01-25
  *  Author: Abdullah Gharaibeh
  */
 
@@ -63,7 +63,7 @@ PRIVATE void init_allocate_table(grooves_box_table_t* btable, uint32_t pid,
 }
 
 PRIVATE void init_table_gpu(grooves_box_table_t* btable, uint32_t bcount, 
-                            size_t value_size, grooves_box_table_t** btable_d,
+                            size_t msg_size, grooves_box_table_t** btable_d,
                             grooves_box_table_t** btable_h) {
   *btable_h = (grooves_box_table_t*)calloc(bcount, sizeof(grooves_box_table_t));
   memcpy(*btable_h, btable, bcount * sizeof(grooves_box_table_t));
@@ -75,7 +75,7 @@ PRIVATE void init_table_gpu(grooves_box_table_t* btable, uint32_t bcount,
                                           &hash_table_d));
       (*btable_h)[bindex].ht = hash_table_d;
       CALL_CU_SAFE(cudaMalloc((void**)&((*btable_h)[bindex].values), 
-                              (*btable_h)[bindex].count * value_size));
+                              (*btable_h)[bindex].count * msg_size));
     }
   }
 
@@ -89,7 +89,7 @@ PRIVATE void init_table_gpu(grooves_box_table_t* btable, uint32_t bcount,
 
 PRIVATE void init_outbox_table(partition_t* partition, uint32_t pid, 
                                uint32_t pcount, uint32_t* remote_nbrs,
-                               uint32_t count_total, size_t value_size) {
+                               uint32_t count_total, size_t msg_size) {
   grooves_box_table_t* outbox = partition->outbox;
   // build the outboxs hash tables
   for (uint32_t i = 0; i < count_total; i++) {
@@ -108,7 +108,7 @@ PRIVATE void init_outbox_table(partition_t* partition, uint32_t pid,
   if (partition->processor.type == PROCESSOR_GPU) return;
   for (int rpid = 0; rpid < pcount - 1; rpid++) {
     if (outbox[rpid].count) {
-      outbox[rpid].values = mem_alloc(outbox[rpid].count * value_size);
+      outbox[rpid].values = mem_alloc(outbox[rpid].count * msg_size);
     }
   }
 }
@@ -139,7 +139,7 @@ PRIVATE void init_outbox(partition_set_t* pset) {
       init_allocate_table(partition->outbox, pid, pcount, count_per_par);
       // build the outbox hash tables
       init_outbox_table(partition, pid, pcount, remote_nbrs, count_total, 
-                        pset->value_size);
+                        pset->msg_size);
       free(remote_nbrs);
       free(count_per_par);
     }
@@ -175,7 +175,7 @@ PRIVATE void init_inbox(partition_set_t* pset) {
         // if the remote processor is GPU, then a values array for this inbox
         // needs to be allocated on the host
         partition->inbox[dst_bindex].values = 
-          mem_alloc(partition->inbox[dst_bindex].count * pset->value_size);
+          mem_alloc(partition->inbox[dst_bindex].count * pset->msg_size);
       }
     }
   }
@@ -218,13 +218,13 @@ PRIVATE void init_gpu_state(partition_set_t* pset) {
       CALL_CU_SAFE(cudaStreamCreate(&partition->streams[0]));
       CALL_CU_SAFE(cudaStreamCreate(&partition->streams[1]));
       grooves_box_table_t* outbox_h = NULL;
-      init_table_gpu(partition->outbox, pcount - 1, pset->value_size, 
+      init_table_gpu(partition->outbox, pcount - 1, pset->msg_size, 
                      &partition->outbox_d, &outbox_h);
       host_outboxes[pid] = partition->outbox;
       partition->outbox = outbox_h;
 
       grooves_box_table_t* inbox_h = NULL;
-      init_table_gpu(partition->inbox, pcount - 1, pset->value_size, 
+      init_table_gpu(partition->inbox, pcount - 1, pset->msg_size, 
                      &partition->inbox_d, &inbox_h);
       free(partition->inbox);
       partition->inbox = inbox_h;
@@ -372,7 +372,7 @@ error_t grooves_launch_communications(partition_set_t* pset) {
                                                            pcount)];      
       assert(src_box->count == dst_box->count);
       CALL_CU_SAFE(cudaMemcpyAsync(dst_box->values, src_box->values,
-                                   dst_box->count * pset->value_size,
+                                   dst_box->count * pset->msg_size,
                                    cudaMemcpyDefault, *stream));
     }
   }
