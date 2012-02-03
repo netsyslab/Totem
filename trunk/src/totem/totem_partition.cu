@@ -149,6 +149,7 @@ PRIVATE void init_build_partitions(partition_set_t* pset, id_t* plabels,
 
   // Set the processor type and reset the vertex count, will be set again next
   for (int pid = 0; pid < pset->partition_count; pid++) {
+    pset->partitions[pid].id = pid;
     pset->partitions[pid].processor = pproc[pid];
     pset->partitions[pid].subgraph.edge_count = 0;
     pset->partitions[pid].subgraph.vertex_count = 0;
