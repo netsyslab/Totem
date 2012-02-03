@@ -304,8 +304,7 @@ void vwarp_compute_unnormalized_rank_kernel(graph_t graph, float* rank,
 }
 
 __host__
-error_t page_rank_vwarp_gpu(const graph_t* graph, float* rank_i,\
-                                     float** rank) {
+error_t page_rank_vwarp_gpu(const graph_t* graph, float* rank_i, float** rank) {
 
   // Check for special cases
   bool finished = false;
@@ -415,8 +414,7 @@ error_t page_rank_gpu(const graph_t* graph, float* rank_i, float** rank) {
   return FAILURE;
 }
 
-error_t page_rank_cpu(const graph_t* graph, float* rank_i,
-                               float** rank_ret) {
+error_t page_rank_cpu(const graph_t* graph, float* rank_i, float** rank_ret) {
 
   // Check for special cases
   bool finished = false;
