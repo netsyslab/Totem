@@ -52,6 +52,14 @@
   ((_vid) | ((_pid) << MAX_LOG_VERTEX_COUNT))
 
 /**
+ * Partitioning algorithm type
+ */
+typedef enum {
+  PAR_RANDOM = 0
+} partition_algorithm_t;
+
+
+/**
  * A graph partition type based on adjacency list representation. The vertex ids
  * in the edges list have the partition id encoded in the most significant bits.
  * This allows for a vertex to have a neighbor in another partition.
@@ -65,6 +73,8 @@
  * communicated by each remote partition to this partition.
  */
 typedef struct partition_s {
+  uint32_t             id;           /**< partition id, it is equal to the 
+                                        partition's index in a partition_set */
   graph_t              subgraph;     /**< the subgraph this partition 
                                         represents */
   grooves_box_table_t* outbox;       /**< table of messages to be sent to 
@@ -73,6 +83,9 @@ typedef struct partition_s {
                                         other partitions */
   processor_t          processor;    /**< the processor this partition will be
                                         processed on. */
+  void*                algo_state;   /**< algorithm-specific state (allocated 
+                                        and finalized by algorithm-specific
+                                        callback functions). */
   grooves_box_table_t* outbox_d;     /**< a mirror of the outbox table on the 
                                         GPU for GPU-resident partitions. Note 
                                         that this just maintains the references 
@@ -91,7 +104,7 @@ typedef struct partition_s {
                                         enable overlapped operations (e.g.,
                                         communication among all devices or with
                                         computation). The first stream is used
-                                        for launch communication operations,
+                                        to launch communication operations,
                                         while the second one is used to launch
                                         kernel calls (computation) */
 } partition_t;
@@ -104,7 +117,7 @@ typedef struct partition_s {
 typedef struct partition_set_s {
   graph_t*     graph;           /**< the graph this partition set belongs to */
   bool         weighted;        /**< indicates if edges have weights. */
-  partition_t* partitions;      /**< the partitions list */
+  partition_t* partitions;      /**< the array of partitions */
   int          partition_count; /**< number of partitions in the set */
   size_t       msg_size;        /**< the size of a communication message */
 } partition_set_t;

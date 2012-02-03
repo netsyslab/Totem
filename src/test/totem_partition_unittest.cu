@@ -179,6 +179,7 @@ class GraphPartitionTest : public ::testing::Test {
   void InitOutboxValues() {
     for (uint32_t pid = 0; pid < partition_set_->partition_count; pid++) {
       partition_t* partition = &partition_set_->partitions[pid];
+      EXPECT_EQ(pid, partition->id);
       uint32_t pcount = partition_set_->partition_count;
       for (uint32_t remote_pid = (pid + 1) % pcount; remote_pid != pid; 
            remote_pid = (remote_pid + 1) % pcount) {
@@ -324,6 +325,7 @@ TEST_F(GraphPartitionTest, GetPartitionsImbalancedChainGraph) {
                                               &partition_set_));
   for (int pid = 0; pid < partition_set_->partition_count; pid++) {
     partition_t* partition = &partition_set_->partitions[pid];
+    EXPECT_EQ(pid, partition->id);
     for (id_t vid = 0; vid < partition->subgraph.vertex_count; vid++) {
       // Only the vertex-0 and vertex-999 in the original graph have a single
       // neighbor. Vertex-0 is in partition-1, and vertex-999 is renamed to 998
