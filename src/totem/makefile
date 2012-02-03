@@ -31,7 +31,7 @@ $(OBJDIR):
 $(CCOBJS): $(OBJDIR)/%.o: %.cc $(CCDEPS)
 	$(CC) $(CCFLAGS) $(TOTEM_FEATURES) -c $< -o $@
 
-$(CUOBJS): $(OBJDIR)/%.cu_o: %.cu $(CDEPS) $(CUDEPS)
+$(CUOBJS): $(OBJDIR)/%.cu_o: %.cu $(CCDEPS) $(CUDEPS)
 	$(NVCC) $(NVCCFLAGS) $(TOTEM_FEATURES) -c $< -o $@
 
 clean:
