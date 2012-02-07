@@ -37,13 +37,14 @@
 #define HT_PRIME_NUMBER          334214459
 
 /**
- * Weak hash functions following the form (A^KEY + B) mod P % SIZE, where
- * A and B are random numbers, P is a prime number and SIZE is the table size
+ * Weak hash functions following the form (OP(A,KEY) + B) mod P mod SIZE, where
+ * OP is either a multiply or an XOR operation. A and B are random numbers, P is
+ * a prime number and SIZE is the table size
 */
-#define HT_FUNC1(ht, k) ((((9600^(k)) + 11517) % HT_PRIME_NUMBER) % (ht)->size)
-#define HT_FUNC2(ht, k) ((((16726^(k)) + 6274) % HT_PRIME_NUMBER) % (ht)->size)
-#define HT_FUNC3(ht, k) ((((8334^(k)) + 19108) % HT_PRIME_NUMBER) % (ht)->size)
-#define HT_FUNC4(ht, k) ((((23720^(k)) + 7860) % HT_PRIME_NUMBER) % (ht)->size)
+#define HT_FUNC1(ht, k) (((9600^(k)) + 11517) % HT_PRIME_NUMBER % (ht)->size)
+#define HT_FUNC2(ht, k) (((16726*(k)) + 6274) % HT_PRIME_NUMBER % (ht)->size)
+#define HT_FUNC3(ht, k) (((8334^(k)) + 19108) % HT_PRIME_NUMBER % (ht)->size)
+#define HT_FUNC4(ht, k) (((23720*(k)) + 7860) % HT_PRIME_NUMBER % (ht)->size)
 
 /**
  * Macro to look up a value index from the hash table. This macro can be used
@@ -64,6 +65,28 @@
             break;                                                      \
           }                                                             \
     _value = HT_GET_VALUE(_entry);                                      \
+  } while(0)
+
+/**
+ * Macro to check if a key exists
+ */
+#define HT_CHECK(_ht, _key, _found)                                     \
+  do {                                                                  \
+    uint32_t _location_1 = HT_FUNC1((_ht), (_key));                     \
+    if (HT_GET_KEY((_ht)->entries[_location_1]) != (_key)) {            \
+      uint32_t _location_2 = HT_FUNC2((_ht), (_key));                   \
+      if (HT_GET_KEY((_ht)->entries[_location_2]) != (_key)) {          \
+        uint32_t _location_3 = HT_FUNC3((_ht), (_key));                 \
+        if (HT_GET_KEY((_ht)->entries[_location_3]) != (_key)) {        \
+          uint32_t _location_4 = HT_FUNC4((_ht), (_key));               \
+          if (HT_GET_KEY((_ht)->entries[_location_4]) != (_key)) {      \
+            _found = false;                                             \
+            break;                                                      \
+          }                                                             \
+        }                                                               \
+      }                                                                 \
+    }                                                                   \
+    _found = true;                                                      \
   } while(0)
 
 /**
