@@ -23,7 +23,7 @@
  * The ratio of the space to be allocated in the table with respect to the 
  * maximum number of entries to be hosted in the table.
  */
-#define HT_SPACE_EXPANSION_RATIO 1.25
+#define HT_SPACE_EXPANSION_RATIO 2
 
 /**
  * A special key used to indicate an empty spot
@@ -147,10 +147,7 @@ error_t hash_table_get_keys_cpu(hash_table_t* hash_table, uint32_t** keys,
       (*count)++;
     }
   }
-  if (*count > 0) {
-    *keys = (uint32_t*)realloc(*keys, (*count) * sizeof(uint32_t));
-    if (!(*keys)) return FAILURE;
-  } else {
+  if (*count == 0) {
     free(*keys);
     *keys = NULL;
   }
