@@ -1,0 +1,162 @@
+/**
+ * Defines the interface that drives the totem framework. It offers the main
+ * interface the developer is supposed to use to implement graph algorithms on 
+ * multi-GPU and CPU platform.
+ *
+ * In summary, an algorithm must offer a number of callback functions that 
+ * configure the engine. The following is a pseudocode of an algorithm that 
+ * uses this interface:
+ *
+ *    T* output_g; // allocated and filled by algo_aggr callback function
+ *    graph_algo(graph_t* graph, partition_algorithm_t par_algo, T** output) {
+ *      engine_config_t config = {
+ *        graph,
+ *        par_algo, 
+ *        sizeof(T), 
+ *        algo_kernel, 
+ *        algo_scatter,
+ *        algo_init,
+ *        algo_finalize,
+ *        algo_aggr,
+ *      };
+ *      engine_init(&config);
+ *      engine_start();
+ *      *output = output_g;
+ *     }
+ *
+ *  Created on: 2012-02-02
+ *  Author: Abdullah Gharaibeh
+ */
+
+#ifndef TOTEM_ENGINE_H
+#define TOTEM_ENGINE_H
+
+#include "totem_comkernel.cuh"
+#include "totem_partition.h"
+
+/**
+ * Callback function on a partition at a superstep's compute phase. For GPU
+ * partitions, this function is supposed to asynchronously invoke the GPU kernel
+ * using the compute "stream" available for each partition. Note that the client
+ * is responsible to check if the partition is CPU or GPU resident, and invoke
+ * the processor specific kernel accordingly. The engine, however, guarantees 
+ * that for GPU partitions the correct device is set (i.e., kernel invocations
+ * is guaranteed to be launched on the correct GPU)
+ */
+typedef void(*engine_kernel_func_t)(partition_t*);
+
+/**
+ * Callback function to scatter inbox data to partition-specific state. 
+ * This callback function allows the client to call one of the scatter 
+ * functions (to be defined and implemented later and described in the TODO 
+ * at the end of this header file).
+ * The purpose of this callback is to enable algorithm-specific distribution
+ * of the messages received at the inbox table into the algorithm's state 
+ * variables.
+ * For example, PageRank has a "rank" array that represents the rank of each
+ * vertex. The rank of each vertex is computed by summing the ranks of the 
+ * neighboring vertices. In each superstep, the ranks of remote neighbors of 
+ * a vertex are communicated into the inbox table of the partition. To this end,
+ * a scatter function simply aggregates the "rank" of the remote neighbor with
+ * the rank of the destination vertex (the aggregation is "add" in this case).
+ */
+typedef void(*engine_scatter_func_t)(partition_t*);
+
+/**
+ * Callback function on a partition to enable algorithm-specific per-partition
+ * state initialization.
+ */
+typedef void(*engine_par_init_func_t)(partition_t*);
+
+/**
+ * Callback function on a partition to enable algorithm-specific per-partition
+ * state finalization.
+ */
+typedef void(*engine_par_finalize_func_t)(partition_t*);
+
+/**
+ * Callback function on a partition to enable aggregating the final result. 
+ * This is called after receiving the termination signal from all partitions.
+ */
+typedef void(*engine_aggr_func_t)(partition_t*);
+
+/**
+ * Engine configuration type. Algorithms use an instance of this type to
+ * configure the execution engine
+ */
+typedef struct engine_config_s {
+  graph_t*                   graph;         /**< the input graph */
+  partition_algorithm_t      par_algo;      /**< partitioning algorithm */
+  size_t                     msg_size;      /**< communication element size */
+  engine_kernel_func_t       kernel_func;   /**< per partition superstep func */
+  engine_scatter_func_t      scatter_func;  /**< per partition scatter func */
+  engine_par_init_func_t     init_func;     /**< per partition init function */
+  engine_par_finalize_func_t finalize_func; /**< per partition finalize func */
+  engine_aggr_func_t         aggr_func;     /**< per partition results 
+                                               aggregation func */
+} engine_config_t;
+
+/**
+ * Default configuration
+ */
+#define ENGINE_DEFAULT_CONFIG {NULL, PAR_RANDOM, sizeof(int), NULL, NULL, \
+      NULL, NULL, NULL}
+
+/**
+ * Sets up the state required for hybrid CPU-GPU processing. It creats a set
+ * of partitions equal to the number of GPUs plus one on the CPU.
+ * @param[in] config   attributes to configure the engine
+ */
+error_t engine_init(engine_config_t* config);
+
+/**
+ * Performs the computation-->communication-->synchronization execution cycle.
+ * It returns only after all partitions have sent a "finished" signal in the
+ * same superstep via engine_report_finished.
+ */
+error_t engine_start();
+
+/**
+ * Allows a partition to report that it has finished computing. Note that if all
+ * partitions reported finish status, then the engine terminates
+ */
+void engine_report_finished(uint32_t pid);
+
+/**
+ * Returns the number of partitions
+ */
+uint32_t engine_partition_count();
+
+/**
+ * Returns the current superstep number
+ */
+uint32_t engine_superstep();
+
+/**
+ * Returns the total number of vertices in the graph
+ */
+uint32_t engine_vertex_count();
+
+/**
+ * Returns the total number of edges in the graph
+ */
+uint32_t engine_edge_count();
+
+// TODO(Abdullah) add message scatter functions. Those functions allow for
+// distributing the data received at the inbox table into the algorithm's 
+// state variables. Those functions will probably be put into a dedicated
+// header (e.g., totem_engine.cuh).
+//
+// For example, PageRank has a "rank" array that represents the rank of each
+// vertex. The rank of each vertex is computed by summing the ranks of the 
+// neighboring vertices. In each superstep, the ranks of remote neighbors of 
+// a vertex are communicated into the inbox table of the partition. To this end,
+// a scatter function simply aggregates the "rank" of the remote neighbor with
+// the rank of the destination vertex (the aggregation is "add" in this case).
+// 
+// Those functions will be templatized, and have two versions (CPU and GPU). 
+// The assumption is that they will be called inside the engine_scatter_func 
+// callback function.
+
+
+#endif  // TOTEM_ENGINE_H
