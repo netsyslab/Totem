@@ -80,13 +80,13 @@ PRIVATE error_t init_allocate_struct_space(graph_t* graph, int pcount,
                                            size_t msg_size, 
                                            partition_set_t** pset) {
   *pset = (partition_set_t*)calloc(1, sizeof(partition_set_t));
-  if (!*pset) return FAILURE;
+  assert(*pset);
   (*pset)->partitions = (partition_t*)calloc(pcount, sizeof(partition_t));
-  if (!(*pset)->partitions) return FAILURE;
+  assert((*pset)->partitions);
   (*pset)->graph = graph;
   (*pset)->partition_count = pcount;
   (*pset)->msg_size = msg_size;
-  (*pset)->weighted = graph->weighted;  
+  (*pset)->weighted = graph->weighted;
   return SUCCESS;
 }
 
@@ -109,9 +109,10 @@ PRIVATE void init_allocate_partitions_space(partition_set_t* pset) {
     if (subgraph->vertex_count > 0) {
       subgraph->vertices = 
         (id_t*)mem_alloc(sizeof(id_t) * (subgraph->vertex_count + 1));
+      partition->map = (id_t*)calloc(subgraph->vertex_count, sizeof(id_t));
       if (subgraph->edge_count > 0) {
         subgraph->edges = (id_t*)mem_alloc(sizeof(id_t) * 
-                                            subgraph->edge_count);
+                                           subgraph->edge_count);
         if (pset->graph->weighted) {
           subgraph->weights = 
             (weight_t*)mem_alloc(sizeof(weight_t) * 
@@ -122,8 +123,7 @@ PRIVATE void init_allocate_partitions_space(partition_set_t* pset) {
   }
 }
 
-PRIVATE void init_build_map(partition_set_t* pset, id_t* plabels, 
-                            id_t** map) {
+PRIVATE void init_build_map(partition_set_t* pset, id_t* plabels, id_t** map) {
   // Reset the vertex and edge count, will be set again while building the map
   for (int pid = 0; pid < pset->partition_count; pid++) {
     pset->partitions[pid].subgraph.vertex_count = 0;
@@ -133,7 +133,8 @@ PRIVATE void init_build_map(partition_set_t* pset, id_t* plabels,
   for (id_t vid = 0; vid < pset->graph->vertex_count; vid++) {
     id_t pid = plabels[vid];
     graph_t* subgraph = &pset->partitions[pid].subgraph;
-    (*map)[vid] = subgraph->vertex_count;
+    (*map)[vid] = subgraph->vertex_count; // temporary forward map
+    pset->partitions[pid].map[subgraph->vertex_count] = vid; // reverse map
     subgraph->vertex_count++;
   }
 }
@@ -249,6 +250,7 @@ error_t partition_set_finalize(partition_set_t* pset) {
         mem_free(subgraph->weights);
       }
     }
+    if (subgraph->vertices) free(partition->map);
   }
   grooves_finalize(pset);
   free(pset->partitions);
