@@ -21,7 +21,7 @@
 /**
  * Maximum number of partitions supported per graph
  */
-#define MAX_PARTITION_COUNT (1 << (MAX_LOG_PARTITION_COUNT))
+#define MAX_PARTITION_COUNT      (1 << (MAX_LOG_PARTITION_COUNT))
 
 /**
  * Log (base 2) of the maximum number of vertices in a partition.
@@ -48,8 +48,7 @@
  * Returns a new vertex id which encodes the correponding partition id in the
  * higher order bits.
  */
-#define SET_PARTITION_ID(_vid, _pid) \
-  ((_vid) | ((_pid) << MAX_LOG_VERTEX_COUNT))
+#define SET_PARTITION_ID(_vid, _pid) ((_vid) | ((_pid) << MAX_LOG_VERTEX_COUNT))
 
 /**
  * Partitioning algorithm type
@@ -77,6 +76,9 @@ typedef struct partition_s {
                                         partition's index in a partition_set */
   graph_t              subgraph;     /**< the subgraph this partition 
                                         represents */
+  id_t*                map;          /**< maps the a vertex id in a partition to
+                                        its original id in the graph. used
+                                        when aggregating the final results */
   grooves_box_table_t* outbox;       /**< table of messages to be sent to 
                                         remote nbrs */
   grooves_box_table_t* inbox;        /**< table of messages received from 
