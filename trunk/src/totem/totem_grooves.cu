@@ -25,27 +25,23 @@ PRIVATE void init_get_remote_nbrs(partition_t* partition, int pid,
   CALL_SAFE(hash_table_initialize_cpu(vertex_count - subgraph->vertex_count, 
                                       &ht));
   *count_per_par = (uint32_t*)calloc(pcount - 1, sizeof(uint32_t));
-  uint32_t remote_nbrs_count = 0;
   for (id_t vid = 0; vid < subgraph->vertex_count; vid++) {
-    for (id_t i = subgraph->vertices[vid]; 
+    for (id_t i = subgraph->vertices[vid];
          i < subgraph->vertices[vid + 1]; i++) {
       id_t nbr = subgraph->edges[i];
       int nbr_pid = GET_PARTITION_ID(nbr);
       if (nbr_pid != pid) {
-        int index;
-        if (hash_table_get_cpu(ht, nbr, &index) == FAILURE) {
+        bool found;
+        HT_CHECK(ht, nbr, found);
+        if (!found) {
           CALL_SAFE(hash_table_put_cpu(ht, nbr, 1));
-          remote_nbrs_count++;
           int bindex = GROOVES_BOX_INDEX(nbr_pid, pid, pcount);
-          (*count_per_par)[bindex]++;
+          __sync_fetch_and_add(&(*count_per_par)[bindex], 1);
         }
       }
     }
   }
-  if (remote_nbrs_count) {
-    CALL_SAFE(hash_table_get_keys_cpu(ht, nbrs, count_total));
-    assert(*count_total == remote_nbrs_count);
-  }
+  CALL_SAFE(hash_table_get_keys_cpu(ht, nbrs, count_total));
   hash_table_finalize_cpu(ht);
 }
 
@@ -96,8 +92,6 @@ PRIVATE void init_outbox_table(partition_t* partition, uint32_t pid,
     uint32_t nbr = remote_nbrs[i];
     uint32_t nbr_pid = GET_PARTITION_ID(nbr);
     int bindex = GROOVES_BOX_INDEX(nbr_pid, pid, pcount);
-    int vindex;
-    assert(hash_table_get_cpu(&(outbox[bindex].ht), nbr, &vindex) == FAILURE);
     CALL_SAFE(hash_table_put_cpu(&(outbox[bindex].ht), nbr, 
                                  outbox[bindex].count));
     outbox[bindex].count++;
