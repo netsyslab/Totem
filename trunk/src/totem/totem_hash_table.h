@@ -37,6 +37,11 @@
 #define HT_PRIME_NUMBER          334214459
 
 /**
+ * A special key used to indicate an empty spot
+ */
+#define HT_KEY_EMPTY             ((uint32_t)(-1))
+
+/**
  * Weak hash functions following the form (OP(A,KEY) + B) mod P mod SIZE, where
  * OP is either a multiply or an XOR operation. A and B are random numbers, P is
  * a prime number and SIZE is the table size

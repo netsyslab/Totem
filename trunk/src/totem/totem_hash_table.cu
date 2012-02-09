@@ -26,11 +26,6 @@
 #define HT_SPACE_EXPANSION_RATIO 2
 
 /**
- * A special key used to indicate an empty spot
- */
-#define HT_KEY_EMPTY             ((uint32_t)(-1))
-
-/**
  * Maximum length of the eviction (collision) chain during the key 
  * insertion operation
  */
