@@ -12,23 +12,6 @@
 #include "totem_grooves.h"
 #include "totem_partition.h"
 
-/**
- * A simple macro to do basic true/false condition testing for kernels
- * TODO(abdullah): change the way state is tested to use standard report from 
- * the GTest framework as follows:
- * 1. to use the macro to test (so the code will be simple).
- * 2. still have the variable to store the line number where it fails or -1
- * otherwise.
- * 3. in the test fixture you would copy back the variable with the line number
- * and expects -1.
- */
-#define KERNEL_EXPECT_TRUE(stmt)                \
-  do {                                          \
-    if (!(stmt)) {                              \
-      printf("Error line: %d\n", __LINE__);     \
-    }                                           \
-  } while(0)
-
 __global__ void VerifyPartitionGPUKernel(partition_t partition, uint32_t pid, 
                                          uint32_t pcount) {
   const graph_t* subgraph = &partition.subgraph;
