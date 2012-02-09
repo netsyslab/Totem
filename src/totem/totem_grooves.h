@@ -27,7 +27,8 @@ typedef struct partition_set_s partition_set_t;
 /**
  * Macro to lookup a value index from the box table
  */
-#define GROOVES_LOOKUP(_box, _vid, _value) HT_LOOKUP(&(_box->ht), _vid, _value);
+#define GROOVES_LOOKUP(_box, _vid, _value)      \
+  HT_LOOKUP(&((_box)->ht), (_vid), (_value));
 
 /**
  * Defines the basic data type that is used as communication stubs between
