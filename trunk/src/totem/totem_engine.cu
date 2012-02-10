@@ -5,21 +5,9 @@
  *  Author: Abdullah Gharaibeh
  */
 
-#include "totem_engine.h"
+#include "totem_engine.cuh"
 
-/**
- * defines the execution context of the engine
- */
-typedef struct engine_context_s {
-  bool             initialized;
-  partition_set_t* pset;
-  id_t*            par_labels;
-  uint32_t         superstep;
-  engine_config_t  config;
-  bool*            finished;
-} engine_context_t;
-PRIVATE engine_context_t context = {false, NULL, NULL, 0, 
-                                    ENGINE_DEFAULT_CONFIG};
+engine_context_t context = {false, NULL, NULL, 0, ENGINE_DEFAULT_CONFIG};
 
 /**
  * Clears allocated state
@@ -56,6 +44,17 @@ inline PRIVATE bool superstep_check_finished() {
 }
 
 /**
+ * Blocks until all kernels initiated by the client have finished.
+ */
+inline PRIVATE void superstep_compute_synchronize() {
+  for (int pid = 0; pid < context.pset->partition_count; pid++) {
+    partition_t* par = &context.pset->partitions[pid];
+    if (par->processor.type == PROCESSOR_CPU) continue;
+    CALL_CU_SAFE(cudaStreamSynchronize(par->streams[1]));
+  }
+}
+
+/**
  * Launches the compute kernel on each partition
  */
 inline PRIVATE void superstep_compute() {
@@ -71,6 +70,7 @@ inline PRIVATE void superstep_compute() {
   }
   partition_t* partition = &context.pset->partitions[0];
   context.config.kernel_func(partition);
+  superstep_compute_synchronize();
 }
 
 /**
@@ -111,10 +111,10 @@ PRIVATE void engine_aggregate() {
 
 error_t engine_start() {
   while (true) {
-    superstep_compute();                   // compute phase
-    if (superstep_check_finished()) break; // check for termination   
-    superstep_communicate();               // communication/synchronize phase
     superstep_next();                      // prepare state for the next round
+    superstep_compute();                   // compute phase
+    if (superstep_check_finished()) break; // check for termination
+    superstep_communicate();               // communication/synchronize phase
   }
 
   engine_aggregate();  
@@ -158,36 +158,21 @@ error_t engine_init(engine_config_t* config) {
   if (context.config.init_func) {
     context.config.init_func(&context.pset->partitions[0]);
     for (int pid = 1; pid < context.pset->partition_count; pid++) {
-      CALL_CU_SAFE(cudaSetDevice(context.pset->partitions[pid].processor.id));
-      context.config.init_func(&context.pset->partitions[pid]);
+      partition_t* par = &context.pset->partitions[pid];
+      CALL_CU_SAFE(cudaSetDevice(par->processor.id));
+      context.config.init_func(par);
     }
   }
+
+  // get largest gpu graph
+  uint64_t largest = 0;
+  for (int pid = 1; pid < context.pset->partition_count; pid++) {
+    uint64_t vcount = context.pset->partitions[pid].subgraph.vertex_count;
+    largest = vcount > largest ? vcount : largest;
+  }
+  context.largest_gpu_par = largest;
+
   context.finished = (bool*)calloc(pcount, sizeof(bool));
   context.initialized = true;
   return SUCCESS;
-}
-
-uint32_t engine_partition_count() {
-  assert(context.pset);
-  return context.pset->partition_count;
-}
-
-uint32_t engine_superstep() {
-  assert(context.pset);
-  return context.superstep;
-}
-
-uint32_t engine_vertex_count() {
-  assert(context.pset);
-  return context.pset->graph->vertex_count;
-}
-
-uint32_t engine_edge_count() {
-  assert(context.pset);
-  return context.pset->graph->edge_count;
-}
-
-void engine_report_finished(uint32_t pid) {
-  assert(pid < context.pset->partition_count);
-  context.finished[pid] = true;
 }
