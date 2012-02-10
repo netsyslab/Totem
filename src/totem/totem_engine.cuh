@@ -28,8 +28,8 @@
  *  Author: Abdullah Gharaibeh
  */
 
-#ifndef TOTEM_ENGINE_H
-#define TOTEM_ENGINE_H
+#ifndef TOTEM_ENGINE_CUH
+#define TOTEM_ENGINE_CUH
 
 #include "totem_comkernel.cuh"
 #include "totem_partition.h"
@@ -48,8 +48,7 @@ typedef void(*engine_kernel_func_t)(partition_t*);
 /**
  * Callback function to scatter inbox data to partition-specific state. 
  * This callback function allows the client to call one of the scatter 
- * functions (to be defined and implemented later and described in the TODO 
- * at the end of this header file).
+ * functions (defined in totem_engine.cuh).
  * The purpose of this callback is to enable algorithm-specific distribution
  * of the messages received at the inbox table into the algorithm's state 
  * variables.
@@ -103,6 +102,26 @@ typedef struct engine_config_s {
       NULL, NULL, NULL}
 
 /**
+ * Returns the address of a neighbor's state. If remote, it returns a reference
+ * to its state in the outbox table. If local, it returns a reference to its
+ * state in the array pstate
+ */
+#define ENGINE_FETCH_DST(_pid, _nbr, _outbox, _pstate, _pcount, _dst, _type) \
+  do {                                                                  \
+    int nbr_pid = GET_PARTITION_ID((_nbr));                             \
+    if (nbr_pid != (_pid)) {                                            \
+      int box_id = GROOVES_BOX_INDEX(nbr_pid, (_pid), (_pcount));       \
+      int index;                                                        \
+      GROOVES_LOOKUP(&((_outbox)[box_id]), (_nbr), index);              \
+      _type * values = (_type *)(_outbox)[box_id].values;               \
+      (_dst) = &values[index];                                          \
+    } else {                                                            \
+      (_dst) = &(_pstate)[GET_VERTEX_ID((_nbr))];                       \
+    }                                                                   \
+  } while(0)
+
+
+/**
  * Sets up the state required for hybrid CPU-GPU processing. It creats a set
  * of partitions equal to the number of GPUs plus one on the CPU.
  * @param[in] config   attributes to configure the engine
@@ -142,21 +161,49 @@ uint32_t engine_vertex_count();
  */
 uint32_t engine_edge_count();
 
-// TODO(Abdullah) add message scatter functions. Those functions allow for
-// distributing the data received at the inbox table into the algorithm's 
-// state variables. Those functions will probably be put into a dedicated
-// header (e.g., totem_engine.cuh).
-//
-// For example, PageRank has a "rank" array that represents the rank of each
-// vertex. The rank of each vertex is computed by summing the ranks of the 
-// neighboring vertices. In each superstep, the ranks of remote neighbors of 
-// a vertex are communicated into the inbox table of the partition. To this end,
-// a scatter function simply aggregates the "rank" of the remote neighbor with
-// the rank of the destination vertex (the aggregation is "add" in this case).
-// 
-// Those functions will be templatized, and have two versions (CPU and GPU). 
-// The assumption is that they will be called inside the engine_scatter_func 
-// callback function.
+/**
+ * Returns the number of vertices of the largest GPU partition
+ */
+uint64_t engine_largest_gpu_partition();
 
+/**
+ * Scatters the messages in the inbox table to the corresponding vertices. The 
+ * assumption is that each vertex in the partition has a position in the array 
+ * "dst". The message to a vertex in the inbox is added to the vertex's state 
+ * in dst.
+ * @param[in] pid the input partition
+ * @param[in] dst the destination array where the messages will be sent
+ */
+template<typename T>
+void engine_scatter_inbox_add(uint32_t pid, T* dst);
 
-#endif  // TOTEM_ENGINE_H
+/**
+ * Scatters the messages in the inbox table using min reduction.
+ * @param[in] pid the input partition
+ * @param[in] dst the destination array where the messages will be sent
+ */
+template<typename T>
+void engine_scatter_inbox_min(uint32_t pid, T* dst);
+
+/**
+ * Scatters the messages in the inbox table using max reduction.
+ * @param[in] pid the input partition
+ * @param[in] dst the destination array where the messages will be sent
+ */
+template<typename T>
+void engine_scatter_inbox_max(uint32_t pid, T* dst);
+
+/**
+ * Sets all entries in the outbox's values array to value
+ * @param[in] pid the input partition
+ * @param[in] value value to be set
+ */
+template<typename T>
+void engine_set_outbox(uint32_t pid, T value);
+
+// This header file includes implementations of the templatized functions 
+// defined in this interface. Must be placed at the bottom to solve some 
+// dependencies.
+#include "totem_engine_internal.cuh"
+
+#endif  // TOTEM_ENGINE_CUH
