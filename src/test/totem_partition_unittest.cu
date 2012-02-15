@@ -241,11 +241,47 @@ TEST_F(GraphPartitionTest , RandomPartitionInvalidPartitionNumber) {
   EXPECT_EQ(FAILURE, partition_random(graph_, -1, 13, &partitions_));
 }
 
+TEST_F(GraphPartitionTest , RandomPartitionFractionInvalidPartitionNumber) {
+  EXPECT_EQ(SUCCESS, graph_initialize(DATA_FOLDER("single_node.totem"),
+                                      false, &graph_));
+  EXPECT_EQ(FAILURE, partition_random_fraction(graph_, -1, NULL, 13,
+                                               &partitions_));
+}
+
+TEST_F(GraphPartitionTest , RandomPartitionFractionInvalidFraction) {
+  EXPECT_EQ(SUCCESS, graph_initialize(DATA_FOLDER("single_node.totem"),
+                                      false, &graph_));
+  float* partition_fraction = (float *) calloc(2, sizeof(float));
+  partition_fraction[0] = 2.0;
+  partition_fraction[1] = -1.0; // Invalid fraction
+  EXPECT_EQ(FAILURE, partition_random_fraction(graph_, 2, partition_fraction,
+                                               13, &partitions_));
+  partition_fraction[0] = 0.8;
+  partition_fraction[1] = 0.1; // Invalid fraction sum
+  EXPECT_EQ(FAILURE, partition_random_fraction(graph_, 2, partition_fraction,
+                                               13, &partitions_));
+  free(partition_fraction);
+}
+
 TEST_F(GraphPartitionTest , RandomPartitionSingleNodeGraph) {
   EXPECT_EQ(SUCCESS, graph_initialize(DATA_FOLDER("single_node.totem"),
                                       false, &graph_));
   EXPECT_EQ(SUCCESS, partition_random(graph_, 10, 13, &partitions_));
   EXPECT_TRUE(partitions_[0] < 10);
+}
+
+TEST_F(GraphPartitionTest , RandomPartitionFractionSingleNodeGraph) {
+  EXPECT_EQ(SUCCESS, graph_initialize(DATA_FOLDER("single_node.totem"),
+                                      false, &graph_));
+  float* partition_fraction = (float *) calloc(10, sizeof(float));
+  for (int i = 0; i < 10; i++) {
+    partition_fraction[i] = (1.0 / 10);
+  }
+  EXPECT_EQ(SUCCESS, partition_random_fraction(graph_, 10, partition_fraction,
+                                               13, &partitions_));
+  EXPECT_TRUE(partitions_[0] < 10);
+  EXPECT_TRUE(partitions_[0] == 0);
+  free(partition_fraction);
 }
 
 TEST_F(GraphPartitionTest , RandomPartitionChainGraph) {
@@ -255,6 +291,21 @@ TEST_F(GraphPartitionTest , RandomPartitionChainGraph) {
   for (id_t i = 0; i < graph_->vertex_count; i++) {
     EXPECT_TRUE(partitions_[i] < 10);
   }
+}
+
+TEST_F(GraphPartitionTest , RandomPartitionFractionChainGraph) {
+  EXPECT_EQ(SUCCESS, graph_initialize(DATA_FOLDER("chain_1000_nodes.totem"),
+                                      false, &graph_));
+  float* partition_fraction = (float *) calloc(10, sizeof(float));
+  for (int i = 0; i < 10; i++) {
+    partition_fraction[i] = (1.0 / 10);
+  }
+  EXPECT_EQ(SUCCESS, partition_random_fraction(graph_, 10, partition_fraction,
+                                               13, &partitions_));
+  for (id_t i = 0; i < graph_->vertex_count; i++) {
+    EXPECT_TRUE(partitions_[i] < 10);
+  }
+  free(partition_fraction);
 }
 
 TEST_F(GraphPartitionTest , GetPartitionsSingleNodeGraph) {
