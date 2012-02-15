@@ -76,6 +76,63 @@ error_t partition_random(graph_t* graph, int number_of_partitions,
   return SUCCESS;
 }
 
+error_t partition_random_fraction(graph_t* graph, int partition_count,
+                                  float* partition_fraction, unsigned int seed,
+                                  id_t** partition_labels) {
+  // Check pre-conditions
+  *partition_labels = NULL;
+  if (graph == NULL || partition_fraction == NULL ||
+      (partition_count <= 0) || (graph->vertex_count == 0)) {
+    return FAILURE;
+  }
+  // Ensure the partition fractions are >= 0.0 and add up to 1.0
+  float sum = 0.0;
+  for (int par_id = 0; par_id < partition_count; par_id++) {
+    sum += partition_fraction[par_id];
+    if (partition_fraction[par_id] < 0.0) {
+      return FAILURE;
+    }
+  }
+  if (sum < 1.0) {
+    return FAILURE;
+  }
+
+  // Allocate the partition vector
+  id_t* partitions = (id_t*)malloc(graph->vertex_count * sizeof(id_t));
+  assert(partitions != NULL);
+
+  // Initialize the random number generator
+  srand(seed);
+
+  // Allocate all the partition ids to the id vector
+  id_t part_id = 0;
+  uint64_t num_in_partition = 0;
+  for (uint64_t i = 0; i < graph->vertex_count; i++) {
+    /* If the fraction of vertices in the graph for the given partition id has
+     * been met, continue with the next partition id. */
+    while (((float)num_in_partition / (float)graph->vertex_count) >= 
+        partition_fraction[part_id]) {
+      part_id++;
+      num_in_partition = 0;
+    }
+    partitions[i] = part_id;
+    num_in_partition++;
+  }
+
+  /* Randomize the vector to achieve a random distribution. This is using the
+   * Fisher-Yates "Random permutation" algorithm */
+  for (uint64_t i = graph->vertex_count - 1; i > 0; i--) {
+    uint64_t j = rand() % (i + 1);
+    id_t temp = partitions[i];
+    partitions[i] = partitions[j];
+    partitions[j] = temp;
+  }
+
+  *partition_labels = partitions;
+  return SUCCESS;
+
+}
+
 PRIVATE error_t init_allocate_struct_space(graph_t* graph, int pcount, 
                                            size_t msg_size, 
                                            partition_set_t** pset) {

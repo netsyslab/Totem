@@ -160,6 +160,26 @@ error_t partition_random(graph_t* graph, int partition_count,
                          unsigned int seed, id_t** partition_labels);
 
 /**
+ * Split the graph randomly into the specified number of partitions with the
+ * specified fractional distribution for each partition.
+ *
+ * @param[in] graph the input graph
+ * @param[in] partition_count the number of partitions the vertices should be 
+ *                            assigned to
+ * @param[in] partition_fraction an array with the fraction of the graph to be
+ *                               assigned for each of the partitions. The sum of
+ *                               this array should be exactly 1.
+ * @param[in] seed a number to seed the pseudorandom number generator
+ * @param[out] partition_labels an array with a partition id for each vertex as
+ *                              identified by the array position. It is set to
+ *                              NULL in case of failure.
+ * @return SUCCESS if the partitions are assigned, FAILURE otherwise.
+ */
+error_t partition_random_fraction(graph_t* graph, int partition_count,
+                                  float* partition_fraction, unsigned int seed,
+                                  id_t** partition_labels);
+
+/**
  * Creates the a partition set based on the vertex to partition assignment 
  * specified in the lables array
  *
