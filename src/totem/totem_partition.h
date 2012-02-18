@@ -109,6 +109,13 @@ typedef struct partition_s {
                                         to launch communication operations,
                                         while the second one is used to launch
                                         kernel calls (computation) */
+  uint32_t            rmt_edge_count; /**< the number of remote edges (edges
+                                          that start in this partition and ends
+                                          in another one) */
+  uint32_t            rmt_vertex_count; /**< the number of remote vertices 
+                                           (vertices that are the destination
+                                           of edges that start in this partition
+                                           and end in another one) */
 } partition_t;
 
 /**

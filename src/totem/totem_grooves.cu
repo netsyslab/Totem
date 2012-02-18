@@ -13,8 +13,7 @@
 
 PRIVATE void init_get_remote_nbrs(partition_t* partition, int pid, 
                                   uint32_t vertex_count, uint32_t pcount, 
-                                  id_t** nbrs, uint32_t** count_per_par, 
-                                  uint32_t* count_total) {
+                                  id_t** nbrs, uint32_t** count_per_par) {
   graph_t* subgraph = &(partition->subgraph);
 
   // This is a temporary hash table to identify the remote neighbors.
@@ -31,6 +30,7 @@ PRIVATE void init_get_remote_nbrs(partition_t* partition, int pid,
       id_t nbr = subgraph->edges[i];
       int nbr_pid = GET_PARTITION_ID(nbr);
       if (nbr_pid != pid) {
+        partition->rmt_edge_count++;
         bool found;
         HT_CHECK(ht, nbr, found);
         if (!found) {
@@ -41,7 +41,7 @@ PRIVATE void init_get_remote_nbrs(partition_t* partition, int pid,
       }
     }
   }
-  CALL_SAFE(hash_table_get_keys_cpu(ht, nbrs, count_total));
+  CALL_SAFE(hash_table_get_keys_cpu(ht, nbrs, &partition->rmt_vertex_count));
   hash_table_finalize_cpu(ht);
 }
 
@@ -85,10 +85,10 @@ PRIVATE void init_table_gpu(grooves_box_table_t* btable, uint32_t bcount,
 
 PRIVATE void init_outbox_table(partition_t* partition, uint32_t pid, 
                                uint32_t pcount, uint32_t* remote_nbrs,
-                               uint32_t count_total, size_t msg_size) {
+                               size_t msg_size) {
   grooves_box_table_t* outbox = partition->outbox;
   // build the outboxs hash tables
-  for (uint32_t i = 0; i < count_total; i++) {
+  for (uint32_t i = 0; i < partition->rmt_vertex_count; i++) {
     uint32_t nbr = remote_nbrs[i];
     uint32_t nbr_pid = GET_PARTITION_ID(nbr);
     int bindex = GROOVES_BOX_INDEX(nbr_pid, pid, pcount);
@@ -122,18 +122,16 @@ PRIVATE void init_outbox(partition_set_t* pset) {
     // identify the remote nbrs and their count per remote partition
     id_t*     remote_nbrs   = NULL;
     uint32_t* count_per_par = NULL;
-    uint32_t  count_total   = 0;
     init_get_remote_nbrs(partition, pid, pset->graph->vertex_count, pcount,
-                         &remote_nbrs, &count_per_par, &count_total);
+                         &remote_nbrs, &count_per_par);
 
     // build the outbox
-    if (count_total) {
+    if (partition->rmt_vertex_count) {
       assert(remote_nbrs && count_per_par);
       // initialize the outbox hash tables
       init_allocate_table(partition->outbox, pid, pcount, count_per_par);
       // build the outbox hash tables
-      init_outbox_table(partition, pid, pcount, remote_nbrs, count_total, 
-                        pset->msg_size);
+      init_outbox_table(partition, pid, pcount, remote_nbrs, pset->msg_size);
       free(remote_nbrs);
       free(count_per_par);
     }
