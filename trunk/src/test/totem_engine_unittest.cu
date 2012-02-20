@@ -149,7 +149,7 @@ TEST_F(GraphEngineTest, ChainGraph) {
   engine_init(&config_);
   degree_g = (int*)calloc(graph_->vertex_count, sizeof(int));
   degree_h = (int*)mem_alloc(engine_largest_gpu_partition() * sizeof(int));
-  engine_start();
+  engine_execute();
   mem_free(degree_h);
   for (id_t v = 0; v < graph_->vertex_count; v++) {
     int nbr_count = graph_->vertices[v + 1] - graph_->vertices[v];
@@ -165,7 +165,7 @@ TEST_F(GraphEngineTest, StarGraph) {
   engine_init(&config_);
   degree_g = (int*)calloc(graph_->vertex_count, sizeof(int));
   degree_h = (int*)mem_alloc(engine_largest_gpu_partition() * sizeof(int));
-  engine_start();
+  engine_execute();
   mem_free(degree_h);
   for (id_t v = 0; v < graph_->vertex_count; v++) {
     int nbr_count = graph_->vertices[v + 1] - graph_->vertices[v];
@@ -182,7 +182,7 @@ TEST_F(GraphEngineTest, CompleteGraph) {
   engine_init(&config_);
   degree_g = (int*)calloc(graph_->vertex_count, sizeof(int));
   degree_h = (int*)mem_alloc(engine_largest_gpu_partition() * sizeof(int));
-  engine_start();
+  engine_execute();
   mem_free(degree_h);
   for (id_t v = 0; v < graph_->vertex_count; v++) {
     int nbr_count = graph_->vertices[v + 1] - graph_->vertices[v];

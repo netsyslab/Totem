@@ -33,6 +33,11 @@ typedef struct engine_context_s {
   engine_config_t  config;
   bool*            finished;
   uint64_t         largest_gpu_par;
+  double           time_init;
+  double           time_par;
+  double           time_exec;
+  double           time_comm;
+  double           time_comp;
 } engine_context_t;
 
 extern engine_context_t context;
@@ -96,7 +101,6 @@ __global__ void scatter_max(grooves_box_table_t inbox, T* dst) {
   _REDUCE_ENTRY_MAX(&inbox, index, dst);
 }
 
-// TODO(abdullah): test parallelize the cpu scatter
 template<typename T>
 void engine_scatter_inbox_add(uint32_t pid, T* dst) {
   assert(pid < context.pset->partition_count);
@@ -107,10 +111,13 @@ void engine_scatter_inbox_add(uint32_t pid, T* dst) {
     if (par->processor.type == PROCESSOR_GPU) {
       dim3 blocks, threads;
       KERNEL_CONFIGURE(inbox->ht.size, blocks, threads);
-      scatter_add<<<blocks, threads, 1, par->streams[1]>>>(*inbox, dst);
+      scatter_add<<<blocks, threads, 0, par->streams[1]>>>(*inbox, dst);
       CALL_CU_SAFE(cudaGetLastError());
     } else {
       assert(par->processor.type == PROCESSOR_CPU);
+      #ifdef _OPENMP
+      #pragma omp parallel for
+      #endif
       for (int index = 0; index < inbox->ht.size; index++) {
         _REDUCE_ENTRY_ADD(inbox, index, dst);
       }
@@ -128,10 +135,13 @@ void engine_scatter_inbox_min(uint32_t pid, T* dst) {
     if (par->processor.type == PROCESSOR_GPU) {
       dim3 blocks, threads;
       KERNEL_CONFIGURE(inbox->ht.size, blocks, threads);
-      scatter_min<<<blocks, threads, 1, par->streams[1]>>>(*inbox, dst);
+      scatter_min<<<blocks, threads, 0, par->streams[1]>>>(*inbox, dst);
       CALL_CU_SAFE(cudaGetLastError());
     } else {
       assert(par->processor.type == PROCESSOR_CPU);
+      #ifdef _OPENMP
+      #pragma omp parallel for
+      #endif
       for (int index = 0; index < inbox->ht.size; index++) {
         _REDUCE_ENTRY_MIN(inbox, index, dst);
       }
@@ -149,10 +159,13 @@ void engine_scatter_inbox_max(uint32_t pid, T* dst) {
     if (par->processor.type == PROCESSOR_GPU) {
       dim3 blocks, threads;
       KERNEL_CONFIGURE(inbox->ht.size, blocks, threads);
-      scatter_max<<<blocks, threads, 1, par->streams[1]>>>(*inbox, dst);
+      scatter_max<<<blocks, threads, 0, par->streams[1]>>>(*inbox, dst);
       CALL_CU_SAFE(cudaGetLastError());
     } else {
       assert(par->processor.type == PROCESSOR_CPU);
+      #ifdef _OPENMP
+      #pragma omp parallel for
+      #endif
       for (int index = 0; index < inbox->ht.size; index++) {
         _REDUCE_ENTRY_MAX(inbox, index, dst);
       }
@@ -171,11 +184,14 @@ void engine_set_outbox(uint32_t pid, T value) {
     if (par->processor.type == PROCESSOR_GPU) {
       dim3 blocks, threads;
       KERNEL_CONFIGURE(outbox->count, blocks, threads);
-      memset_device<<<blocks, threads, 1, par->streams[1]>>>(values, value, 
+      memset_device<<<blocks, threads, 0, par->streams[1]>>>(values, value, 
                                                              outbox->count);
       CALL_CU_SAFE(cudaGetLastError());
     } else {
       assert(par->processor.type == PROCESSOR_CPU);
+      #ifdef _OPENMP
+      #pragma omp parallel for
+      #endif
       for (int i = 0; i < outbox->count; i++) values[i] = value;
     }
   }
@@ -208,6 +224,26 @@ inline uint64_t engine_largest_gpu_partition() {
 inline void engine_report_finished(uint32_t pid) {
   assert(pid < context.pset->partition_count);
   context.finished[pid] = true;
+}
+
+inline double engine_time_initialization() {
+  return context.time_init;
+}
+
+inline double engine_time_partitioning() {
+  return context.time_par;
+}
+
+inline double engine_time_execution() {
+  return context.time_exec;
+}
+
+inline double engine_time_computation() {
+  return context.time_comp;
+}
+
+inline double engine_time_communication() {
+  return context.time_comm;
 }
 
 #endif  // TOTEM_ENGINE_INTERNAL_CUH

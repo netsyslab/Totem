@@ -20,7 +20,7 @@
  *        algo_aggr,
  *      };
  *      engine_init(&config);
- *      engine_start();
+ *      engine_execute();
  *      *output = output_g;
  *     }
  *
@@ -133,7 +133,7 @@ error_t engine_init(engine_config_t* config);
  * It returns only after all partitions have sent a "finished" signal in the
  * same superstep via engine_report_finished.
  */
-error_t engine_start();
+error_t engine_execute();
 
 /**
  * Allows a partition to report that it has finished computing. Note that if all
@@ -165,6 +165,32 @@ uint32_t engine_edge_count();
  * Returns the number of vertices of the largest GPU partition
  */
 uint64_t engine_largest_gpu_partition();
+
+/**
+ * Returns the total time spent on initializing the state (includes 
+ * partitioning and building the state)
+ */
+double engine_time_initialization();
+
+/**
+ * Returns the time spent on partitioning the graph
+ */
+double engine_time_partitioning();
+
+/**
+ * Returns the time spent on executing all the supersteps
+ */
+double engine_time_execution();
+
+/**
+ * Returns the total time spent on the computation phase
+ */
+double engine_time_computation();
+
+/**
+ * Returns the total time spent on the communication phase
+ */
+double engine_time_communication();
 
 /**
  * Scatters the messages in the inbox table to the corresponding vertices. The 
