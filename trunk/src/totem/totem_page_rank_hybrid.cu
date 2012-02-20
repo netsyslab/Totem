@@ -120,7 +120,7 @@ void vwarp_sum_neighbors_rank_kernel(partition_t par, int pc, float* rank,
     int nbr_count = my_space->vertices[v + 1] - my_space->vertices[v];
     id_t* nbrs = &(par.subgraph.edges[my_space->vertices[v]]);
     for(int i = warp_offset; i < nbr_count; i += VWARP_WARP_SIZE) {
-      float* dst; const int nbr = nbrs[i];
+      float* dst; const id_t nbr = nbrs[i];
       ENGINE_FETCH_DST(par.id, nbr, par.outbox_d, rank_s, pc, dst, float);
       atomicAdd(dst, my_space->rank[v]);
     }
@@ -159,7 +159,7 @@ PRIVATE void page_rank_gpu(partition_t* par) {
   }
   // communicate the ranks
   engine_set_outbox(par->id, 0);
-  vwarp_sum_neighbors_rank_kernel<<<ps->blocks2, ps->threads2, 0, 
+  vwarp_sum_neighbors_rank_kernel<<<ps->blocks2, ps->threads2, 0,
     par->streams[1]>>>(*par, engine_partition_count(), ps->rank, ps->rank_s,
                        VWARP_BATCH_COUNT(par->subgraph.vertex_count) *
                        VWARP_WARP_SIZE);
