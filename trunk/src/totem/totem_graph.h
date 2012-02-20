@@ -39,7 +39,6 @@
 // totem includes
 #include "totem_comdef.h"
 
-
 // TODO(elizeu): We should define a #-directive to allow multiple definitions
 //               of the following two types and related constants. The goal is
 //               to allow clients to set on compile time the specific type their
@@ -242,17 +241,12 @@ error_t apsp_gpu(graph_t* graph, weight_t** path_ret);
  * @param[out] rank the PageRank output array (must be freed via mem_free)
  * @return generic success or failure
  */
-error_t page_rank_cpu(const graph_t* graph, float* rank_i, float** rank);
-
-error_t page_rank_gpu(const graph_t* graph, float* rank_i, float** rank);
-
-error_t page_rank_vwarp_gpu(const graph_t* graph, float* rank_i, float** rank);
-
-error_t page_rank_incoming_cpu(const graph_t* graph, float* rank_i, 
-                               float** rank);
-
-error_t page_rank_incoming_gpu(const graph_t* graph, float* rank_i, 
-                               float** rank);
+error_t page_rank_cpu(graph_t* graph, float* rank_i, float** rank);
+error_t page_rank_gpu(graph_t* graph, float* rank_i, float** rank);
+error_t page_rank_vwarp_gpu(graph_t* graph, float* rank_i, float** rank);
+error_t page_rank_incoming_cpu(graph_t* graph, float* rank_i, float** rank);
+error_t page_rank_incoming_gpu(graph_t* graph, float* rank_i, float** rank);
+error_t page_rank_hybrid(graph_t* graph, float* rank_i, float** rank);
 
 
 /**
