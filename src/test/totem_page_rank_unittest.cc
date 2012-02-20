@@ -20,7 +20,7 @@ using ::testing::Values;
 // totem_bfs_unittest.cc and
 // http://code.google.com/p/googletest/source/browse/trunk/samples/sample7_unittest.cc
 
-typedef error_t(*PageRankFunction)(const graph_t*, float*, float**);
+typedef error_t(*PageRankFunction)(graph_t*, float*, float**);
 
 class PageRankTest : public TestWithParam<PageRankFunction> {
  public:
@@ -74,7 +74,7 @@ TEST_P(PageRankTest, Chain) {
   EXPECT_EQ(SUCCESS, page_rank(graph, NULL, &rank));
   EXPECT_FALSE(rank == NULL);
   for(id_t vertex = 0; vertex < graph->vertex_count/2; vertex++){
-    EXPECT_EQ(rank[vertex], rank[graph->vertex_count - vertex - 1]);
+    EXPECT_FLOAT_EQ(rank[vertex], rank[graph->vertex_count - vertex - 1]);
   }
   mem_free(rank);
 
@@ -95,7 +95,7 @@ TEST_P(PageRankTest, CompleteGraph) {
   EXPECT_EQ(SUCCESS, page_rank(graph, NULL, &rank));
   EXPECT_FALSE(rank == NULL);
   for(id_t vertex = 0; vertex < graph->vertex_count; vertex++){
-    EXPECT_EQ(rank[0], rank[vertex]);
+    EXPECT_FLOAT_EQ(rank[0], rank[vertex]);
   }
   mem_free(rank);
 
@@ -117,7 +117,7 @@ TEST_P(PageRankTest, Star) {
   EXPECT_EQ(SUCCESS, page_rank(graph, NULL, &rank));
   EXPECT_FALSE(rank == NULL);
   for(id_t vertex = 1; vertex < graph->vertex_count; vertex++){
-    EXPECT_EQ(rank[1], rank[vertex]);
+    EXPECT_FLOAT_EQ(rank[1], rank[vertex]);
     EXPECT_GT(rank[0], rank[vertex]);
   }
   mem_free(rank);
@@ -137,6 +137,7 @@ TEST_P(PageRankTest, Star) {
 INSTANTIATE_TEST_CASE_P(PageRankGPUAndCPUTest, PageRankTest,
                         Values(&page_rank_gpu, &page_rank_cpu,
                                &page_rank_vwarp_gpu,
+                               &page_rank_hybrid,
                                &page_rank_incoming_gpu,
                                &page_rank_incoming_cpu));
 
