@@ -136,8 +136,7 @@ error_t engine_init(engine_config_t* config) {
 
   int pcount;
   CALL_CU_SAFE(cudaGetDeviceCount(&pcount));
-  //pcount += 1;
-  pcount = 2;
+  pcount += 1;
   processor_t* processors = (processor_t*)calloc(pcount, sizeof(processor_t));
   assert(processors);
   processors[0].type = PROCESSOR_CPU;
