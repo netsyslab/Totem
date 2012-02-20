@@ -7,7 +7,8 @@
 
 #include "totem_engine.cuh"
 
-engine_context_t context = {false, NULL, NULL, 0, ENGINE_DEFAULT_CONFIG};
+engine_context_t context = {false, NULL, NULL, 0, ENGINE_DEFAULT_CONFIG, 
+                            0, 0, 0, 0};
 
 /**
  * Clears allocated state
@@ -24,12 +25,7 @@ PRIVATE void engine_finalize() {
   CALL_SAFE(partition_set_finalize(context.pset));
   free(context.par_labels);
   free(context.finished);
-  // reset the state
-  memset(&context, 0, sizeof(engine_context_t));
-  // g++ does not allow reinitializing a struct with a predefined value, it 
-  // only allows copying from another instance
-  engine_config_t config = ENGINE_DEFAULT_CONFIG;
-  context.config = config;
+  context.initialized = false;
 }
 
 /**
@@ -58,6 +54,8 @@ inline PRIVATE void superstep_compute_synchronize() {
  * Launches the compute kernel on each partition
  */
 inline PRIVATE void superstep_compute() {
+  stopwatch_t stopwatch;
+  stopwatch_start(&stopwatch);
   // The assumption is that the first partition is the CPU one, and the
   // rest are GPU ones. This is guaranteed by engine_init.
   for (int pid = 1; pid < context.pset->partition_count; pid++) {
@@ -71,12 +69,15 @@ inline PRIVATE void superstep_compute() {
   partition_t* partition = &context.pset->partitions[0];
   context.config.kernel_func(partition);
   superstep_compute_synchronize();
+  context.time_comp += stopwatch_elapsed(&stopwatch);
 }
 
 /**
  * Triggers grooves to synchronize state across partitions
  */
 inline PRIVATE void superstep_communicate() {
+  stopwatch_t stopwatch;
+  stopwatch_start(&stopwatch);
   grooves_launch_communications(context.pset);
   grooves_synchronize(context.pset);
   if (!context.config.scatter_func) return;
@@ -89,6 +90,7 @@ inline PRIVATE void superstep_communicate() {
   }
   partition_t* partition = &context.pset->partitions[0];
   context.config.scatter_func(partition);  
+  context.time_comm += stopwatch_elapsed(&stopwatch);
 }
 
 /**
@@ -109,27 +111,33 @@ PRIVATE void engine_aggregate() {
   }
 }
 
-error_t engine_start() {
+error_t engine_execute() {
+  stopwatch_t stopwatch;
+  stopwatch_start(&stopwatch);
   while (true) {
     superstep_next();                      // prepare state for the next round
     superstep_compute();                   // compute phase
     if (superstep_check_finished()) break; // check for termination
     superstep_communicate();               // communication/synchronize phase
   }
+  engine_aggregate();
+  context.time_exec = stopwatch_elapsed(&stopwatch);
 
-  engine_aggregate();  
   engine_finalize();
   return SUCCESS;
 }
 
 error_t engine_init(engine_config_t* config) {
+  stopwatch_t stopwatch;
+  stopwatch_start(&stopwatch);
   if (context.initialized) return FAILURE;
-  assert(!context.pset && !context.par_labels && !context.finished);
+  memset(&context, 0, sizeof(engine_context_t));
   context.config = *config;
 
   int pcount;
   CALL_CU_SAFE(cudaGetDeviceCount(&pcount));
-  pcount += 1;
+  //pcount += 1;
+  pcount = 2;
   processor_t* processors = (processor_t*)calloc(pcount, sizeof(processor_t));
   assert(processors);
   processors[0].type = PROCESSOR_CPU;
@@ -139,6 +147,8 @@ error_t engine_init(engine_config_t* config) {
   }
 
   // partition the graph
+  stopwatch_t stopwatch_par;
+  stopwatch_start(&stopwatch_par);
   switch (config->par_algo) {
     case PAR_RANDOM:
       CALL_SAFE(partition_random(config->graph, (uint32_t)pcount, 13, 
@@ -149,6 +159,7 @@ error_t engine_init(engine_config_t* config) {
       printf("ERROR: Undefined partition algorithm.\n"); fflush(stdout);
       assert(false);
   }
+  context.time_par = stopwatch_elapsed(&stopwatch_par);
   CALL_SAFE(partition_set_initialize(config->graph, context.par_labels,
                                      processors, pcount, config->msg_size, 
                                      &context.pset));
@@ -174,5 +185,6 @@ error_t engine_init(engine_config_t* config) {
 
   context.finished = (bool*)calloc(pcount, sizeof(bool));
   context.initialized = true;
+  context.time_init = stopwatch_elapsed(&stopwatch);
   return SUCCESS;
 }
