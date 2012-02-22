@@ -24,11 +24,6 @@ typedef struct partition_set_s partition_set_t;
 #define GROOVES_BOX_INDEX(_remote_pid, _host_pid, _count)       \
   (((_remote_pid) - (_host_pid) - 1 + (_count)) % (_count))
 
-/**
- * Macro to lookup a value index from the box table
- */
-#define GROOVES_LOOKUP(_box, _vid, _value)      \
-  HT_LOOKUP(&((_box)->ht), (_vid), (_value));
 
 /**
  * Defines the basic data type that is used as communication stubs between
@@ -41,9 +36,9 @@ typedef struct partition_set_s partition_set_t;
  * atomic update of the value by two different threads.
  */
 typedef struct grooves_box_table_s {
-  hash_table_t  ht;      /**< a table of the remote neighbors' ids. */
-  void*         values;  /**< the actual state of each vertex */
-  uint32_t      count;   /**< number of neighbors */
+  id_t*         rmt_nbrs; /**< a table of the remote neighbors' ids. */
+  void*         values;   /**< the actual state of each vertex */
+  uint32_t      count;    /**< number of neighbors */
 } grooves_box_table_t;
 
 /**
