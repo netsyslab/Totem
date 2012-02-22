@@ -26,9 +26,6 @@ __global__ void VerifyPartitionGPUKernel(partition_t partition, uint32_t pid,
       grooves_box_table_t* outbox =
         &partition.outbox_d[GROOVES_BOX_INDEX(nbr_pid, pid, pcount)];
       KERNEL_EXPECT_TRUE(outbox->count > 0);
-      int value = 1;
-      GROOVES_LOOKUP(outbox, nbr, value);
-      KERNEL_EXPECT_TRUE(value != -1);
     }
   }
 }
@@ -38,11 +35,9 @@ __global__ void VerifyPartitionInboxGPUKernel(partition_t partition,
   const int index = THREAD_GLOBAL_INDEX;
   for (int r = 0; r < pcount - 1; r++) {
     grooves_box_table_t* inbox = &partition.inbox_d[r];
-    if (index >= inbox->ht.size) continue;
-    uint64_t entry = inbox->ht.entries[index];
-    if (entry != ((uint64_t)-1))  {
-      KERNEL_EXPECT_TRUE(GET_PARTITION_ID(HT_GET_KEY(entry)) == pid);
-    }
+    if (index >= inbox->count) continue;
+    KERNEL_EXPECT_TRUE(inbox->rmt_nbrs[index] < 
+                       partition.subgraph.vertex_count);
   }
 }
 
@@ -127,9 +122,6 @@ class GraphPartitionTest : public ::testing::Test {
           grooves_box_table_t* outbox = 
             &partition->outbox[GROOVES_BOX_INDEX(nbr_pid, pid, pcount)];
           EXPECT_GT(outbox->count, (uint32_t)0);
-          int value;
-          GROOVES_LOOKUP(outbox, subgraph->edges[i], value);
-          EXPECT_NE(-1, value);
         }
       }
     }
@@ -137,14 +129,10 @@ class GraphPartitionTest : public ::testing::Test {
     // partition
     for (int r = 0; r < pcount - 1; r++) {
       grooves_box_table_t* inbox = &partition->inbox[r];
-      uint32_t  count;
-      uint32_t* keys;
-      hash_table_get_keys_cpu(&(inbox->ht), &keys, &count);
-      EXPECT_EQ(inbox->count, count);
-      for (uint32_t k = 0; k < count; k++) {
-        EXPECT_EQ(pid, GET_PARTITION_ID(keys[k]));
+      for (int index = 0; index < inbox->count; index++) {
+        KERNEL_EXPECT_TRUE(inbox->rmt_nbrs[index] < 
+                           partition->subgraph.vertex_count);
       }
-      if (count) free(keys);
     }
   }
 
