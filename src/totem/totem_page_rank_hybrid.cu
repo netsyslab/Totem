@@ -18,8 +18,8 @@
  *  Author: Abdullah Gharaibeh
  */
 
-#include "totem_engine.cuh"
 #include "totem_comkernel.cuh"
+#include "totem_engine.cuh"
 #include "totem_graph.h"
 #include "totem_mem.h"
 
@@ -42,10 +42,10 @@
 typedef struct page_rank_state_s {
   float* rank;
   float* rank_s;
-  dim3 blocks1;
-  dim3 threads1;
-  dim3 blocks2;
-  dim3 threads2;
+  dim3 blocks_rank;
+  dim3 threads_rank;
+  dim3 blocks_sum;
+  dim3 threads_sum;
 } page_rank_state_t;
 
 /**
@@ -94,9 +94,9 @@ typedef struct {
 } vwarp_mem_t;
 
 /**
- * Phase1 kernel of the PageRank GPU algorithm.
- * Produce the sum of the neighbors' ranks. Each vertex atomically
- * adds its value to the mailbox of the destination neighbor vertex.
+ * Phase1 kernel of the PageRank GPU algorithm. Produce the sum of 
+ * the neighbors' ranks. Each vertex atomically adds its value to 
+ * the temporary rank (rank_s) of the destination neighbor vertex.
  */
 __global__
 void vwarp_sum_neighbors_rank_kernel(partition_t par, int pc, float* rank, 
@@ -109,14 +109,16 @@ void vwarp_sum_neighbors_rank_kernel(partition_t par, int pc, float* rank,
   __shared__ vwarp_mem_t smem[(MAX_THREADS_PER_BLOCK / VWARP_WARP_SIZE)];
   vwarp_mem_t* my_space = smem + (THREAD_GRID_INDEX / VWARP_WARP_SIZE);
   int v_ = warp_id * VWARP_BATCH_SIZE;
-  int batch_size = v_ + VWARP_BATCH_SIZE > par.subgraph.vertex_count?
-    par.subgraph.vertex_count - v_ : VWARP_BATCH_SIZE;
-  vwarp_memcpy(my_space->rank, &rank[v_], batch_size, warp_offset);
+  int my_batch_size = VWARP_BATCH_SIZE;
+  if (v_ + VWARP_BATCH_SIZE > par.subgraph.vertex_count) {
+    my_batch_size = par.subgraph.vertex_count - v_;
+  }
+  vwarp_memcpy(my_space->rank, &rank[v_], my_batch_size, warp_offset);
   vwarp_memcpy(my_space->vertices, &(par.subgraph.vertices[v_]), 
-               batch_size + 1, warp_offset);
+               my_batch_size + 1, warp_offset);
 
   // iterate over my work
-  for(uint32_t v = 0; v < batch_size; v++) {
+  for(uint32_t v = 0; v < my_batch_size; v++) {
     int nbr_count = my_space->vertices[v + 1] - my_space->vertices[v];
     id_t* nbrs = &(par.subgraph.edges[my_space->vertices[v]]);
     for(int i = warp_offset; i < nbr_count; i += VWARP_WARP_SIZE) {
@@ -150,19 +152,22 @@ PRIVATE void page_rank_gpu(partition_t* par) {
   if (engine_superstep() > 1) {
     // compute my rank
     if (engine_superstep() != PAGE_RANK_ROUNDS) {
-      compute_normalized_rank_kernel<<<ps->blocks1, ps->threads1, 0, 
+      compute_normalized_rank_kernel<<<ps->blocks_rank, ps->threads_rank, 0, 
         par->streams[1]>>>(*par, engine_vertex_count(), ps->rank, ps->rank_s);
+      CALL_CU_SAFE(cudaGetLastError());
     } else {
-      compute_unnormalized_rank_kernel<<<ps->blocks1, ps->threads1, 0, 
+      compute_unnormalized_rank_kernel<<<ps->blocks_rank, ps->threads_rank, 0, 
         par->streams[1]>>>(*par, engine_vertex_count(), ps->rank, ps->rank_s);
+      CALL_CU_SAFE(cudaGetLastError());
     }
   }
   // communicate the ranks
   engine_set_outbox(par->id, 0);
-  vwarp_sum_neighbors_rank_kernel<<<ps->blocks2, ps->threads2, 0,
+  vwarp_sum_neighbors_rank_kernel<<<ps->blocks_sum, ps->threads_sum, 0,
     par->streams[1]>>>(*par, engine_partition_count(), ps->rank, ps->rank_s,
                        VWARP_BATCH_COUNT(par->subgraph.vertex_count) *
                        VWARP_WARP_SIZE);
+  CALL_CU_SAFE(cudaGetLastError());
 }
 
 PRIVATE void page_rank_cpu(partition_t* par) {
@@ -238,31 +243,42 @@ PRIVATE void page_rank_aggr(partition_t* partition) {
   }
 }
 
+PRIVATE void page_rank_init_gpu(partition_t* par, page_rank_state_t* ps, 
+                                float init_value) {
+  uint64_t vcount = par->subgraph.vertex_count;
+  CALL_CU_SAFE(cudaMalloc((void**)&(ps->rank), vcount * sizeof(float)));
+  CALL_CU_SAFE(cudaMalloc((void**)&(ps->rank_s), vcount * sizeof(float)));
+  KERNEL_CONFIGURE(VWARP_WARP_SIZE * VWARP_BATCH_COUNT(vcount), 
+                   ps->blocks_sum, ps->threads_sum);
+  KERNEL_CONFIGURE(vcount, ps->blocks_rank, ps->threads_rank);
+  // TODO(abdullah): Use user provided initialization values
+  memset_device<<<ps->blocks_rank, ps->threads_rank, 0, 
+    par->streams[1]>>>(ps->rank, init_value, vcount);
+  CALL_CU_SAFE(cudaGetLastError());
+  memset_device<<<ps->blocks_rank, ps->threads_rank, 0, 
+    par->streams[1]>>>(ps->rank_s, (float)0.0, vcount);
+  CALL_CU_SAFE(cudaGetLastError());
+}
+
+PRIVATE void page_rank_init_cpu(partition_t* par, page_rank_state_t* ps, 
+                                float init_value) {
+  uint64_t vcount = par->subgraph.vertex_count;
+  assert(par->processor.type == PROCESSOR_CPU);
+  ps->rank = (float*)calloc(vcount, sizeof(float));
+  ps->rank_s = (float*)calloc(vcount, sizeof(float));
+  assert(ps->rank && ps->rank_s);
+  for (id_t v = 0; v < vcount; v++) ps->rank[v] = init_value;
+}
+
 PRIVATE void page_rank_init(partition_t* par) {
   if (!par->subgraph.vertex_count) return;
   page_rank_state_t* ps = (page_rank_state_t*)malloc(sizeof(page_rank_state_t));
   assert(ps);
-  float init_value = 1 / (float)engine_vertex_count();
-  uint64_t vcount = par->subgraph.vertex_count;
+  float init_value = 1 / (float)engine_vertex_count();  
   if (par->processor.type == PROCESSOR_GPU) {
-    CALL_CU_SAFE(cudaMalloc((void**)&(ps->rank), vcount * sizeof(float)));
-    CALL_CU_SAFE(cudaMalloc((void**)&(ps->rank_s), vcount * sizeof(float)));
-    KERNEL_CONFIGURE(VWARP_WARP_SIZE * VWARP_BATCH_COUNT(vcount), 
-                     ps->blocks2, ps->threads2);
-    KERNEL_CONFIGURE(vcount, ps->blocks1, ps->threads1);
-    // TODO(abdullah): Use user provided initialization values
-    memset_device<<<ps->blocks1, ps->threads1, 0, 
-      par->streams[1]>>>(ps->rank, init_value, vcount);
-    CALL_CU_SAFE(cudaGetLastError());
-    memset_device<<<ps->blocks1, ps->threads1, 0, 
-      par->streams[1]>>>(ps->rank_s, (float)0.0, vcount);
-    CALL_CU_SAFE(cudaGetLastError());
+    page_rank_init_gpu(par, ps, init_value);
   } else {
-    assert(par->processor.type == PROCESSOR_CPU);    
-    ps->rank = (float*)calloc(vcount, sizeof(float));
-    ps->rank_s = (float*)calloc(vcount, sizeof(float));
-    assert(ps->rank && ps->rank_s);
-    for (id_t v = 0; v < vcount; v++) ps->rank[v] = init_value;
+    page_rank_init_cpu(par, ps, init_value);
   }
   par->algo_state = ps;
 }
