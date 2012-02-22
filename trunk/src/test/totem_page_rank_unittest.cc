@@ -40,7 +40,6 @@ TEST_P(PageRankTest, Empty) {
   graph.directed = false;
   graph.vertex_count = 0;
   graph.edge_count = 0;
-
   float* rank = NULL;
   EXPECT_EQ(FAILURE, page_rank(&graph, NULL, &rank));
 }
@@ -56,7 +55,6 @@ TEST_P(PageRankTest, SingleNode) {
   EXPECT_FALSE(rank == NULL);
   EXPECT_EQ(1, rank[0]);
   mem_free(rank);
-
   EXPECT_EQ(SUCCESS, graph_finalize(graph));
 }
 
@@ -68,7 +66,7 @@ TEST_P(PageRankTest, Chain) {
 
   // the graph should be undirected because the test is shared between the 
   // two versions of the PageRank algorithm: incoming- and outgoing- based.
-  EXPECT_EQ(false, graph->directed);
+  EXPECT_FALSE(graph->directed);
 
   float* rank = NULL;
   EXPECT_EQ(SUCCESS, page_rank(graph, NULL, &rank));
@@ -77,7 +75,6 @@ TEST_P(PageRankTest, Chain) {
     EXPECT_FLOAT_EQ(rank[vertex], rank[graph->vertex_count - vertex - 1]);
   }
   mem_free(rank);
-
   EXPECT_EQ(SUCCESS, graph_finalize(graph));
 }
 
@@ -89,7 +86,7 @@ TEST_P(PageRankTest, CompleteGraph) {
                              false, &graph));
   // the graph should be undirected because the test is shared between the 
   // two versions of the PageRank algorithm: incoming- and outgoing- based.
-  EXPECT_EQ(false, graph->directed);
+  EXPECT_FALSE(graph->directed);
 
   float* rank = NULL;
   EXPECT_EQ(SUCCESS, page_rank(graph, NULL, &rank));
@@ -98,7 +95,6 @@ TEST_P(PageRankTest, CompleteGraph) {
     EXPECT_FLOAT_EQ(rank[0], rank[vertex]);
   }
   mem_free(rank);
-
   EXPECT_EQ(SUCCESS, graph_finalize(graph));
 }
 
@@ -111,7 +107,7 @@ TEST_P(PageRankTest, Star) {
 
   // the graph should be undirected because the test is shared between the 
   // two versions of the PageRank algorithm: incoming- and outgoing- based.
-  EXPECT_EQ(false, graph->directed);
+  EXPECT_FALSE(graph->directed);
 
   float* rank = NULL;
   EXPECT_EQ(SUCCESS, page_rank(graph, NULL, &rank));
@@ -121,7 +117,6 @@ TEST_P(PageRankTest, Star) {
     EXPECT_GT(rank[0], rank[vertex]);
   }
   mem_free(rank);
-
   EXPECT_EQ(SUCCESS, graph_finalize(graph));
 }
 
@@ -135,7 +130,8 @@ TEST_P(PageRankTest, Star) {
 // outgoing- based) can share the same tests because all the graphs are 
 // undirected. Separate the two for cases where the graphs are directed.
 INSTANTIATE_TEST_CASE_P(PageRankGPUAndCPUTest, PageRankTest,
-                        Values(&page_rank_gpu, &page_rank_cpu,
+                        Values(&page_rank_cpu,
+                               &page_rank_gpu,
                                &page_rank_vwarp_gpu,
                                &page_rank_hybrid,
                                &page_rank_incoming_gpu,
