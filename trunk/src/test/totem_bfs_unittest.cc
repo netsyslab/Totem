@@ -20,7 +20,7 @@ using ::testing::Values;
 // Details on how to use TestWithParam<T> can be found at:
 // http://code.google.com/p/googletest/source/browse/trunk/samples/sample7_unittest.cc
 
-typedef error_t(*BFSFunction)(graph_t*, id_t, uint32_t**);
+typedef error_t(*BFSFunction)(const graph_t*, id_t, uint32_t**);
 
 class BFSTest : public TestWithParam<BFSFunction> {
  public:
