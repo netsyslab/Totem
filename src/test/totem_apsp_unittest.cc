@@ -48,7 +48,7 @@ TEST_P(APSPTest, EmptyVertexSet) {
 
   weight_t* distances;
   EXPECT_EQ(FAILURE, apsp(graph, &distances));
-  EXPECT_EQ(NULL, distances);
+  EXPECT_EQ((weight_t*)NULL, distances);
   mem_free(graph);
 }
 
@@ -193,7 +193,8 @@ TEST_P(APSPTest, CompleteDiffWeight) {
 }
 
 INSTANTIATE_TEST_CASE_P(APSPGPUAndCPUTest, APSPTest,
-                        Values(&apsp_cpu, &apsp_gpu));
+                        Values(&apsp_cpu, 
+                               &apsp_gpu));
 
 #else
 

@@ -44,7 +44,7 @@ TEST_P(PCoreTest, Empty) {
 
   uint32_t* round;
   EXPECT_EQ(FAILURE, pcore(&graph, 0, 1, &round));
-  EXPECT_EQ(NULL, round);
+  EXPECT_EQ((uint32_t*)NULL, round);
 }
 
 // Tests p-core for single node graphs.
@@ -137,7 +137,8 @@ TEST_P(PCoreTest, Star) {
 // Values() receives a list of parameters and the framework will execute the
 // whole set of tests PCoreTest for each element of Values()
 INSTANTIATE_TEST_CASE_P(PCOREGPUAndCPUTest, PCoreTest, 
-                        Values(&pcore_gpu, &pcore_cpu));
+                        Values(&pcore_cpu, 
+                               &pcore_gpu));
 
 #else
 
