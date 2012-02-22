@@ -20,7 +20,7 @@ using ::testing::Values;
 // Details on how to use TestWithParam<T> can be found at:
 // http://code.google.com/p/googletest/source/browse/trunk/samples/sample7_unittest.cc
 
-typedef error_t(*BFSFunction)(const graph_t*, id_t, uint32_t**);
+typedef error_t(*BFSFunction)(graph_t*, id_t, uint32_t**);
 
 class BFSTest : public TestWithParam<BFSFunction> {
  public:
@@ -43,10 +43,10 @@ TEST_P(BFSTest, Empty) {
 
   uint32_t* cost;
   EXPECT_EQ(FAILURE, bfs(&graph, 0, &cost));
-  EXPECT_EQ(NULL, cost);
+  EXPECT_EQ((uint32_t*)NULL, cost);
 
   EXPECT_EQ(FAILURE, bfs(&graph, 99, &cost));
-  EXPECT_EQ(NULL, cost);
+  EXPECT_EQ((uint32_t*)NULL, cost);
 }
 
 // Tests BFS for single node graphs.
@@ -56,12 +56,12 @@ TEST_P(BFSTest, SingleNode) {
 
   uint32_t* cost;
   EXPECT_EQ(SUCCESS, bfs(graph, 0, &cost));
-  EXPECT_FALSE(NULL == cost);
+  EXPECT_FALSE((uint32_t*)NULL == cost);
   EXPECT_EQ((uint32_t)0, cost[0]);
   mem_free(cost);
 
   EXPECT_EQ(FAILURE, bfs(graph, 1, &cost));
-  EXPECT_EQ(NULL, cost);
+  EXPECT_EQ((uint32_t*)NULL, cost);
   graph_finalize(graph);
 
   graph_initialize(DATA_FOLDER("single_node_loop.totem"), false, &graph);
@@ -71,7 +71,7 @@ TEST_P(BFSTest, SingleNode) {
   mem_free(cost);
 
   EXPECT_EQ(FAILURE, bfs(graph, 1, &cost));
-  EXPECT_EQ(NULL, cost);
+  EXPECT_EQ((uint32_t*)NULL, cost);
   graph_finalize(graph);
 }
 
@@ -110,7 +110,7 @@ TEST_P(BFSTest, EmptyEdges) {
 
   // Non existent vertex source
   EXPECT_EQ(FAILURE, bfs(graph, graph->vertex_count, &cost));
-  EXPECT_EQ(NULL, cost);
+  EXPECT_EQ((uint32_t*)NULL, cost);
 
   graph_finalize(graph);
 }
@@ -148,7 +148,7 @@ TEST_P(BFSTest, Chain) {
 
   // Non existent vertex source
   EXPECT_EQ(FAILURE, bfs(graph, graph->vertex_count, &cost));
-  EXPECT_EQ(NULL, cost);
+  EXPECT_EQ((uint32_t*)NULL, cost);
 
   graph_finalize(graph);
 }
@@ -188,7 +188,7 @@ TEST_P(BFSTest, CompleteGraph) {
 
   // Non existent vertex source
   EXPECT_EQ(FAILURE, bfs(graph, graph->vertex_count, &cost));
-  EXPECT_EQ(NULL, cost);
+  EXPECT_EQ((uint32_t*)NULL, cost);
 
   graph_finalize(graph);
 }
@@ -229,7 +229,7 @@ TEST_P(BFSTest, Star) {
 
   // Non existent vertex source
   EXPECT_EQ(FAILURE, bfs(graph, graph->vertex_count, &cost));
-  EXPECT_EQ(NULL, cost);
+  EXPECT_EQ((uint32_t*)NULL, cost);
 
   graph_finalize(graph);
 }
@@ -242,7 +242,8 @@ TEST_P(BFSTest, Star) {
 //
 // Values() receives a list of parameters and the framework will execute the
 // whole set of tests BFSTest for each element of Values()
-INSTANTIATE_TEST_CASE_P(BFSGPUAndCPUTest, BFSTest, Values(&bfs_cpu, &bfs_gpu,
+INSTANTIATE_TEST_CASE_P(BFSGPUAndCPUTest, BFSTest, Values(&bfs_cpu, 
+                                                          &bfs_gpu,
                                                           &bfs_vwarp_gpu));
 
 #else

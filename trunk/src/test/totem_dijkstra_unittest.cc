@@ -47,9 +47,9 @@ TEST_P(DijkstraTest, EmptyVertexSet) {
 
   weight_t* short_distances;
   EXPECT_EQ(FAILURE, dijkstra(&graph, 0, &short_distances));
-  EXPECT_EQ(NULL, short_distances);
+  EXPECT_EQ((weight_t*)NULL, short_distances);
   EXPECT_EQ(FAILURE, dijkstra(&graph, 666, &short_distances));
-  EXPECT_EQ(NULL, short_distances);
+  EXPECT_EQ((weight_t*)NULL, short_distances);
 }
 
 // Tests Dijkstra for a graph with an empty edge set.
@@ -96,7 +96,7 @@ TEST_P(DijkstraTest, SingleNodeLoopWeighted) {
   mem_free(short_distances);
 
   EXPECT_EQ(FAILURE, dijkstra(graph, 100, &short_distances));
-  EXPECT_EQ(NULL, short_distances);
+  EXPECT_EQ((weight_t*)NULL, short_distances);
   graph_finalize(graph);
 }
 
@@ -134,7 +134,7 @@ TEST_P(DijkstraTest, Chain) {
   // Non existent vertex source
   EXPECT_EQ(FAILURE,
     dijkstra(graph, graph->vertex_count, &short_distances));
-  EXPECT_EQ(NULL, short_distances);
+  EXPECT_EQ((weight_t*)NULL, short_distances);
   graph_finalize(graph);
 }
 
@@ -167,7 +167,7 @@ TEST_P(DijkstraTest, Star) {
   // Non existent vertex source
   EXPECT_EQ(FAILURE,
     dijkstra(graph, graph->vertex_count, &short_distances));
-  EXPECT_EQ(NULL, short_distances);
+  EXPECT_EQ((weight_t*)NULL, short_distances);
   graph_finalize(graph);
 }
 
@@ -199,7 +199,7 @@ TEST_P(DijkstraTest, Complete) {
   // Non existent vertex source
   EXPECT_EQ(FAILURE,
     dijkstra(graph, graph->vertex_count, &short_distances));
-  EXPECT_EQ(NULL, short_distances);
+  EXPECT_EQ((weight_t*)NULL, short_distances);
   graph_finalize(graph);
 }
 
@@ -234,7 +234,7 @@ TEST_P(DijkstraTest, StarDiffWeight) {
   // Non existent vertex source
   EXPECT_EQ(FAILURE,
     dijkstra(graph, graph->vertex_count, &short_distances));
-  EXPECT_EQ(NULL, short_distances);
+  EXPECT_EQ((weight_t*)NULL, short_distances);
   graph_finalize(graph);
 }
 
@@ -268,14 +268,15 @@ TEST_P(DijkstraTest, CompleteDiffWeight) {
   // Non existent vertex source
   EXPECT_EQ(FAILURE,
     dijkstra(graph, graph->vertex_count, &short_distances));
-  EXPECT_EQ(NULL, short_distances);
+  EXPECT_EQ((weight_t*)NULL, short_distances);
   graph_finalize(graph);
 }
 
 // TODO(elizeu): Add irregular topology graphs.
 
 INSTANTIATE_TEST_CASE_P(DijkstraGPUAndCPUTest, DijkstraTest,
-                        Values(&dijkstra_gpu, &dijkstra_cpu,
+                        Values(&dijkstra_cpu,
+                               &dijkstra_gpu, 
                                &dijkstra_vwarp_gpu));
 
 #else
