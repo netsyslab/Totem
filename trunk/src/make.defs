@@ -66,7 +66,7 @@ OPTFLAGS  = -O3 -fno-strict-aliasing
 CCFLAGS   += -g $(OPENMP) $(OPTFLAGS) -Wall -Wno-format \
              -I$(CUDA_INSTALL_PATH)/include -D__STDC_LIMIT_MACROS
 LFLAGS    =  -lm $(OPENMP) -lcudart -I. -L. -L$(CUDA_INSTALL_PATH)/lib$(ARCH)
-NVCCFLAGS += -g -Xcompiler "$(OPENMP)" -O3 -I. \
+NVCCFLAGS += -g -Xcompiler "$(OPENMP) -fno-strict-aliasing" -O3 -I. \
              -I$(CUDA_INSTALL_PATH)/include  -arch=sm_20 -D__STDC_LIMIT_MACROS \
              -maxrregcount=$(MAXREG)
 
