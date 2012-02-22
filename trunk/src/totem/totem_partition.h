@@ -129,6 +129,8 @@ typedef struct partition_set_s {
   partition_t* partitions;      /**< the array of partitions */
   int          partition_count; /**< number of partitions in the set */
   size_t       msg_size;        /**< the size of a communication message */
+  id_t*        id_in_partition; /**< maps a vertex id in the graph to its
+                                   new id in its designated partition */
 } partition_set_t;
 
 /**

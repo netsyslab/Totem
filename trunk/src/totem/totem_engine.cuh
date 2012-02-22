@@ -43,7 +43,7 @@
  * that for GPU partitions the correct device is set (i.e., kernel invocations
  * is guaranteed to be launched on the correct GPU)
  */
-typedef void(*engine_kernel_func_t)(partition_t*);
+typedef void(*engine_par_kernel_func_t)(partition_t*);
 
 /**
  * Callback function to scatter inbox data to partition-specific state. 
@@ -59,7 +59,7 @@ typedef void(*engine_kernel_func_t)(partition_t*);
  * a scatter function simply aggregates the "rank" of the remote neighbor with
  * the rank of the destination vertex (the aggregation is "add" in this case).
  */
-typedef void(*engine_scatter_func_t)(partition_t*);
+typedef void(*engine_par_scatter_func_t)(partition_t*);
 
 /**
  * Callback function on a partition to enable algorithm-specific per-partition
@@ -77,22 +77,22 @@ typedef void(*engine_par_finalize_func_t)(partition_t*);
  * Callback function on a partition to enable aggregating the final result. 
  * This is called after receiving the termination signal from all partitions.
  */
-typedef void(*engine_aggr_func_t)(partition_t*);
+typedef void(*engine_par_aggr_func_t)(partition_t*);
 
 /**
  * Engine configuration type. Algorithms use an instance of this type to
  * configure the execution engine
  */
 typedef struct engine_config_s {
-  graph_t*                   graph;         /**< the input graph */
-  partition_algorithm_t      par_algo;      /**< partitioning algorithm */
-  size_t                     msg_size;      /**< communication element size */
-  engine_kernel_func_t       kernel_func;   /**< per partition superstep func */
-  engine_scatter_func_t      scatter_func;  /**< per partition scatter func */
-  engine_par_init_func_t     init_func;     /**< per partition init function */
-  engine_par_finalize_func_t finalize_func; /**< per partition finalize func */
-  engine_aggr_func_t         aggr_func;     /**< per partition results 
-                                               aggregation func */
+  graph_t*                   graph;             /**< the input graph */
+  partition_algorithm_t      par_algo;          /**< partitioning algorithm */
+  size_t                     msg_size;          /**< comm. element size */
+  engine_par_kernel_func_t   par_kernel_func;   /**< per par. comp. func */
+  engine_par_scatter_func_t  par_scatter_func;  /**< per par. scatter func */
+  engine_par_init_func_t     par_init_func;     /**< per par. init function */
+  engine_par_finalize_func_t par_finalize_func; /**< per par. finalize func */
+  engine_par_aggr_func_t     par_aggr_func;     /**< per partition results 
+                                                   aggregation func */
 } engine_config_t;
 
 /**
@@ -111,10 +111,8 @@ typedef struct engine_config_s {
     int nbr_pid = GET_PARTITION_ID((_nbr));                             \
     if (nbr_pid != (_pid)) {                                            \
       int box_id = GROOVES_BOX_INDEX(nbr_pid, (_pid), (_pcount));       \
-      int index;                                                        \
-      GROOVES_LOOKUP(&((_outbox)[box_id]), (_nbr), index);              \
       _type * values = (_type *)(_outbox)[box_id].values;               \
-      (_dst) = &values[index];                                          \
+      (_dst) = &values[GET_VERTEX_ID((_nbr))];                          \
     } else {                                                            \
       (_dst) = &(_pstate)[GET_VERTEX_ID((_nbr))];                       \
     }                                                                   \
@@ -165,6 +163,17 @@ uint32_t engine_edge_count();
  * Returns the number of vertices of the largest GPU partition
  */
 uint64_t engine_largest_gpu_partition();
+
+/**
+ * Returns a reference to a map that maps a vertex id to its new id in the 
+ * corresponding partition
+ */
+id_t* engine_vertex_id_in_partition();
+
+/**
+ * Returns a vertex's new id in the corresponding partition
+ */
+id_t engine_vertex_id_in_partition(id_t);
 
 /**
  * Returns the total time spent on initializing the state (includes 

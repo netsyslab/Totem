@@ -7,23 +7,28 @@
 
 #include "totem_engine.cuh"
 
-engine_context_t context = {false, NULL, NULL, 0, ENGINE_DEFAULT_CONFIG, 
+engine_context_t context = {false, NULL, 0, ENGINE_DEFAULT_CONFIG, 
                             0, 0, 0, 0};
+
+#define SET_PROCESSOR(_par)                                     \
+  do {                                                          \
+    if ((_par)->processor.type == PROCESSOR_GPU) {              \
+      CALL_CU_SAFE(cudaSetDevice((_par)->processor.id));        \
+    }                                                           \
+  } while(0)
 
 /**
  * Clears allocated state
  */
 PRIVATE void engine_finalize() {
-  assert(context.pset && context.par_labels);
-  if (context.config.finalize_func) {
-    context.config.finalize_func(&context.pset->partitions[0]);
-    for (int pid = 1; pid < context.pset->partition_count; pid++) {
-      CALL_CU_SAFE(cudaSetDevice(context.pset->partitions[pid].processor.id));
-      context.config.finalize_func(&context.pset->partitions[pid]);
+  assert(context.pset);
+  if (context.config.par_finalize_func) {
+    for (int pid = 0; pid < context.pset->partition_count; pid++) {
+      SET_PROCESSOR(&context.pset->partitions[pid]);
+      context.config.par_finalize_func(&context.pset->partitions[pid]);
     }
   }
   CALL_SAFE(partition_set_finalize(context.pset));
-  free(context.par_labels);
   free(context.finished);
   context.initialized = false;
 }
@@ -56,18 +61,13 @@ inline PRIVATE void superstep_compute_synchronize() {
 inline PRIVATE void superstep_compute() {
   stopwatch_t stopwatch;
   stopwatch_start(&stopwatch);
-  // The assumption is that the first partition is the CPU one, and the
-  // rest are GPU ones. This is guaranteed by engine_init.
-  for (int pid = 1; pid < context.pset->partition_count; pid++) {
+  for (int pid = 0; pid < context.pset->partition_count; pid++) {
     // The kernel for GPU partitions is supposed not to block. The client is 
     // supposedly invoking the GPU kernel asynchronously, and using the compute 
     // "stream" available for each partition
-    partition_t* partition = &context.pset->partitions[pid];
-    CALL_CU_SAFE(cudaSetDevice(partition->processor.id));
-    context.config.kernel_func(partition);
+    SET_PROCESSOR(&context.pset->partitions[pid]);
+    context.config.par_kernel_func(&context.pset->partitions[pid]);
   }
-  partition_t* partition = &context.pset->partitions[0];
-  context.config.kernel_func(partition);
   superstep_compute_synchronize();
   context.time_comp += stopwatch_elapsed(&stopwatch);
 }
@@ -80,16 +80,14 @@ inline PRIVATE void superstep_communicate() {
   stopwatch_start(&stopwatch);
   grooves_launch_communications(context.pset);
   grooves_synchronize(context.pset);
-  if (!context.config.scatter_func) return;
+  if (!context.config.par_scatter_func) return;
   // The assumption is that the first partition is the CPU one, and the
   // rest are GPU ones. This is guaranteed by engine_init.
-  for (int pid = 1; pid < context.pset->partition_count; pid++) {
-    partition_t* partition = &context.pset->partitions[pid];
-    CALL_CU_SAFE(cudaSetDevice(partition->processor.id));
-    context.config.scatter_func(partition);
+  for (int pid = 0; pid < context.pset->partition_count; pid++) {
+    SET_PROCESSOR(&context.pset->partitions[pid]);
+    context.config.par_scatter_func(&context.pset->partitions[pid]);
   }
-  partition_t* partition = &context.pset->partitions[0];
-  context.config.scatter_func(partition);  
+  context.time_comm += stopwatch_elapsed(&stopwatch);
   context.time_comm += stopwatch_elapsed(&stopwatch);
 }
 
@@ -102,11 +100,10 @@ inline PRIVATE void superstep_next() {
 }
 
 PRIVATE void engine_aggregate() {
-  if (context.config.aggr_func) {
-    context.config.aggr_func(&context.pset->partitions[0]);
-    for (int pid = 1; pid < context.pset->partition_count; pid++) {
-      CALL_CU_SAFE(cudaSetDevice(context.pset->partitions[pid].processor.id));
-      context.config.aggr_func(&context.pset->partitions[pid]);
+  if (context.config.par_aggr_func) {
+    for (int pid = 0; pid < context.pset->partition_count; pid++) {
+      SET_PROCESSOR(&context.pset->partitions[pid]);
+      context.config.par_aggr_func(&context.pset->partitions[pid]);
     }
   }
 }
@@ -139,19 +136,20 @@ error_t engine_init(engine_config_t* config) {
   pcount += 1;
   processor_t* processors = (processor_t*)calloc(pcount, sizeof(processor_t));
   assert(processors);
-  processors[0].type = PROCESSOR_CPU;
-  for (int gpu_id = 0; gpu_id < pcount - 1; gpu_id++) {
-    processors[gpu_id + 1].type = PROCESSOR_GPU;
-    processors[gpu_id + 1].id = gpu_id;
+  for (int gpu_id = 0; gpu_id < pcount; gpu_id++) {
+    processors[gpu_id].type = PROCESSOR_GPU;
+    processors[gpu_id].id = gpu_id;
   }
+  processors[pcount - 1].type = PROCESSOR_CPU;
 
   // partition the graph
-  stopwatch_t stopwatch_par;
+  stopwatch_t stopwatch_par;  
   stopwatch_start(&stopwatch_par);
+  id_t* par_labels;
   switch (config->par_algo) {
     case PAR_RANDOM:
       CALL_SAFE(partition_random(config->graph, (uint32_t)pcount, 13, 
-                                 &(context.par_labels)));
+                                 &(par_labels)));
       break;
     default:
       // TODO(abdullah): Use Lauro's logging library.
@@ -159,24 +157,25 @@ error_t engine_init(engine_config_t* config) {
       assert(false);
   }
   context.time_par = stopwatch_elapsed(&stopwatch_par);
-  CALL_SAFE(partition_set_initialize(config->graph, context.par_labels,
+  CALL_SAFE(partition_set_initialize(config->graph, par_labels,
                                      processors, pcount, config->msg_size, 
                                      &context.pset));
   free(processors);
+  free(par_labels);
 
   // callback the per-partition initialization function
-  if (context.config.init_func) {
-    context.config.init_func(&context.pset->partitions[0]);
-    for (int pid = 1; pid < context.pset->partition_count; pid++) {
-      partition_t* par = &context.pset->partitions[pid];
-      CALL_CU_SAFE(cudaSetDevice(par->processor.id));
-      context.config.init_func(par);
+  if (context.config.par_init_func) {
+    for (int pid = 0; pid < context.pset->partition_count; pid++) {
+      SET_PROCESSOR(&context.pset->partitions[pid]);
+      context.config.par_init_func(&context.pset->partitions[pid]);
     }
   }
 
   // get largest gpu graph
   uint64_t largest = 0;
-  for (int pid = 1; pid < context.pset->partition_count; pid++) {
+  for (int pid = 0; pid < context.pset->partition_count; pid++) {
+    partition_t* par = &context.pset->partitions[pid];
+    if (par->processor.type == PROCESSOR_CPU) continue;
     uint64_t vcount = context.pset->partitions[pid].subgraph.vertex_count;
     largest = vcount > largest ? vcount : largest;
   }
