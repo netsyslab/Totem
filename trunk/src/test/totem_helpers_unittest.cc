@@ -194,13 +194,19 @@ TEST_F(GraphHelper, SubGraph) {
 
 
 TEST_F(GraphHelper, AtomicOperations) {
-
-  // the following is used in all tests
+  // the following are used in all tests
   srand (time(NULL));
   int buf_count = 1000;
+  // we use three different arrays instead of one just to avoid casting 
+  // frequently to make the code more readable
   int* buf = (int*)malloc(buf_count * sizeof(int));
+  float* buf_f = (float*)malloc(buf_count * sizeof(float));
+  double* buf_d = (double*)malloc(buf_count * sizeof(double));
   for (int i = 0; i < buf_count; i++) {
     buf[i] = rand() % 100;
+    // add 0.5 to cover the fractional part in the test
+    buf_f[i] = (float)((float)buf[i] + 0.5);
+    buf_d[i] = (double)((double)buf[i] + 0.5);
   }
 
   // Atomic floating add
@@ -210,26 +216,26 @@ TEST_F(GraphHelper, AtomicOperations) {
   // single precision
   float sum_float = 0;
   for (int i = 0; i < buf_count; i++) {
-    sum_float += (float)buf[i];
+    sum_float += buf_f[i];
   }
   float p_sum_float = 0;
 #pragma omp parallel for
   for (int i = 0; i < buf_count; i++) {    
-    __sync_fetch_and_add_float(&p_sum_float, (float)buf[i]);
+    __sync_fetch_and_add_float(&p_sum_float, buf_f[i]);
   }
-  EXPECT_EQ(p_sum_float, sum_float);
+  EXPECT_FLOAT_EQ(p_sum_float, sum_float);
 
   // double precision
   double sum_double = 0;
   for (int i = 0; i < buf_count; i++) {
-    sum_double += (double)buf[i];
+    sum_double += buf_d[i];
   }
   double p_sum_double = 0;
 #pragma omp parallel for
   for (int i = 0; i < buf_count; i++) {
-    __sync_fetch_and_add_double(&p_sum_double, (double)buf[i]);
+    __sync_fetch_and_add_double(&p_sum_double, buf_d[i]);
   }
-  EXPECT_EQ(p_sum_double, sum_double);
+  EXPECT_DOUBLE_EQ(p_sum_double, sum_double);
 
 
   // Atomic integer and floating point min
@@ -246,31 +252,30 @@ TEST_F(GraphHelper, AtomicOperations) {
   EXPECT_EQ(p_min_int, min_int);
 
   // single precision
-  float factor = .67;
   float min_float = 0;
   for (int i = 0; i < buf_count; i++) {
-    float value = (float)buf[i] * factor;
-    min_float = min_float > value ? value : min_float;
+    min_float = min_float > buf_f[i] ? buf_f[i] : min_float;
   }
   float p_min_float = 0;
 #pragma omp parallel for
   for (int i = 0; i < buf_count; i++) {
-    float value = (float)buf[i] * factor;
-    __sync_fetch_and_min_float(&p_min_float, value);
+    __sync_fetch_and_min_float(&p_min_float, buf_f[i]);
   }
-  EXPECT_EQ(p_min_float, min_float);
+  EXPECT_FLOAT_EQ(p_min_float, min_float);
 
   // double precision
   double min_double = 0;
   for (int i = 0; i < buf_count; i++) {
-    double value = (double)buf[i] * factor;
-    min_double = min_double > value ? value : min_double;
+    min_double = min_double > buf_d[i] ? buf_d[i] : min_double;
   }
   double p_min_double = 0;
 #pragma omp parallel for
   for (int i = 0; i < buf_count; i++) {
-    double value = (double)buf[i] * factor;
-    __sync_fetch_and_min_double(&p_min_double, value);
+    __sync_fetch_and_min_double(&p_min_double, buf_d[i]);
   }
-  EXPECT_EQ(p_min_double, min_double);
+  EXPECT_DOUBLE_EQ(p_min_double, min_double);
+
+  free(buf);
+  free(buf_f);
+  free(buf_d);
 }
