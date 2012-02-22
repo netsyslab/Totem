@@ -3,8 +3,8 @@
  * This header file helps separating some internal functionality of the engine 
  * that must be placed in a .h file (e.g., templatized interfaces).
  * 
- * Currently it includes inbox scatter functions. These functions allow for 
- * distributing the data received at the inbox table into the algorithm's 
+ * Currently it includes inbox scatter/reduce functions. These functions allow
+ * for distributing the data received at the inbox table into the algorithm's 
  * state variables. The assumption is that they will be invoked from inside the 
  * engine_scatter_func callback function.
  *
@@ -28,7 +28,6 @@
 typedef struct engine_context_s {
   bool             initialized;
   partition_set_t* pset;
-  id_t*            par_labels;
   uint32_t         superstep;
   engine_config_t  config;
   bool*            finished;
@@ -43,21 +42,18 @@ typedef struct engine_context_s {
 extern engine_context_t context;
 
 /**
- * Fetches the vertex id and value of an entry in a grooves box
+ * Fetches the vertex id and value of an entry in a grooves box table
  */
 #define _FETCH_ENTRY(_box, _index, _vid, _value)    \
-  {                                                 \
-    uint64_t entry = (_box)->ht.entries[_index];    \
-    id_t key = HT_GET_KEY(entry);                   \
-    if (key == HT_KEY_EMPTY) break;                 \
+  do {                                              \
     T* values = (T*)(_box)->values;                 \
-    _value = values[HT_GET_VALUE(entry)];           \
-    _vid = GET_VERTEX_ID(key);                      \
-  }
+    _value = values[(_index)];                      \
+    _vid = (_box)->rmt_nbrs[(_index)];              \
+  } while(0)
 
 /**
  * The following macros encapsulate processor-agnostic element
- * reduction operations.
+ * reduction operations
  */
 #define _REDUCE_ENTRY_ADD(_box, _index, _dst)         \
   do {                                                \
@@ -83,21 +79,21 @@ extern engine_context_t context;
 template<typename T> 
 __global__ void scatter_add(grooves_box_table_t inbox, T* dst) {
   uint32_t index = THREAD_GLOBAL_INDEX;
-  if (index >= inbox.ht.size) return;
+  if (index >= inbox.count) return;
   _REDUCE_ENTRY_ADD(&inbox, index, dst);
 }
 
 template<typename T> 
 __global__ void scatter_min(grooves_box_table_t inbox, T* dst) {
   uint32_t index = THREAD_GLOBAL_INDEX;
-  if (index >= inbox.ht.size) return;
+  if (index >= inbox.count) return;
   _REDUCE_ENTRY_MIN(&inbox, index, dst);
 }
 
 template<typename T> 
 __global__ void scatter_max(grooves_box_table_t inbox, T* dst) {
   uint32_t index = THREAD_GLOBAL_INDEX;
-  if (index >= inbox.ht.size) return;
+  if (index >= inbox.count) return;
   _REDUCE_ENTRY_MAX(&inbox, index, dst);
 }
 
@@ -110,7 +106,7 @@ void engine_scatter_inbox_add(uint32_t pid, T* dst) {
     if (!inbox->count) continue;
     if (par->processor.type == PROCESSOR_GPU) {
       dim3 blocks, threads;
-      KERNEL_CONFIGURE(inbox->ht.size, blocks, threads);
+      KERNEL_CONFIGURE(inbox->count, blocks, threads);
       scatter_add<<<blocks, threads, 0, par->streams[1]>>>(*inbox, dst);
       CALL_CU_SAFE(cudaGetLastError());
     } else {
@@ -118,7 +114,7 @@ void engine_scatter_inbox_add(uint32_t pid, T* dst) {
       #ifdef _OPENMP
       #pragma omp parallel for
       #endif
-      for (int index = 0; index < inbox->ht.size; index++) {
+      for (int index = 0; index < inbox->count; index++) {
         _REDUCE_ENTRY_ADD(inbox, index, dst);
       }
     }
@@ -134,7 +130,7 @@ void engine_scatter_inbox_min(uint32_t pid, T* dst) {
     if (!inbox->count) continue;
     if (par->processor.type == PROCESSOR_GPU) {
       dim3 blocks, threads;
-      KERNEL_CONFIGURE(inbox->ht.size, blocks, threads);
+      KERNEL_CONFIGURE(inbox->count, blocks, threads);
       scatter_min<<<blocks, threads, 0, par->streams[1]>>>(*inbox, dst);
       CALL_CU_SAFE(cudaGetLastError());
     } else {
@@ -142,7 +138,7 @@ void engine_scatter_inbox_min(uint32_t pid, T* dst) {
       #ifdef _OPENMP
       #pragma omp parallel for
       #endif
-      for (int index = 0; index < inbox->ht.size; index++) {
+      for (int index = 0; index < inbox->count; index++) {
         _REDUCE_ENTRY_MIN(inbox, index, dst);
       }
     }
@@ -158,7 +154,7 @@ void engine_scatter_inbox_max(uint32_t pid, T* dst) {
     if (!inbox->count) continue;
     if (par->processor.type == PROCESSOR_GPU) {
       dim3 blocks, threads;
-      KERNEL_CONFIGURE(inbox->ht.size, blocks, threads);
+      KERNEL_CONFIGURE(inbox->count, blocks, threads);
       scatter_max<<<blocks, threads, 0, par->streams[1]>>>(*inbox, dst);
       CALL_CU_SAFE(cudaGetLastError());
     } else {
@@ -166,7 +162,7 @@ void engine_scatter_inbox_max(uint32_t pid, T* dst) {
       #ifdef _OPENMP
       #pragma omp parallel for
       #endif
-      for (int index = 0; index < inbox->ht.size; index++) {
+      for (int index = 0; index < inbox->count; index++) {
         _REDUCE_ENTRY_MAX(inbox, index, dst);
       }
     }
@@ -224,6 +220,14 @@ inline uint64_t engine_largest_gpu_partition() {
 inline void engine_report_finished(uint32_t pid) {
   assert(pid < context.pset->partition_count);
   context.finished[pid] = true;
+}
+
+inline id_t* engine_vertex_id_in_partition() {
+  return context.pset->id_in_partition;
+}
+
+inline id_t engine_vertex_id_in_partition(id_t v) {
+  return context.pset->id_in_partition[v];
 }
 
 inline double engine_time_initialization() {
