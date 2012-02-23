@@ -314,6 +314,7 @@ error_t page_rank_hybrid(graph_t* graph, float *rank_i, float** rank) {
     graph,
     PAR_RANDOM,
     sizeof(float),
+    NULL,
     page_rank,
     page_rank_scatter,
     page_rank_init,

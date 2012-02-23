@@ -126,6 +126,7 @@ class GraphEngineTest : public ::testing::Test {
       NULL,
       PAR_RANDOM,
       sizeof(int),
+      NULL,
       degree,
       degree_scatter,
       degree_init,
