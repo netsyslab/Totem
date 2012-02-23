@@ -61,6 +61,10 @@ inline PRIVATE void superstep_compute_synchronize() {
 inline PRIVATE void superstep_compute() {
   stopwatch_t stopwatch;
   stopwatch_start(&stopwatch);
+  // invoke the per superstep callback function
+  if (context.config.ss_kernel_func) {
+    context.config.ss_kernel_func();
+  }
   for (int pid = 0; pid < context.pset->partition_count; pid++) {
     // The kernel for GPU partitions is supposed not to block. The client is 
     // supposedly invoking the GPU kernel asynchronously, and using the compute 
@@ -116,6 +120,7 @@ error_t engine_execute() {
     superstep_compute();                   // compute phase
     if (superstep_check_finished()) break; // check for termination
     superstep_communicate();               // communication/synchronize phase
+    if (superstep_check_finished()) break; // check for termination
   }
   engine_aggregate();
   context.time_exec = stopwatch_elapsed(&stopwatch);
@@ -128,6 +133,7 @@ error_t engine_init(engine_config_t* config) {
   stopwatch_t stopwatch;
   stopwatch_start(&stopwatch);
   if (context.initialized) return FAILURE;
+  if (!config->par_kernel_func) return FAILURE;
   memset(&context, 0, sizeof(engine_context_t));
   context.config = *config;
 
@@ -148,8 +154,8 @@ error_t engine_init(engine_config_t* config) {
   id_t* par_labels;
   switch (config->par_algo) {
     case PAR_RANDOM:
-      CALL_SAFE(partition_random(config->graph, (uint32_t)pcount, 13, 
-                                 &(par_labels)));
+      CALL_SAFE(partition_random(config->graph, (uint32_t)pcount, 
+                                 13, &(par_labels)));
       break;
     default:
       // TODO(abdullah): Use Lauro's logging library.
@@ -171,7 +177,7 @@ error_t engine_init(engine_config_t* config) {
     }
   }
 
-  // get largest gpu graph
+  // get largest gpu partition
   uint64_t largest = 0;
   for (int pid = 0; pid < context.pset->partition_count; pid++) {
     partition_t* par = &context.pset->partitions[pid];

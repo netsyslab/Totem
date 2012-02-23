@@ -13,11 +13,12 @@
  *        graph,
  *        par_algo, 
  *        sizeof(T), 
- *        algo_kernel, 
- *        algo_scatter,
- *        algo_init,
- *        algo_finalize,
- *        algo_aggr,
+ *        algo_ss_kernel,
+ *        algo_par_kernel, 
+ *        algo_par_scatter,
+ *        algo_par_init,
+ *        algo_par_finalize,
+ *        algo_par_aggr,
  *      };
  *      engine_init(&config);
  *      engine_execute();
@@ -33,6 +34,13 @@
 
 #include "totem_comkernel.cuh"
 #include "totem_partition.h"
+
+/**
+ * Callback function at the beginning of a superstep. Note that this callback 
+ * is invoked once and is NOT per partition. It enables setting-up an 
+ * algorithm-specific global state at the beginning of each superstep
+ */
+typedef void(*engine_ss_kernel_func_t)();
 
 /**
  * Callback function on a partition at a superstep's compute phase. For GPU
@@ -84,22 +92,23 @@ typedef void(*engine_par_aggr_func_t)(partition_t*);
  * configure the execution engine
  */
 typedef struct engine_config_s {
-  graph_t*                   graph;             /**< the input graph */
-  partition_algorithm_t      par_algo;          /**< partitioning algorithm */
-  size_t                     msg_size;          /**< comm. element size */
-  engine_par_kernel_func_t   par_kernel_func;   /**< per par. comp. func */
-  engine_par_scatter_func_t  par_scatter_func;  /**< per par. scatter func */
-  engine_par_init_func_t     par_init_func;     /**< per par. init function */
-  engine_par_finalize_func_t par_finalize_func; /**< per par. finalize func */
-  engine_par_aggr_func_t     par_aggr_func;     /**< per partition results 
-                                                   aggregation func */
+  graph_t*                     graph;            /**< the input graph */
+  partition_algorithm_t        par_algo;         /**< partitioning algorithm */
+  size_t                       msg_size;         /**< comm. element size */
+  engine_ss_kernel_func_t      ss_kernel_func;   /**< per superstep init func */
+  engine_par_kernel_func_t     par_kernel_func;  /**< per par. comp. func */
+  engine_par_scatter_func_t    par_scatter_func; /**< per par. scatter func */
+  engine_par_init_func_t       par_init_func;    /**< per par. init function */
+  engine_par_finalize_func_t   par_finalize_func;/**< per par. finalize func */
+  engine_par_aggr_func_t       par_aggr_func;    /**< per partition results 
+                                                      aggregation func */
 } engine_config_t;
 
 /**
  * Default configuration
  */
 #define ENGINE_DEFAULT_CONFIG {NULL, PAR_RANDOM, sizeof(int), NULL, NULL, \
-      NULL, NULL, NULL}
+      NULL, NULL, NULL, NULL}
 
 /**
  * Returns the address of a neighbor's state. If remote, it returns a reference
