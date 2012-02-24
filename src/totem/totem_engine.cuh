@@ -89,13 +89,29 @@ typedef void(*engine_par_aggr_func_t)(partition_t*);
 
 /**
  * Engine configuration type. Algorithms use an instance of this type to
- * configure the execution engine
+ * configure the execution engine.
+ * TODO(abdullah) regarding the cpu_par_share member, ideally, we would like
+ * to split the graph among processors with different shares (e.g., imagine 
+ * a system with GPUs with different memory capacities).
  */
 typedef struct engine_config_s {
   graph_t*                     graph;            /**< the input graph */
-  partition_algorithm_t        par_algo;         /**< partitioning algorithm */
-  size_t                       msg_size;         /**< comm. element size */
   platform_t                   platform;         /**< the execution platform */
+  partition_algorithm_t        par_algo;         /**< partitioning algorithm */
+  float                        cpu_par_share;    /**< the percentage of edges 
+                                                      assigned to the CPU 
+                                                      partition. Note that the
+                                                      value of this member is
+                                                      relevant only in platforms
+                                                      that include a CPU with at
+                                                      least one GPU. The GPUs
+                                                      will be assigned equal 
+                                                      shares after deducting 
+                                                      the CPU share. If this
+                                                      is assigned to zero, then
+                                                      the graph is divided among
+                                                      all processors equally. */
+  size_t                       msg_size;         /**< comm. element size */
   engine_ss_kernel_func_t      ss_kernel_func;   /**< per superstep init func */
   engine_par_kernel_func_t     par_kernel_func;  /**< per par. comp. func */
   engine_par_scatter_func_t    par_scatter_func; /**< per par. scatter func */
@@ -108,8 +124,8 @@ typedef struct engine_config_s {
 /**
  * Default configuration
  */
-#define ENGINE_DEFAULT_CONFIG {NULL, PAR_RANDOM, sizeof(int), \
-      PLATFORM_ALL, NULL, NULL, NULL, NULL, NULL, NULL}
+#define ENGINE_DEFAULT_CONFIG {NULL, PLATFORM_ALL, PAR_RANDOM, 0,       \
+      sizeof(int), NULL, NULL, NULL, NULL, NULL, NULL}
 
 /**
  * Returns the address of a neighbor's state. If remote, it returns a reference

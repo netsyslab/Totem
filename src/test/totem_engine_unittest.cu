@@ -129,9 +129,10 @@ class EngineTest : public TestWithParam<platform_t> {
     graph_ = NULL;
     engine_config_t config  = {
       NULL,
-      PAR_RANDOM,
-      sizeof(int),
       GetParam(),
+      PAR_RANDOM,
+      0,
+      sizeof(int),
       NULL,
       degree,
       degree_scatter,
@@ -179,7 +180,6 @@ TEST_P(EngineTest, CompleteGraph) {
   TestGraph(DATA_FOLDER("complete_graph_300_nodes.totem"));
 }
 
-
 // From Google documentation:
 // In order to run value-parameterized tests, we need to instantiate them,
 // or bind them to a list of values which will be used as test parameters.
@@ -192,7 +192,6 @@ INSTANTIATE_TEST_CASE_P(EngineTestAllPlatforms, EngineTest,
                                PLATFORM_MULTI_GPU, // all available GPUs
                                PLATFORM_HYBRID,    // on CPU and one GPU
                                PLATFORM_ALL));     // on CPU and all GPUs
-                               
 
 #else
 

@@ -132,12 +132,11 @@ error_t engine_execute() {
 error_t engine_init(engine_config_t* config) {
   stopwatch_t stopwatch;
   stopwatch_start(&stopwatch);
-  if (context.initialized) return FAILURE;
-  if (!config->par_kernel_func) return FAILURE;
+  if (context.initialized || !config->par_kernel_func) return FAILURE;
   memset(&context, 0, sizeof(engine_context_t));
   context.config = *config;
 
-  // prepare state based on the chosen execution platform
+  // identify the execution platform
   int gpu_count;
   bool use_cpu = true;
   CALL_CU_SAFE(cudaGetDeviceCount(&gpu_count));
@@ -163,11 +162,32 @@ error_t engine_init(engine_config_t* config) {
   int pcount = use_cpu ? gpu_count + 1 : gpu_count;
   processor_t* processors = (processor_t*)calloc(pcount, sizeof(processor_t));
   assert(processors);
+
+  // identify the share of each partition  
+  // TODO(abdullah): ideally, we would like to split the graph among processors
+  // with different shares (e.g., a system with GPUs with different 
+  // memory capacities).
+  float* par_share = NULL;
+  if (config->cpu_par_share && use_cpu) {
+    par_share = (float*)calloc(pcount, sizeof(float));
+    par_share[pcount - 1] = config->cpu_par_share;
+    float gpu_par_share = (1.0 - config->cpu_par_share) / (float)gpu_count;
+    float total_share = config->cpu_par_share;
+    for (int gpu_id = 0; gpu_id < gpu_count - 1; gpu_id++) {
+      par_share[gpu_id] = gpu_par_share;
+      total_share += gpu_par_share;
+    }
+    par_share[gpu_count - 1] = 1.0 - total_share;
+  }
+  
+  // setup the processors' types and ids
   for (int gpu_id = 0; gpu_id < gpu_count; gpu_id++) {
     processors[gpu_id].type = PROCESSOR_GPU;
     processors[gpu_id].id = gpu_id;
   }
-  if (use_cpu) processors[pcount - 1].type = PROCESSOR_CPU;
+  if (use_cpu) {
+    processors[pcount - 1].type = PROCESSOR_CPU;
+  }
 
   // partition the graph
   stopwatch_t stopwatch_par;  
@@ -175,8 +195,8 @@ error_t engine_init(engine_config_t* config) {
   id_t* par_labels;
   switch (config->par_algo) {
     case PAR_RANDOM:
-      CALL_SAFE(partition_random(config->graph, (uint32_t)pcount, NULL,
-                                 13, &(par_labels)));
+      CALL_SAFE(partition_random(config->graph, (uint32_t)pcount, par_share,
+                                 13, &par_labels));
       break;
     default:
       // TODO(abdullah): Use Lauro's logging library.
@@ -189,6 +209,7 @@ error_t engine_init(engine_config_t* config) {
                                      &context.pset));
   free(processors);
   free(par_labels);
+  if (par_share) free(par_share);
 
   // callback the per-partition initialization function
   if (context.config.par_init_func) {

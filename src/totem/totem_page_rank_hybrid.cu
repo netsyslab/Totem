@@ -312,9 +312,10 @@ error_t page_rank_hybrid(graph_t* graph, float *rank_i, float** rank) {
   // initialize the engine
   engine_config_t config = {
     graph,
+    PLATFORM_ALL,
     PAR_RANDOM,
+    0,
     sizeof(float),
-    PLATFORM_CPU,
     NULL,
     page_rank,
     page_rank_scatter,
