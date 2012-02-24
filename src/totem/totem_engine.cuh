@@ -95,6 +95,7 @@ typedef struct engine_config_s {
   graph_t*                     graph;            /**< the input graph */
   partition_algorithm_t        par_algo;         /**< partitioning algorithm */
   size_t                       msg_size;         /**< comm. element size */
+  platform_t                   platform;         /**< the execution platform */
   engine_ss_kernel_func_t      ss_kernel_func;   /**< per superstep init func */
   engine_par_kernel_func_t     par_kernel_func;  /**< per par. comp. func */
   engine_par_scatter_func_t    par_scatter_func; /**< per par. scatter func */
@@ -107,8 +108,8 @@ typedef struct engine_config_s {
 /**
  * Default configuration
  */
-#define ENGINE_DEFAULT_CONFIG {NULL, PAR_RANDOM, sizeof(int), NULL, NULL, \
-      NULL, NULL, NULL, NULL}
+#define ENGINE_DEFAULT_CONFIG {NULL, PAR_RANDOM, sizeof(int), \
+      PLATFORM_ALL, NULL, NULL, NULL, NULL, NULL, NULL}
 
 /**
  * Returns the address of a neighbor's state. If remote, it returns a reference

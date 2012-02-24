@@ -9,6 +9,11 @@
 #include "totem_common_unittest.h"
 #include "totem_engine.cuh"
 
+#if GTEST_HAS_PARAM_TEST
+
+using ::testing::TestWithParam;
+using ::testing::Values;
+
 int* degree_g;
 int* degree_h;
 
@@ -114,7 +119,7 @@ void degree_aggr(partition_t* par) {
   }
 }
 
-class GraphEngineTest : public ::testing::Test {
+class EngineTest : public TestWithParam<platform_t> {
  protected:
   graph_t* graph_;
   engine_config_t config_;
@@ -126,6 +131,7 @@ class GraphEngineTest : public ::testing::Test {
       NULL,
       PAR_RANDOM,
       sizeof(int),
+      GetParam(),
       NULL,
       degree,
       degree_scatter,
@@ -141,53 +147,58 @@ class GraphEngineTest : public ::testing::Test {
       graph_finalize(graph_);
     }
   }
+
+  void TestGraph(const char* graph_str) {
+    graph_initialize(graph_str, false, &graph_);
+    EXPECT_FALSE(graph_->directed);
+    config_.graph = graph_;
+    engine_init(&config_);
+    degree_g = (int*)calloc(graph_->vertex_count, sizeof(int));
+    if (engine_largest_gpu_partition()) {
+      degree_h = (int*)mem_alloc(engine_largest_gpu_partition() * sizeof(int));
+    }
+    engine_execute();
+    if (engine_largest_gpu_partition()) mem_free(degree_h);
+    for (id_t v = 0; v < graph_->vertex_count; v++) {
+      int nbr_count = graph_->vertices[v + 1] - graph_->vertices[v];
+      EXPECT_EQ(nbr_count, degree_g[v]);
+    }
+    free(degree_g);
+  }
 };
 
-TEST_F(GraphEngineTest, ChainGraph) {
-  graph_initialize(DATA_FOLDER("chain_1000_nodes.totem"), false, &graph_);
-  EXPECT_FALSE(graph_->directed);
-  config_.graph = graph_;
-  engine_init(&config_);
-  degree_g = (int*)calloc(graph_->vertex_count, sizeof(int));
-  degree_h = (int*)mem_alloc(engine_largest_gpu_partition() * sizeof(int));
-  engine_execute();
-  mem_free(degree_h);
-  for (id_t v = 0; v < graph_->vertex_count; v++) {
-    int nbr_count = graph_->vertices[v + 1] - graph_->vertices[v];
-    EXPECT_EQ(nbr_count, degree_g[v]);
-  }
-  free(degree_g);
+TEST_P(EngineTest, ChainGraph) {
+  TestGraph(DATA_FOLDER("chain_1000_nodes.totem"));
 }
 
-TEST_F(GraphEngineTest, StarGraph) {
-  graph_initialize(DATA_FOLDER("star_1000_nodes.totem"), false, &graph_);
-  EXPECT_FALSE(graph_->directed);
-  config_.graph = graph_;
-  engine_init(&config_);
-  degree_g = (int*)calloc(graph_->vertex_count, sizeof(int));
-  degree_h = (int*)mem_alloc(engine_largest_gpu_partition() * sizeof(int));
-  engine_execute();
-  mem_free(degree_h);
-  for (id_t v = 0; v < graph_->vertex_count; v++) {
-    int nbr_count = graph_->vertices[v + 1] - graph_->vertices[v];
-    EXPECT_EQ(nbr_count, degree_g[v]);
-  }
-  free(degree_g);
+TEST_P(EngineTest, StarGraph) {
+  TestGraph(DATA_FOLDER("star_1000_nodes.totem"));
 }
 
-TEST_F(GraphEngineTest, CompleteGraph) {
-  graph_initialize(DATA_FOLDER("complete_graph_300_nodes.totem"),
-                   false, &graph_);
-  EXPECT_FALSE(graph_->directed);
-  config_.graph = graph_;
-  engine_init(&config_);
-  degree_g = (int*)calloc(graph_->vertex_count, sizeof(int));
-  degree_h = (int*)mem_alloc(engine_largest_gpu_partition() * sizeof(int));
-  engine_execute();
-  mem_free(degree_h);
-  for (id_t v = 0; v < graph_->vertex_count; v++) {
-    int nbr_count = graph_->vertices[v + 1] - graph_->vertices[v];
-    EXPECT_EQ(nbr_count, degree_g[v]);
-  }
-  free(degree_g);
+TEST_P(EngineTest, CompleteGraph) {
+  TestGraph(DATA_FOLDER("complete_graph_300_nodes.totem"));
 }
+
+
+// From Google documentation:
+// In order to run value-parameterized tests, we need to instantiate them,
+// or bind them to a list of values which will be used as test parameters.
+//
+// Values() receives a list of parameters and the framework will execute the
+// whole set of tests BFSTest for each element of Values()
+INSTANTIATE_TEST_CASE_P(EngineTestAllPlatforms, EngineTest, 
+                        Values(PLATFORM_CPU,       // on the CPU only
+                               PLATFORM_GPU,       // on one GPU only
+                               PLATFORM_MULTI_GPU, // all available GPUs
+                               PLATFORM_HYBRID,    // on CPU and one GPU
+                               PLATFORM_ALL));     // on CPU and all GPUs
+                               
+
+#else
+
+// From Google documentation:
+// Google Test may not support value-parameterized tests with some
+// compilers. This dummy test keeps gtest_main linked in.
+TEST_P(DummyTest, ValueParameterizedTestsAreNotSupportedOnThisPlatform) {}
+
+#endif  // GTEST_HAS_PARAM_TEST

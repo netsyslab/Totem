@@ -82,6 +82,20 @@ const weight_t DEFAULT_EDGE_WEIGHT =  1;
 const weight_t DEFAULT_VERTEX_VALUE = 0;
 
 /**
+ * Execution platform options. The engine will create a partition per processor.
+ * Note that if the system has one GPU only, then ENGINE_PLATFORM_GPU and 
+ * ENGINE_PLATFORM_MULTI_GPU will be the same, as well as ENGINE_PLATFORM_HYBRID
+ * and ENGINE_PLATFORM_ALL. 
+ */
+typedef enum {
+  PLATFORM_CPU,       // execute on the CPU only
+  PLATFORM_GPU,       // execute on one GPU only
+  PLATFORM_MULTI_GPU, // execute on all available GPUs
+  PLATFORM_HYBRID,    // execute on the CPU and one GPU
+  PLATFORM_ALL        // execute on all processors (CPU and all GPUs)
+} platform_t;
+
+/**
  * A graph type based on adjacency list representation.
  * Modified from [Harish07]:
  * A graph G(V,E) is represented as adjacency list, with adjacency lists packed

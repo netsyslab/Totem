@@ -306,6 +306,7 @@ error_t bfs_hybrid(graph_t* graph, id_t src, uint32_t** cost) {
     graph,
     PAR_RANDOM,
     sizeof(uint32_t),
+    PLATFORM_ALL,
     bfs_ss,
     bfs,
     bfs_scatter,
