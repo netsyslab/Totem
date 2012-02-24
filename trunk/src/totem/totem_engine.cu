@@ -137,16 +137,37 @@ error_t engine_init(engine_config_t* config) {
   memset(&context, 0, sizeof(engine_context_t));
   context.config = *config;
 
-  int pcount;
-  CALL_CU_SAFE(cudaGetDeviceCount(&pcount));
-  pcount += 1;
+  // prepare state based on the chosen execution platform
+  int gpu_count;
+  bool use_cpu = true;
+  CALL_CU_SAFE(cudaGetDeviceCount(&gpu_count));
+  switch(config->platform) {
+    case PLATFORM_CPU:
+      gpu_count = 0;
+      break;
+    case PLATFORM_GPU:
+      gpu_count = 1;
+      use_cpu = false;
+      break;
+    case PLATFORM_MULTI_GPU:
+      use_cpu = false;
+      break;
+    case PLATFORM_HYBRID:
+      gpu_count = 1;
+      break;
+    case PLATFORM_ALL:
+      break;
+    default:
+      assert(false);        
+  }
+  int pcount = use_cpu ? gpu_count + 1 : gpu_count;
   processor_t* processors = (processor_t*)calloc(pcount, sizeof(processor_t));
   assert(processors);
-  for (int gpu_id = 0; gpu_id < pcount; gpu_id++) {
+  for (int gpu_id = 0; gpu_id < gpu_count; gpu_id++) {
     processors[gpu_id].type = PROCESSOR_GPU;
     processors[gpu_id].id = gpu_id;
   }
-  processors[pcount - 1].type = PROCESSOR_CPU;
+  if (use_cpu) processors[pcount - 1].type = PROCESSOR_CPU;
 
   // partition the graph
   stopwatch_t stopwatch_par;  
@@ -154,7 +175,7 @@ error_t engine_init(engine_config_t* config) {
   id_t* par_labels;
   switch (config->par_algo) {
     case PAR_RANDOM:
-      CALL_SAFE(partition_random(config->graph, (uint32_t)pcount, 
+      CALL_SAFE(partition_random(config->graph, (uint32_t)pcount, NULL,
                                  13, &(par_labels)));
       break;
     default:
