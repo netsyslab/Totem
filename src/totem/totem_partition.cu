@@ -43,8 +43,8 @@ error_t partition_modularity(graph_t* graph, partition_set_t* partition_set,
   return SUCCESS;
 }
 
-error_t partition_random(graph_t* graph, int number_of_partitions,
-                         unsigned int seed, id_t** partition_labels) {
+PRIVATE error_t partition_random(graph_t* graph, int number_of_partitions,
+                                 unsigned int seed, id_t** partition_labels) {
   // Check pre-conditions
   if (graph == NULL) {
     // TODO(elizeu): Use Lauro's beautiful logging library.
@@ -76,15 +76,20 @@ error_t partition_random(graph_t* graph, int number_of_partitions,
   return SUCCESS;
 }
 
-error_t partition_random_fraction(graph_t* graph, int partition_count,
-                                  float* partition_fraction, unsigned int seed,
-                                  id_t** partition_labels) {
+error_t partition_random(graph_t* graph, int partition_count, 
+                         float* partition_fraction, uint32_t seed,
+                         id_t** partition_labels) {
   // Check pre-conditions
   *partition_labels = NULL;
-  if (graph == NULL || partition_fraction == NULL ||
-      (partition_count <= 0) || (graph->vertex_count == 0)) {
+  if (graph == NULL || (partition_count <= 0) || (graph->vertex_count == 0)) {
     return FAILURE;
   }
+
+  // check if the client is asking for equal divide among partitions
+  if (partition_fraction == NULL) {
+    return partition_random(graph, partition_count, seed, partition_labels);
+  }
+
   // Ensure the partition fractions are >= 0.0 and add up to 1.0
   float sum = 0.0;
   for (int par_id = 0; par_id < partition_count; par_id++) {
