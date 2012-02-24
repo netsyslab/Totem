@@ -304,9 +304,10 @@ error_t bfs_hybrid(graph_t* graph, id_t src, uint32_t** cost) {
   // initialize the engine
   engine_config_t config = {
     graph,
-    PAR_RANDOM,
-    sizeof(uint32_t),
     PLATFORM_ALL,
+    PAR_RANDOM,
+    0,
+    sizeof(uint32_t),
     bfs_ss,
     bfs,
     bfs_scatter,
