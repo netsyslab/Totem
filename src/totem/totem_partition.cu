@@ -167,13 +167,16 @@ PRIVATE void init_allocate_partitions_space(partition_set_t* pset) {
     graph_t* subgraph = &partition->subgraph;
     if (subgraph->vertex_count > 0) {
       subgraph->vertices = 
-        (id_t*)mem_alloc(sizeof(id_t) * (subgraph->vertex_count + 1));
+        (id_t*)malloc(sizeof(id_t) * (subgraph->vertex_count + 1));
+      assert(subgraph->vertices);
       partition->map = (id_t*)calloc(subgraph->vertex_count, sizeof(id_t));
       if (subgraph->edge_count > 0) {
-        subgraph->edges = (id_t*)mem_alloc(sizeof(id_t) * subgraph->edge_count);
+        subgraph->edges = (id_t*)malloc(sizeof(id_t) * subgraph->edge_count);
+        assert(subgraph->edges);
         if (pset->graph->weighted) {
-          subgraph->weights = (weight_t*)mem_alloc(sizeof(weight_t) * 
-                                                   subgraph->edge_count);
+          subgraph->weights = (weight_t*)malloc(sizeof(weight_t) * 
+                                                subgraph->edge_count);
+          assert(subgraph->weights);
         }
       }
     }
@@ -295,10 +298,10 @@ error_t partition_set_finalize(partition_set_t* pset) {
         CALL_CU_SAFE(cudaFree(subgraph->weights));
     } else {
       assert(partition->processor.type == PROCESSOR_CPU);
-      if (subgraph->vertices) mem_free(subgraph->vertices);
-      if (subgraph->edges) mem_free(subgraph->edges);
+      if (subgraph->vertices) free(subgraph->vertices);
+      if (subgraph->edges) free(subgraph->edges);
       if (pset->weighted && subgraph->weights) {
-        mem_free(subgraph->weights);
+        free(subgraph->weights);
       }
     }
     if (subgraph->vertices) free(partition->map);
