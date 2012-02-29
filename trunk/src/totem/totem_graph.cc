@@ -287,12 +287,12 @@ PRIVATE void allocate_graph(uint64_t vertex_count, uint64_t edge_count,
   assert(graph);
   // Allocate the buffers. An extra slot is allocated in the vertices array to
   // make it easy to calculate the number of neighbors of the last vertex.
-  graph->vertices = (id_t*)mem_alloc((vertex_count + 1) * sizeof(id_t));
-  graph->edges    = (id_t*)mem_alloc(edge_count * sizeof(id_t));
+  graph->vertices = (id_t*)malloc((vertex_count + 1) * sizeof(id_t));
+  graph->edges    = (id_t*)malloc(edge_count * sizeof(id_t));
   graph->weights  = weighted ? 
-    (weight_t*)mem_alloc(edge_count * sizeof(weight_t)) : NULL;
+    (weight_t*)malloc(edge_count * sizeof(weight_t)) : NULL;
   graph->values  = valued ?
-    (weight_t*)mem_alloc(vertex_count * sizeof(weight_t)) : NULL;
+    (weight_t*)malloc(vertex_count * sizeof(weight_t)) : NULL;
   // Ensure buffer allocation
   assert((graph->vertices && graph->edges) && 
          ((valued && graph->values) || (!valued && !graph->values)) && 
@@ -536,10 +536,10 @@ error_t graph_finalize(graph_t* graph) {
   assert(graph);
 
   // those buffers are allocated via mem_alloc
-  if (graph->vertex_count != 0) mem_free(graph->vertices);
-  if (graph->edge_count != 0) mem_free(graph->edges);
-  if (graph->weighted && graph->edge_count != 0) mem_free(graph->weights);
-  if (graph->valued && graph->vertex_count != 0) mem_free(graph->values);
+  if (graph->vertex_count != 0) free(graph->vertices);
+  if (graph->edge_count != 0) free(graph->edges);
+  if (graph->weighted && graph->edge_count != 0) free(graph->weights);
+  if (graph->valued && graph->vertex_count != 0) free(graph->values);
 
   // this is always allocated via malloc
   free(graph);
