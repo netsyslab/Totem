@@ -261,7 +261,7 @@ TEST_F(GraphPartitionTest , RandomPartitionFractionSingleNodeGraph) {
   EXPECT_EQ(SUCCESS, partition_random(graph_, 10, partition_fraction, 13,
                                       &partitions_));
   EXPECT_TRUE(partitions_[0] < 10);
-  EXPECT_TRUE(partitions_[0] == 0);
+  EXPECT_EQ(9, partitions_[0]);
   free(partition_fraction);
 }
 
