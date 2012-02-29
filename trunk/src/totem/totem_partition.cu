@@ -110,18 +110,13 @@ error_t partition_random(graph_t* graph, int partition_count,
   srand(seed);
 
   // Allocate all the partition ids to the id vector
-  id_t part_id = 0;
-  uint64_t num_in_partition = 0;
-  for (uint64_t i = 0; i < graph->vertex_count; i++) {
-    /* If the fraction of vertices in the graph for the given partition id has
-     * been met, continue with the next partition id. */
-    while (((float)num_in_partition / (float)graph->vertex_count) >= 
-        partition_fraction[part_id]) {
-      part_id++;
-      num_in_partition = 0;
+  id_t v = 0;
+  for (int pid = 0; pid < partition_count; pid++) {
+    uint64_t end = (pid == partition_count - 1) ? graph->vertex_count : 
+      v + ((double)graph->vertex_count * partition_fraction[pid]);
+    for (; v < end; v++) {
+      partitions[v] = pid;
     }
-    partitions[i] = part_id;
-    num_in_partition++;
   }
 
   /* Randomize the vector to achieve a random distribution. This is using the
@@ -175,12 +170,10 @@ PRIVATE void init_allocate_partitions_space(partition_set_t* pset) {
         (id_t*)mem_alloc(sizeof(id_t) * (subgraph->vertex_count + 1));
       partition->map = (id_t*)calloc(subgraph->vertex_count, sizeof(id_t));
       if (subgraph->edge_count > 0) {
-        subgraph->edges = (id_t*)mem_alloc(sizeof(id_t) * 
-                                           subgraph->edge_count);
+        subgraph->edges = (id_t*)mem_alloc(sizeof(id_t) * subgraph->edge_count);
         if (pset->graph->weighted) {
-          subgraph->weights = 
-            (weight_t*)mem_alloc(sizeof(weight_t) * 
-                                 subgraph->edge_count);
+          subgraph->weights = (weight_t*)mem_alloc(sizeof(weight_t) * 
+                                                   subgraph->edge_count);
         }
       }
     }
