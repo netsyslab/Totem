@@ -51,14 +51,6 @@
 #define SET_PARTITION_ID(_vid, _pid) ((_vid) | ((_pid) << MAX_LOG_VERTEX_COUNT))
 
 /**
- * Partitioning algorithm type
- */
-typedef enum {
-  PAR_RANDOM = 0
-} partition_algorithm_t;
-
-
-/**
  * A graph partition type based on adjacency list representation. The vertex ids
  * in the edges list have the partition id encoded in the most significant bits.
  * This allows for a vertex to have a neighbor in another partition.

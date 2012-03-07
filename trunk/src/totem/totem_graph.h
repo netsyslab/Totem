@@ -86,6 +86,7 @@ const weight_t DEFAULT_VERTEX_VALUE = 0;
  * Note that if the system has one GPU only, then ENGINE_PLATFORM_GPU and 
  * ENGINE_PLATFORM_MULTI_GPU will be the same, as well as ENGINE_PLATFORM_HYBRID
  * and ENGINE_PLATFORM_ALL. 
+ * TODO(abdullah): this should eventually be moved to the farmework's interface
  */
 typedef enum {
   PLATFORM_CPU,       // execute on the CPU only
@@ -94,6 +95,14 @@ typedef enum {
   PLATFORM_HYBRID,    // execute on the CPU and one GPU
   PLATFORM_ALL        // execute on all processors (CPU and all GPUs)
 } platform_t;
+
+/**
+ * Partitioning algorithm type
+ * TODO(abdullah): this should eventually be moved to the farmework's interface
+ */
+typedef enum {
+  PAR_RANDOM = 0
+} partition_algorithm_t;
 
 /**
  * A graph type based on adjacency list representation.
@@ -138,6 +147,29 @@ typedef struct component_set_s {
   id_t     biggest;      /**< the id of the biggest component */
 } component_set_t;
 
+/**
+ * Defines attributes used to configure a framework-based algoritm
+ */
+typedef struct totem_attr_s {
+  partition_algorithm_t par_algo;      /**< partitioning algorithm */
+  platform_t            platform;      /**< the execution platform */
+  float                 cpu_par_share; /**< the percentage of edges 
+                                           assigned to the CPU 
+                                           partition. Note that the
+                                           value of this member is
+                                           relevant only in platforms
+                                           that include a CPU with at
+                                           least one GPU. The GPUs
+                                           will be assigned equal 
+                                           shares after deducting 
+                                           the CPU share. If this
+                                           is assigned to zero, then
+                                           the graph is divided among
+                                           all processors equally. */
+} totem_attr_t;
+
+// default attributes
+#define TOTEM_DEFAULT_ATTR {PAR_RANDOM, PLATFORM_ALL, 0}
 
 /**
  * reads a graph from the given file and builds a graph data type.
@@ -197,17 +229,22 @@ graph_t* graph_create_bidirectional(graph_t* graph, id_t** reverse_indices);
  * number of edges needed to reach every vertex V from the source vertex.
  * Its implementation follows Breadth First Search variation based on
  * in [Harish07] using the CPU and GPU, respectively.
- * @param[in] source_id id of the source vertex
- * @param[in] graph the graph to perform BFS on
+ *
+ * @param[in]  graph  the graph to perform BFS on
+ * @param[in]  src_id id of the source vertex
+ * @param[in]  attr   attributes used to configure a hybrid-based algoritm
+ * @param[out] cost   the distance (number of of hops) of each vertex from the
+ *                    source
  * @return array where the indexes are the vertices' ids and the values are the
  * number of edges needed to reach the vertex. Note that the function gives the
  * ownership of the array and, thus, the client is responsible for freeing the
  * memory area.
 */
-error_t bfs_cpu(graph_t* graph, id_t source_id, uint32_t** cost);
-error_t bfs_gpu(graph_t* graph, id_t source_id, uint32_t** cost);
-error_t bfs_vwarp_gpu(graph_t* graph, id_t source_id, uint32_t** cost);
-error_t bfs_hybrid(graph_t* graph, id_t src, uint32_t** cost);
+error_t bfs_cpu(graph_t* graph, id_t src_id, uint32_t** cost);
+error_t bfs_gpu(graph_t* graph, id_t src_id, uint32_t** cost);
+error_t bfs_vwarp_gpu(graph_t* graph, id_t src_id, uint32_t** cost);
+error_t bfs_hybrid(graph_t* graph, totem_attr_t* attr, id_t src_id,
+                   uint32_t** cost);
 
 /**
  * Given a weighted graph \f$G = (V, E, w)\f$ and a source vertex \f$v\inV\f$,
@@ -220,14 +257,10 @@ error_t bfs_hybrid(graph_t* graph, id_t src, uint32_t** cost);
  * @param[out] shortest_distances the length of the computed shortest paths
  * @return a flag indicating whether the operation succeeded or not.
  */
-error_t dijkstra_cpu(const graph_t* graph, id_t source_id,
-                     weight_t** shortest_distances);
-
-error_t dijkstra_gpu(const graph_t* graph, id_t source_id,
-                     weight_t** shortest_distances);
-
-error_t dijkstra_vwarp_gpu(const graph_t* graph, id_t source_id,
-                           weight_t** shortest_distances);
+error_t dijkstra_cpu(const graph_t* graph, id_t src_id, weight_t** distance);
+error_t dijkstra_gpu(const graph_t* graph, id_t src_id, weight_t** distance);
+error_t dijkstra_vwarp_gpu(const graph_t* graph, id_t src_id, 
+                           weight_t** distance);
 
 /**
  * Given a weighted graph \f$G = (V, E, w)\f$, the All Pairs Shortest Path
@@ -249,6 +282,7 @@ error_t apsp_gpu(graph_t* graph, weight_t** path_ret);
  * consideration the incoming edges, while the first two consider the outgoing
  * edges.
  * @param[in]  graph the graph to run PageRank on
+ * @param[in]  attr   attributes used to configure a hybrid-based algoritm
  * @param[in]  rank_i the initial rank for each node in the graph (NULL
  *                    indicates uniform initial rankings as default)
  * @param[out] rank the PageRank output array (must be freed via mem_free)
@@ -259,7 +293,8 @@ error_t page_rank_gpu(graph_t* graph, float* rank_i, float** rank);
 error_t page_rank_vwarp_gpu(graph_t* graph, float* rank_i, float** rank);
 error_t page_rank_incoming_cpu(graph_t* graph, float* rank_i, float** rank);
 error_t page_rank_incoming_gpu(graph_t* graph, float* rank_i, float** rank);
-error_t page_rank_hybrid(graph_t* graph, float* rank_i, float** rank);
+error_t page_rank_hybrid(graph_t* graph, totem_attr_t* attr, float* rank_i, 
+                         float** rank);
 
 
 /**

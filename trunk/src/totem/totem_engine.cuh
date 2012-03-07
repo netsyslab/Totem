@@ -124,7 +124,7 @@ typedef struct engine_config_s {
 /**
  * Default configuration
  */
-#define ENGINE_DEFAULT_CONFIG {NULL, PLATFORM_ALL, PAR_RANDOM, 0,       \
+#define ENGINE_DEFAULT_CONFIG {NULL, PLATFORM_ALL, PAR_RANDOM, 0, \
       sizeof(int), NULL, NULL, NULL, NULL, NULL, NULL}
 
 /**

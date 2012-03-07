@@ -300,7 +300,8 @@ PRIVATE void page_rank_finalize(partition_t* partition) {
 }
 
 // TODO(abdullah): Add partitioning algorithm as an input parameter
-error_t page_rank_hybrid(graph_t* graph, float *rank_i, float** rank) {
+error_t page_rank_hybrid(graph_t* graph, totem_attr_t* attr, 
+                         float *rank_i, float** rank) {
   // check for special cases
   bool finished = false;
   error_t rc = check_special_cases(graph, rank, &finished);
@@ -312,9 +313,9 @@ error_t page_rank_hybrid(graph_t* graph, float *rank_i, float** rank) {
   // initialize the engine
   engine_config_t config = {
     graph,
-    PLATFORM_ALL,
-    PAR_RANDOM,
-    0,
+    attr->platform,
+    attr->par_algo,
+    attr->cpu_par_share,
     sizeof(float),
     NULL,
     page_rank,
