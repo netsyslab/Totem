@@ -285,7 +285,8 @@ PRIVATE void bfs_finalize(partition_t* par) {
 }
 
 // TODO(abdullah): Add partitioning algorithm as an input parameter
-error_t bfs_hybrid(graph_t* graph, id_t src, uint32_t** cost) {
+error_t bfs_hybrid(graph_t* graph, totem_attr_t* attr, 
+                   id_t src, uint32_t** cost) {
   // check for special cases
   bool finished = false;
   error_t rc = check_special_cases(graph, src, cost, &finished);
@@ -304,9 +305,9 @@ error_t bfs_hybrid(graph_t* graph, id_t src, uint32_t** cost) {
   // initialize the engine
   engine_config_t config = {
     graph,
-    PLATFORM_ALL,
-    PAR_RANDOM,
-    0,
+    attr->platform,
+    attr->par_algo,
+    attr->cpu_par_share,
     sizeof(uint32_t),
     bfs_ss,
     bfs,

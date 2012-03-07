@@ -92,7 +92,6 @@ inline PRIVATE void superstep_communicate() {
     context.config.par_scatter_func(&context.pset->partitions[pid]);
   }
   context.time_comm += stopwatch_elapsed(&stopwatch);
-  context.time_comm += stopwatch_elapsed(&stopwatch);
 }
 
 /**

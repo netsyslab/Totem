@@ -22,16 +22,31 @@ using ::testing::Values;
 
 typedef error_t(*BFSFunction)(graph_t*, id_t, uint32_t**);
 
-class BFSTest : public TestWithParam<BFSFunction> {
+// This is to allow testing the vanilla bfs functions and the hybrid one
+// that is based on the framework. Note that have a different signature
+// of the hybrid algorithm forced this work-around.
+typedef struct bfs_param_s {
+  bool          hybrid; // true when using the hybrid algorithm
+  BFSFunction   func;   // the vanilla bfs function if hybrid flag is false
+} bfs_param_t;
+
+class BFSTest : public TestWithParam<bfs_param_t*> {
  public:
   virtual void SetUp() {
     // Ensure the minimum CUDA architecture is supported
     CUDA_CHECK_VERSION();
-    bfs = GetParam();
+    bfs_param = GetParam();
   }
 
+  error_t TestGraph(graph_t* graph, id_t src, uint32_t** cost) {
+    if (bfs_param->hybrid) {
+      totem_attr_t attr = TOTEM_DEFAULT_ATTR;
+      return bfs_hybrid(graph, &attr, src, cost);
+    } 
+    return bfs_param->func(graph, src, cost);
+  }
  protected:
-   BFSFunction bfs;
+  bfs_param_t* bfs_param;
 };
 
 // Tests BFS for empty graphs.
@@ -42,10 +57,10 @@ TEST_P(BFSTest, Empty) {
   graph.edge_count = 0;
 
   uint32_t* cost;
-  EXPECT_EQ(FAILURE, bfs(&graph, 0, &cost));
+  EXPECT_EQ(FAILURE, TestGraph(&graph, 0, &cost));
   EXPECT_EQ((uint32_t*)NULL, cost);
 
-  EXPECT_EQ(FAILURE, bfs(&graph, 99, &cost));
+  EXPECT_EQ(FAILURE, TestGraph(&graph, 99, &cost));
   EXPECT_EQ((uint32_t*)NULL, cost);
 }
 
@@ -55,22 +70,22 @@ TEST_P(BFSTest, SingleNode) {
   graph_initialize(DATA_FOLDER("single_node.totem"), false, &graph);
 
   uint32_t* cost;
-  EXPECT_EQ(SUCCESS, bfs(graph, 0, &cost));
+  EXPECT_EQ(SUCCESS, TestGraph(graph, 0, &cost));
   EXPECT_FALSE((uint32_t*)NULL == cost);
   EXPECT_EQ((uint32_t)0, cost[0]);
   mem_free(cost);
 
-  EXPECT_EQ(FAILURE, bfs(graph, 1, &cost));
+  EXPECT_EQ(FAILURE, TestGraph(graph, 1, &cost));
   EXPECT_EQ((uint32_t*)NULL, cost);
   graph_finalize(graph);
 
   graph_initialize(DATA_FOLDER("single_node_loop.totem"), false, &graph);
-  EXPECT_EQ(SUCCESS, bfs(graph, 0, &cost));
+  EXPECT_EQ(SUCCESS, TestGraph(graph, 0, &cost));
   EXPECT_FALSE(NULL == cost);
   EXPECT_EQ((uint32_t)0, cost[0]);
   mem_free(cost);
 
-  EXPECT_EQ(FAILURE, bfs(graph, 1, &cost));
+  EXPECT_EQ(FAILURE, TestGraph(graph, 1, &cost));
   EXPECT_EQ((uint32_t*)NULL, cost);
   graph_finalize(graph);
 }
@@ -83,17 +98,17 @@ TEST_P(BFSTest, EmptyEdges) {
   // First vertex as source
   id_t source = 0;
   uint32_t* cost;
-  EXPECT_EQ(SUCCESS, bfs(graph, source, &cost));
+  EXPECT_EQ(SUCCESS, TestGraph(graph, source, &cost));
   EXPECT_FALSE(NULL == cost);
   EXPECT_EQ((uint32_t)0, cost[source]);
-  for(id_t vertex = source + 1; vertex < graph->vertex_count; vertex++){
+  for(id_t vertex = source + 1; vertex < graph->vertex_count; vertex++) {
     EXPECT_EQ(INFINITE, cost[vertex]);
   }
   mem_free(cost);
 
   // Last vertex as source
   source = graph->vertex_count - 1;
-  EXPECT_EQ(SUCCESS, bfs(graph, source, &cost));
+  EXPECT_EQ(SUCCESS, TestGraph(graph, source, &cost));
   EXPECT_EQ((uint32_t)0, cost[source]);
   for(id_t vertex = source; vertex < graph->vertex_count - 1; vertex++){
     EXPECT_EQ(INFINITE, cost[vertex]);
@@ -102,14 +117,14 @@ TEST_P(BFSTest, EmptyEdges) {
 
   // A vertex in the middle as source
   source = 199;
-  EXPECT_EQ(SUCCESS, bfs(graph, source, &cost));
+  EXPECT_EQ(SUCCESS, TestGraph(graph, source, &cost));
   for(id_t vertex = 0; vertex < graph->vertex_count; vertex++) {
     EXPECT_EQ((vertex == source) ? (uint32_t)0 : INFINITE, cost[vertex]);
   }
   mem_free(cost);
 
   // Non existent vertex source
-  EXPECT_EQ(FAILURE, bfs(graph, graph->vertex_count, &cost));
+  EXPECT_EQ(FAILURE, TestGraph(graph, graph->vertex_count, &cost));
   EXPECT_EQ((uint32_t*)NULL, cost);
 
   graph_finalize(graph);
@@ -123,7 +138,7 @@ TEST_P(BFSTest, Chain) {
   // First vertex as source
   id_t source = 0;
   uint32_t* cost;
-  EXPECT_EQ(SUCCESS, bfs(graph, source, &cost));
+  EXPECT_EQ(SUCCESS, TestGraph(graph, source, &cost));
   EXPECT_FALSE(NULL == cost);
   for(id_t vertex = source; vertex < graph->vertex_count; vertex++){
     EXPECT_EQ(vertex, cost[vertex]);
@@ -132,7 +147,7 @@ TEST_P(BFSTest, Chain) {
 
   // Last vertex as source
   source = graph->vertex_count - 1;
-  EXPECT_EQ(SUCCESS, bfs(graph, source, &cost));
+  EXPECT_EQ(SUCCESS, TestGraph(graph, source, &cost));
   for(id_t vertex = source; vertex < graph->vertex_count; vertex++){
     EXPECT_EQ(source - vertex, cost[vertex]);
   }
@@ -140,14 +155,14 @@ TEST_P(BFSTest, Chain) {
 
   // A vertex in the middle as source
   source = 199;
-  EXPECT_EQ(SUCCESS, bfs(graph, source, &cost));
+  EXPECT_EQ(SUCCESS, TestGraph(graph, source, &cost));
   for(id_t vertex = 0; vertex < graph->vertex_count; vertex++) {
     EXPECT_EQ((uint32_t)abs(source - vertex), cost[vertex]);
   }
   mem_free(cost);
 
   // Non existent vertex source
-  EXPECT_EQ(FAILURE, bfs(graph, graph->vertex_count, &cost));
+  EXPECT_EQ(FAILURE, TestGraph(graph, graph->vertex_count, &cost));
   EXPECT_EQ((uint32_t*)NULL, cost);
 
   graph_finalize(graph);
@@ -162,7 +177,7 @@ TEST_P(BFSTest, CompleteGraph) {
   // First vertex as source
   id_t source = 0;
   uint32_t* cost;
-  EXPECT_EQ(SUCCESS, bfs(graph, source, &cost));
+  EXPECT_EQ(SUCCESS, TestGraph(graph, source, &cost));
   EXPECT_EQ((uint32_t)0, cost[source]);
   for(id_t vertex = source + 1; vertex < graph->vertex_count; vertex++){
     EXPECT_EQ((uint32_t)1, cost[vertex]);
@@ -171,7 +186,7 @@ TEST_P(BFSTest, CompleteGraph) {
 
   // Last vertex as source
   source = graph->vertex_count - 1;
-  EXPECT_EQ(SUCCESS, bfs(graph, source, &cost));
+  EXPECT_EQ(SUCCESS, TestGraph(graph, source, &cost));
   EXPECT_EQ((uint32_t)0, cost[source]);
   for(id_t vertex = 0; vertex < source; vertex++) {
     EXPECT_EQ((uint32_t)1, cost[vertex]);
@@ -180,14 +195,14 @@ TEST_P(BFSTest, CompleteGraph) {
 
   // A vertex source in the middle
   source = 199;
-  EXPECT_EQ(SUCCESS, bfs(graph, source, &cost));
+  EXPECT_EQ(SUCCESS, TestGraph(graph, source, &cost));
   for(id_t vertex = 0; vertex < graph->vertex_count; vertex++) {
     EXPECT_EQ((uint32_t)((source == vertex) ? 0 : 1), cost[vertex]);
   }
   mem_free(cost);
 
   // Non existent vertex source
-  EXPECT_EQ(FAILURE, bfs(graph, graph->vertex_count, &cost));
+  EXPECT_EQ(FAILURE, TestGraph(graph, graph->vertex_count, &cost));
   EXPECT_EQ((uint32_t*)NULL, cost);
 
   graph_finalize(graph);
@@ -201,7 +216,7 @@ TEST_P(BFSTest, Star) {
   // First vertex as source
   id_t source = 0;
   uint32_t* cost;
-  EXPECT_EQ(SUCCESS, bfs(graph, source, &cost));
+  EXPECT_EQ(SUCCESS, TestGraph(graph, source, &cost));
   EXPECT_EQ((uint32_t)0, cost[source]);
   for(id_t vertex = source + 1; vertex < graph->vertex_count; vertex++){
     EXPECT_EQ((uint32_t)1, cost[vertex]);
@@ -210,7 +225,7 @@ TEST_P(BFSTest, Star) {
 
   // Last vertex as source
   source = graph->vertex_count - 1;
-  EXPECT_EQ(SUCCESS, bfs(graph, source, &cost));
+  EXPECT_EQ(SUCCESS, TestGraph(graph, source, &cost));
   EXPECT_EQ((uint32_t)0, cost[source]);
   EXPECT_EQ((uint32_t)1, cost[0]);
   for(id_t vertex = 1; vertex < source - 1; vertex++) {
@@ -220,7 +235,7 @@ TEST_P(BFSTest, Star) {
 
   // A vertex source in the middle
   source = 199;
-  EXPECT_EQ(SUCCESS, bfs(graph, source, &cost));
+  EXPECT_EQ(SUCCESS, TestGraph(graph, source, &cost));
   EXPECT_EQ((uint32_t)1, cost[0]);
   for(id_t vertex = 1; vertex < graph->vertex_count; vertex++) {
     EXPECT_EQ((uint32_t)((source == vertex) ? 0 : 2), cost[vertex]);
@@ -228,7 +243,7 @@ TEST_P(BFSTest, Star) {
   mem_free(cost);
 
   // Non existent vertex source
-  EXPECT_EQ(FAILURE, bfs(graph, graph->vertex_count, &cost));
+  EXPECT_EQ(FAILURE, TestGraph(graph, graph->vertex_count, &cost));
   EXPECT_EQ((uint32_t*)NULL, cost);
 
   graph_finalize(graph);
@@ -236,16 +251,23 @@ TEST_P(BFSTest, Star) {
 
 // TODO(lauro): Add test cases for not well defined structures.
 
+// Values() seems to accept only pointers, hence the possible parameters
+// are defined here, and a pointer to each ot them is used.
+bfs_param_t bfs_params[] = {{false, &bfs_cpu},
+                            {false, &bfs_gpu},
+                            {false, &bfs_vwarp_gpu},
+                            {true, NULL}};
+
 // From Google documentation:
 // In order to run value-parameterized tests, we need to instantiate them,
 // or bind them to a list of values which will be used as test parameters.
 //
 // Values() receives a list of parameters and the framework will execute the
 // whole set of tests BFSTest for each element of Values()
-INSTANTIATE_TEST_CASE_P(BFSGPUAndCPUTest, BFSTest, Values(&bfs_cpu, 
-                                                          &bfs_gpu,
-                                                          &bfs_vwarp_gpu,
-                                                          &bfs_hybrid));
+INSTANTIATE_TEST_CASE_P(BFSGPUAndCPUTest, BFSTest, Values(&bfs_params[0], 
+                                                          &bfs_params[1], 
+                                                          &bfs_params[2], 
+                                                          &bfs_params[3]));
 
 #else
 
