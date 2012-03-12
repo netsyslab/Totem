@@ -37,6 +37,11 @@ typedef struct engine_context_s {
   double           time_exec;
   double           time_comm;
   double           time_comp;
+  int              partition_count;
+  uint64_t         vertex_count[MAX_PARTITION_COUNT];
+  uint64_t         edge_count[MAX_PARTITION_COUNT];
+  uint64_t         rmt_vertex_count[MAX_PARTITION_COUNT];
+  uint64_t         rmt_edge_count[MAX_PARTITION_COUNT];
 } engine_context_t;
 
 extern engine_context_t context;
@@ -194,8 +199,7 @@ void engine_set_outbox(uint32_t pid, T value) {
 }
 
 inline uint32_t engine_partition_count() {
-  assert(context.pset);
-  return context.pset->partition_count;
+  return context.partition_count;
 }
 
 inline uint32_t engine_superstep() {
@@ -249,5 +253,22 @@ inline double engine_time_computation() {
 inline double engine_time_communication() {
   return context.time_comm;
 }
+
+inline double engine_par_rmt_vertex_count(uint32_t pid) {
+  return context.rmt_vertex_count[pid];
+}
+
+inline double engine_par_rmt_edge_count(uint32_t pid) {
+  return context.rmt_edge_count[pid];
+}
+
+inline double engine_par_vertex_count(uint32_t pid) {
+  return context.vertex_count[pid];
+}
+
+inline double engine_par_edge_count(uint32_t pid) {
+  return context.edge_count[pid];
+}
+
 
 #endif  // TOTEM_ENGINE_INTERNAL_CUH
