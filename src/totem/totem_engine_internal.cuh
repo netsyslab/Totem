@@ -37,6 +37,7 @@ typedef struct engine_context_s {
   double           time_exec;
   double           time_comm;
   double           time_comp;
+  double           time_gpu_comp;
   int              partition_count;
   uint64_t         vertex_count[MAX_PARTITION_COUNT];
   uint64_t         edge_count[MAX_PARTITION_COUNT];
@@ -248,6 +249,10 @@ inline double engine_time_execution() {
 
 inline double engine_time_computation() {
   return context.time_comp;
+}
+
+inline double engine_time_gpu_computation() {
+  return context.time_gpu_comp;
 }
 
 inline double engine_time_communication() {

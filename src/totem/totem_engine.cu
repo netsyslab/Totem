@@ -52,6 +52,9 @@ inline PRIVATE void superstep_compute_synchronize() {
     partition_t* par = &context.pset->partitions[pid];
     if (par->processor.type == PROCESSOR_CPU) continue;
     CALL_CU_SAFE(cudaStreamSynchronize(par->streams[1]));
+    float time;
+    cudaEventElapsedTime(&time, par->event_start, par->event_end);
+    context.time_gpu_comp += time;
   }
 }
 
@@ -69,8 +72,15 @@ inline PRIVATE void superstep_compute() {
     // The kernel for GPU partitions is supposed not to block. The client is 
     // supposedly invoking the GPU kernel asynchronously, and using the compute 
     // "stream" available for each partition
-    SET_PROCESSOR(&context.pset->partitions[pid]);
-    context.config.par_kernel_func(&context.pset->partitions[pid]);
+    partition_t* par = &context.pset->partitions[pid];
+    if (par->processor.type == PROCESSOR_GPU) {
+      CALL_CU_SAFE(cudaEventRecord(par->event_start, par->streams[1]));
+      SET_PROCESSOR(par);
+    }
+    context.config.par_kernel_func(par);
+    if (par->processor.type == PROCESSOR_GPU) {
+      CALL_CU_SAFE(cudaEventRecord(par->event_end, par->streams[1]));
+    }
   }
   superstep_compute_synchronize();
   context.time_comp += stopwatch_elapsed(&stopwatch);

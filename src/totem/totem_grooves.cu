@@ -302,10 +302,8 @@ PRIVATE void init_gpu_state(partition_set_t* pset) {
   for (int pid = 0; pid < pcount; pid++) {
     partition_t* partition = &pset->partitions[pid];
     if (partition->processor.type == PROCESSOR_GPU) {
-      // set device context, create the streams and the tables for this gpu
+      // set device context, create the tables for this gpu
       CALL_CU_SAFE(cudaSetDevice(partition->processor.id));
-      CALL_CU_SAFE(cudaStreamCreate(&partition->streams[0]));
-      CALL_CU_SAFE(cudaStreamCreate(&partition->streams[1]));
       grooves_box_table_t* outbox_h = NULL;
       init_table_gpu(partition->outbox, pcount - 1, pset->msg_size, 
                      &partition->outbox_d, &outbox_h);
@@ -384,8 +382,6 @@ PRIVATE void finalize_outbox(partition_set_t* pset) {
     assert(partition->outbox);
     if (partition->processor.type == PROCESSOR_GPU) {
       CALL_CU_SAFE(cudaSetDevice(partition->processor.id));
-      CALL_CU_SAFE(cudaStreamDestroy(partition->streams[0]));
-      CALL_CU_SAFE(cudaStreamDestroy(partition->streams[1]));
       finalize_gpu_disable_peer_access(pid, pset);
       finalize_table_gpu(partition->outbox_d, partition->outbox, pcount - 1);
     } else {
