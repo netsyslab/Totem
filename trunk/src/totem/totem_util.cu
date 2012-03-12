@@ -37,3 +37,6 @@ error_t check_cuda_version() {
   return SUCCESS;
 }
 
+int compare_ids(const void *a, const void *b) {
+  return (*(const id_t*)a) - (*(const id_t*)b);
+}

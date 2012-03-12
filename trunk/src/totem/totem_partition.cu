@@ -9,6 +9,7 @@
 #include "totem_comkernel.cuh"
 #include "totem_mem.h"
 #include "totem_partition.h"
+#include "totem_util.h"
 
 error_t partition_modularity(graph_t* graph, partition_set_t* partition_set,
                              double* modularity) {
@@ -238,6 +239,18 @@ PRIVATE void init_build_partitions(partition_set_t* pset, id_t* plabels,
   }
 }
 
+PRIVATE void init_sort_nbrs(partition_set_t* pset) {
+  uint32_t pcount = pset->partition_count;
+  for (uint32_t pid = 0; pid < pcount; pid++) {
+    graph_t* subgraph = &pset->partitions[pid].subgraph;
+    for (id_t v = 0; v < subgraph->vertex_count; v++) {
+      id_t* nbrs = &subgraph->edges[subgraph->vertices[v]];
+      qsort(nbrs, subgraph->vertices[v+1] - subgraph->vertices[v], 
+            sizeof(id_t), compare_ids);
+    }
+  }
+}
+
 PRIVATE void init_build_partitions_gpu(partition_set_t* pset) {  
   uint32_t pcount = pset->partition_count;
   for (uint32_t pid = 0; pid < pcount; pid++) {
@@ -272,6 +285,9 @@ error_t partition_set_initialize(graph_t* graph, id_t* plabels,
 
   // Build the state of each partition
   init_build_partitions(*pset, plabels, pproc);
+
+  // Sort nbrs of each each vertex to improve access locality
+  init_sort_nbrs(*pset);
 
   // Initialize grooves' inbox and outbox state
   grooves_initialize(*pset);
