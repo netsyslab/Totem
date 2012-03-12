@@ -27,5 +27,11 @@
  */
 error_t check_cuda_version();
 
+/**
+ * Compares two vertex ids, used by the qsort function
+ * @return 0 if equal; 1, if *a > *b; and -1, if *b > *a
+ */
+int compare_ids(const void *a, const void *b);
+
 #endif  // TOTEM_UTIL_H
 
