@@ -86,7 +86,7 @@ const weight_t DEFAULT_VERTEX_VALUE = 0;
  * Note that if the system has one GPU only, then ENGINE_PLATFORM_GPU and 
  * ENGINE_PLATFORM_MULTI_GPU will be the same, as well as ENGINE_PLATFORM_HYBRID
  * and ENGINE_PLATFORM_ALL. 
- * TODO(abdullah): this should eventually be moved to the farmework's interface
+ * TODO(abdullah): this should eventually be moved to the framework's interface
  */
 typedef enum {
   PLATFORM_CPU,       // execute on the CPU only
@@ -98,7 +98,7 @@ typedef enum {
 
 /**
  * Partitioning algorithm type
- * TODO(abdullah): this should eventually be moved to the farmework's interface
+ * TODO(abdullah): this should eventually be moved to the framework's interface
  */
 typedef enum {
   PAR_RANDOM = 0
