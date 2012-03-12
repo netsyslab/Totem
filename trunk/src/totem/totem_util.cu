@@ -38,5 +38,9 @@ error_t check_cuda_version() {
 }
 
 int compare_ids(const void *a, const void *b) {
-  return (*(const id_t*)a) - (*(const id_t*)b);
+  id_t v1 = *((id_t*)a);
+  id_t v2 = *((id_t*)b);
+  if (v1 < v2) return -1;
+  if (v1 == v2) return 0;
+  return 1;
 }
