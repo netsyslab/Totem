@@ -139,9 +139,10 @@ error_t engine_init(engine_config_t* config) {
   int gpu_count;
   bool use_cpu = true;
   CALL_CU_SAFE(cudaGetDeviceCount(&gpu_count));
-  switch(config->platform) {
+  switch(context.config.platform) {
     case PLATFORM_CPU:
       gpu_count = 0;
+      context.config.cpu_par_share = 0;
       break;
     case PLATFORM_GPU:
       gpu_count = 1;
@@ -167,11 +168,12 @@ error_t engine_init(engine_config_t* config) {
   // with different shares (e.g., a system with GPUs with different 
   // memory capacities).
   float* par_share = NULL;
-  if (config->cpu_par_share && use_cpu) {
+  if (context.config.cpu_par_share && use_cpu) {
     par_share = (float*)calloc(pcount, sizeof(float));
-    par_share[pcount - 1] = config->cpu_par_share;
-    float gpu_par_share = (1.0 - config->cpu_par_share) / (float)gpu_count;
-    float total_share = config->cpu_par_share;
+    par_share[pcount - 1] = context.config.cpu_par_share;
+    float gpu_par_share = 
+      (1.0 - context.config.cpu_par_share) / (float)gpu_count;
+    float total_share = context.config.cpu_par_share;
     for (int gpu_id = 0; gpu_id < gpu_count - 1; gpu_id++) {
       par_share[gpu_id] = gpu_par_share;
       total_share += gpu_par_share;
@@ -192,9 +194,10 @@ error_t engine_init(engine_config_t* config) {
   stopwatch_t stopwatch_par;  
   stopwatch_start(&stopwatch_par);
   id_t* par_labels;
-  switch (config->par_algo) {
+  switch (context.config.par_algo) {
     case PAR_RANDOM:
-      CALL_SAFE(partition_random(config->graph, (uint32_t)pcount, par_share,
+      CALL_SAFE(partition_random(context.config.graph, 
+                                 (uint32_t)pcount, par_share,
                                  13, &par_labels));
       break;
     default:
@@ -203,8 +206,9 @@ error_t engine_init(engine_config_t* config) {
       assert(false);
   }
   context.time_par = stopwatch_elapsed(&stopwatch_par);
-  CALL_SAFE(partition_set_initialize(config->graph, par_labels,
-                                     processors, pcount, config->msg_size, 
+  CALL_SAFE(partition_set_initialize(context.config.graph, par_labels,
+                                     processors, pcount, 
+                                     context.config.msg_size, 
                                      &context.pset));
   free(processors);
   free(par_labels);
@@ -218,10 +222,16 @@ error_t engine_init(engine_config_t* config) {
     }
   }
 
-  // get largest gpu partition
+  // get largest gpu partition and initialize the stat information
+  // stored in the context
+  context.partition_count = context.pset->partition_count;
   uint64_t largest = 0;
   for (int pid = 0; pid < context.pset->partition_count; pid++) {
     partition_t* par = &context.pset->partitions[pid];
+    context.vertex_count[pid]     = par->subgraph.vertex_count;
+    context.edge_count[pid]       = par->subgraph.edge_count;
+    context.rmt_vertex_count[pid] = par->rmt_vertex_count;
+    context.rmt_edge_count[pid]   = par->rmt_edge_count;
     if (par->processor.type == PROCESSOR_CPU) continue;
     uint64_t vcount = context.pset->partitions[pid].subgraph.vertex_count;
     largest = vcount > largest ? vcount : largest;
