@@ -101,6 +101,13 @@ typedef struct partition_s {
                                         to launch communication operations,
                                         while the second one is used to launch
                                         kernel calls (computation) */
+  cudaEvent_t         event_start;   /**< used to record the start kernel 
+                                        execution event for GPU partitions. to
+                                        measure the kernel's execution time */
+  cudaEvent_t         event_end;     /**< used to record the end kernel 
+                                        execution event for GPU partitions. 
+                                        Together with event_start, it is used to
+                                        measure the kernel's execution time */
   uint32_t            rmt_edge_count; /**< the number of remote edges (edges
                                           that start in this partition and ends
                                           in another one) */

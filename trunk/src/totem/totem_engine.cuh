@@ -144,7 +144,6 @@ typedef struct engine_config_s {
     }                                                                   \
   } while(0)
 
-
 /**
  * Sets up the state required for hybrid CPU-GPU processing. It creats a set
  * of partitions equal to the number of GPUs plus one on the CPU.
@@ -221,6 +220,7 @@ double engine_time_execution();
  * Returns the total time spent on the computation phase
  */
 double engine_time_computation();
+double engine_time_gpu_computation();
 
 /**
  * Returns the total time spent on the communication phase
