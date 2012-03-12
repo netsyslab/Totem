@@ -10,6 +10,7 @@
 #include "totem_grooves.h"
 #include "totem_mem.h"
 #include "totem_partition.h"
+#include "totem_util.h"
 
 PRIVATE 
 void init_get_rmt_nbrs(partition_t* par, uint32_t vcount, uint32_t pcount,
@@ -41,15 +42,6 @@ void init_get_rmt_nbrs(partition_t* par, uint32_t vcount, uint32_t pcount,
   }
   CALL_SAFE(hash_table_get_keys_cpu(ht, nbrs, &par->rmt_vertex_count));
   hash_table_finalize_cpu(ht);
-}
-
-PRIVATE 
-int compare_ids(const void *a, const void *b) {
-  id_t v1 = *((id_t*)a);
-  id_t v2 = *((id_t*)b);
-  if (v1 < v2) return -1;
-  if (v1 == v2) return 0;
-  return 1;
 }
 
 PRIVATE 
