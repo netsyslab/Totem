@@ -193,7 +193,7 @@ class GraphPartitionTest : public ::testing::Test {
         } else {
           ASSERT_EQ(PROCESSOR_CPU, partition->processor.type);
           for (uint32_t bindex = 0; bindex < bcount; bindex++) {
-            int* values = (int*)inbox[pid].values;
+            int* values = (int*)inbox[bindex].values;
             for (int i = 0; i < inbox[bindex].count; i++) {
               EXPECT_EQ(pid, values[i]);
             }
