@@ -131,7 +131,6 @@ error_t partition_random(graph_t* graph, int partition_count,
 
   *partition_labels = partitions;
   return SUCCESS;
-
 }
 
 PRIVATE error_t init_allocate_struct_space(graph_t* graph, int pcount, 
@@ -153,12 +152,15 @@ PRIVATE error_t init_allocate_struct_space(graph_t* graph, int pcount,
 PRIVATE void init_compute_partitions_sizes(partition_set_t* pset, 
                                            id_t* plabels) {
   graph_t* graph = pset->graph;
+  #ifdef _OPENMP
+  #pragma omp parallel for
+  #endif
   for (id_t vid = 0; vid < graph->vertex_count; vid++) {
     id_t nbr_count = graph->vertices[vid + 1] - graph->vertices[vid];
     int pid = plabels[vid];
     partition_t* partition = &(pset->partitions[pid]);
-    partition->subgraph.vertex_count += 1;
-    partition->subgraph.edge_count += nbr_count;
+    __sync_fetch_and_add(&(partition->subgraph.vertex_count), 1);
+    __sync_fetch_and_add(&(partition->subgraph.edge_count), nbr_count);
   }
 }
 
@@ -243,6 +245,9 @@ PRIVATE void init_sort_nbrs(partition_set_t* pset) {
   uint32_t pcount = pset->partition_count;
   for (uint32_t pid = 0; pid < pcount; pid++) {
     graph_t* subgraph = &pset->partitions[pid].subgraph;
+    #ifdef _OPENMP
+    #pragma omp parallel for
+    #endif
     for (id_t v = 0; v < subgraph->vertex_count; v++) {
       id_t* nbrs = &subgraph->edges[subgraph->vertices[v]];
       qsort(nbrs, subgraph->vertices[v+1] - subgraph->vertices[v], 
