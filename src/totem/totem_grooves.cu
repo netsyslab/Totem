@@ -24,6 +24,7 @@ void init_get_rmt_nbrs(partition_t* par, uint32_t vcount, uint32_t pcount,
   hash_table_t* ht;
   CALL_SAFE(hash_table_initialize_cpu(vcount - subg->vertex_count, &ht));
   *count_per_par = (int*)calloc(pcount - 1, sizeof(int));
+  // TODO (abdullah): parallelize this loop
   for (id_t vid = 0; vid < subg->vertex_count; vid++) {
     for (id_t i = subg->vertices[vid]; i < subg->vertices[vid + 1]; i++) {
       id_t nbr = subg->edges[i];
@@ -56,6 +57,7 @@ void init_map_rmt_nbrs(partition_t* par, uint32_t pcount, id_t* nbrs,
   CALL_SAFE(hash_table_initialize_cpu(par->rmt_vertex_count, ht));
   int cur_pid = GET_PARTITION_ID(nbrs[0]);
   uint32_t count = 0;
+  // TODO (abdullah): parallelize this loop
   for (int v = 0; v < par->rmt_vertex_count; v++) {
     int my_pid = GET_PARTITION_ID(nbrs[v]);
     if (my_pid != cur_pid) {
@@ -83,6 +85,9 @@ void init_map_rmt_nbrs(partition_t* par, uint32_t pcount, id_t* nbrs,
     }
   }
   // create the final mapping
+  #ifdef _OPENMP
+  #pragma omp parallel for
+  #endif
   for (int v = 0; v < par->rmt_vertex_count; v++) {
     int index; HT_LOOKUP(ht, nbrs[v], index);
     id_t* pnbrs = (*rmt_nbrs)[GROOVES_BOX_INDEX(GET_PARTITION_ID(nbrs[v]),
@@ -94,6 +99,9 @@ void init_map_rmt_nbrs(partition_t* par, uint32_t pcount, id_t* nbrs,
 PRIVATE
 void init_update_subgraph(partition_t* par, hash_table_t* ht) {
   graph_t* subg = &(par->subgraph);
+  #ifdef _OPENMP
+  #pragma omp parallel for
+  #endif
   for (id_t vid = 0; vid < subg->vertex_count; vid++) {
     for (id_t i = subg->vertices[vid]; i < subg->vertices[vid + 1]; i++) {
       id_t nbr = subg->edges[i];
