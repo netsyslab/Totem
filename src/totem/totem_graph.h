@@ -83,9 +83,9 @@ const weight_t DEFAULT_VERTEX_VALUE = 0;
 
 /**
  * Execution platform options. The engine will create a partition per processor.
- * Note that if the system has one GPU only, then ENGINE_PLATFORM_GPU and 
+ * Note that if the system has one GPU only, then ENGINE_PLATFORM_GPU and
  * ENGINE_PLATFORM_MULTI_GPU will be the same, as well as ENGINE_PLATFORM_HYBRID
- * and ENGINE_PLATFORM_ALL. 
+ * and ENGINE_PLATFORM_ALL.
  * TODO(abdullah): this should eventually be moved to the framework's interface
  */
 typedef enum {
@@ -133,7 +133,7 @@ typedef struct graph_s {
 } graph_t;
 
 /**
- * Defines a data type for a graph's connected components. components are 
+ * Defines a data type for a graph's connected components. components are
  * identified by numbers [0 - count). The marker array identifies for each
  * vertex the id of the component the vertex is part of.
  */
@@ -153,15 +153,15 @@ typedef struct component_set_s {
 typedef struct totem_attr_s {
   partition_algorithm_t par_algo;      /**< partitioning algorithm */
   platform_t            platform;      /**< the execution platform */
-  float                 cpu_par_share; /**< the percentage of edges 
-                                           assigned to the CPU 
+  float                 cpu_par_share; /**< the percentage of edges
+                                           assigned to the CPU
                                            partition. Note that the
                                            value of this member is
                                            relevant only in platforms
                                            that include a CPU with at
                                            least one GPU. The GPUs
-                                           will be assigned equal 
-                                           shares after deducting 
+                                           will be assigned equal
+                                           shares after deducting
                                            the CPU share. If this
                                            is assigned to zero, then
                                            the graph is divided among
@@ -194,13 +194,13 @@ error_t graph_finalize(graph_t* graph);
  * Creates a subgraph from a graph. the graph is de-allocated via graph_finalize
  * @param[in] graph the graph to extract the subgraph from
  * @param[in] mask identifies the vertices to be included in the subgraph
- * @param[out] subgraph a reference to allocated subgraph 
+ * @param[out] subgraph a reference to allocated subgraph
  * @return generic success or failure
  */
 error_t get_subgraph(const graph_t* graph, bool* mask, graph_t** subgraph);
 
 /**
- * Creates a subgraph such that all nodes has at least one incoming or outgoing 
+ * Creates a subgraph such that all nodes has at least one incoming or outgoing
  * edge. The subgraph is de-allocated via graph_finalize
  * @param[in] graph the graph to extract the subgraph from
  * @param[out] subgraph a reference to allocated subgraph
@@ -259,7 +259,7 @@ error_t bfs_hybrid(graph_t* graph, totem_attr_t* attr, id_t src_id,
  */
 error_t dijkstra_cpu(const graph_t* graph, id_t src_id, weight_t** distance);
 error_t dijkstra_gpu(const graph_t* graph, id_t src_id, weight_t** distance);
-error_t dijkstra_vwarp_gpu(const graph_t* graph, id_t src_id, 
+error_t dijkstra_vwarp_gpu(const graph_t* graph, id_t src_id,
                            weight_t** distance);
 
 /**
@@ -293,7 +293,7 @@ error_t page_rank_gpu(graph_t* graph, float* rank_i, float** rank);
 error_t page_rank_vwarp_gpu(graph_t* graph, float* rank_i, float** rank);
 error_t page_rank_incoming_cpu(graph_t* graph, float* rank_i, float** rank);
 error_t page_rank_incoming_gpu(graph_t* graph, float* rank_i, float** rank);
-error_t page_rank_hybrid(graph_t* graph, totem_attr_t* attr, float* rank_i, 
+error_t page_rank_hybrid(graph_t* graph, totem_attr_t* attr, float* rank_i,
                          float** rank);
 
 
@@ -360,11 +360,20 @@ error_t stcon_cpu(const graph_t* graph, id_t source_id, id_t destination_id,
 error_t stcon_gpu(const graph_t* graph, id_t source_id, id_t destination_id,
                   bool* connected);
 
+/**
+ * Given a graph, count the number of edges leaving each node.
+ * @param[in] graph the graph to use
+ * @param[out] node_degree pointer to output list of node degrees, indexed by
+ *             vertex id
+ * @return a flag indicating whether the operation succeeded or not.
+*/
+error_t node_degree_cpu(const graph_t* graph, id_t** node_degree);
+error_t node_degree_gpu(const graph_t* graph, id_t** node_degree);
 
 /**
  * Identifies the weakly connected components in the graph
- * @param[in] graph 
- * @param[out] comp_set a component set structure which 
+ * @param[in] graph
+ * @param[out] comp_set a component set structure which
  *             identifies the components in the graph
  * @return generic success or failure
  */
