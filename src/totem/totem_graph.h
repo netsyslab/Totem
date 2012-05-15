@@ -380,6 +380,16 @@ error_t node_degree_gpu(const graph_t* graph, id_t** node_degree);
 error_t get_components_cpu(graph_t* graph, component_set_t** comp_set_ret);
 
 /**
+ * Calculate betweenness centrality scores for unweighted graphs
+ * @param[in] graph the graph to use
+ * @param[out] centrality_score the output list of betweenness centrality scores
+ *             per vertex
+ * @return generic success or failure
+ */
+error_t betweenness_unweighted_cpu(const graph_t* graph,
+                                   weight_t** centrality_score);
+
+/**
  * De-allocates a component_set_t object
  * @param[in] comp_set a reference to component set type to be de-allocated
  * @return generic success or failure
