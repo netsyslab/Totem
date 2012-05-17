@@ -26,7 +26,7 @@ error_t partition_modularity(graph_t* graph, partition_set_t* partition_set,
     partition_t* partition = &partition_set->partitions[p];
     graph_t* subgraph = &partition->subgraph;
     for (id_t v = 0; v < subgraph->vertex_count; v++) {
-      for (id_t e = subgraph->vertices[v]; 
+      for (id_t e = subgraph->vertices[v];
            e < subgraph->vertices[v + 1]; e++) {
         if ((uint64_t)p == GET_PARTITION_ID(subgraph->edges[e])) {
           local_edges++;
@@ -77,7 +77,7 @@ PRIVATE error_t partition_random(graph_t* graph, int number_of_partitions,
   return SUCCESS;
 }
 
-error_t partition_random(graph_t* graph, int partition_count, 
+error_t partition_random(graph_t* graph, int partition_count,
                          float* partition_fraction, uint32_t seed,
                          id_t** partition_labels) {
   // Check pre-conditions
@@ -113,7 +113,7 @@ error_t partition_random(graph_t* graph, int partition_count,
   // Allocate all the partition ids to the id vector
   id_t v = 0;
   for (int pid = 0; pid < partition_count; pid++) {
-    uint64_t end = (pid == partition_count - 1) ? graph->vertex_count : 
+    uint64_t end = (pid == partition_count - 1) ? graph->vertex_count :
       v + ((double)graph->vertex_count * partition_fraction[pid]);
     for (; v < end; v++) {
       partitions[v] = pid;
@@ -133,8 +133,8 @@ error_t partition_random(graph_t* graph, int partition_count,
   return SUCCESS;
 }
 
-PRIVATE error_t init_allocate_struct_space(graph_t* graph, int pcount, 
-                                           size_t msg_size, 
+PRIVATE error_t init_allocate_struct_space(graph_t* graph, int pcount,
+                                           size_t msg_size,
                                            partition_set_t** pset) {
   *pset = (partition_set_t*)calloc(1, sizeof(partition_set_t));
   assert(*pset);
@@ -149,7 +149,7 @@ PRIVATE error_t init_allocate_struct_space(graph_t* graph, int pcount,
   return SUCCESS;
 }
 
-PRIVATE void init_compute_partitions_sizes(partition_set_t* pset, 
+PRIVATE void init_compute_partitions_sizes(partition_set_t* pset,
                                            id_t* plabels) {
   graph_t* graph = pset->graph;
   #ifdef _OPENMP
@@ -169,7 +169,7 @@ PRIVATE void init_allocate_partitions_space(partition_set_t* pset) {
     partition_t* partition = &pset->partitions[pid];
     graph_t* subgraph = &partition->subgraph;
     if (subgraph->vertex_count > 0) {
-      subgraph->vertices = 
+      subgraph->vertices =
         (id_t*)malloc(sizeof(id_t) * (subgraph->vertex_count + 1));
       assert(subgraph->vertices);
       partition->map = (id_t*)calloc(subgraph->vertex_count, sizeof(id_t));
@@ -177,7 +177,7 @@ PRIVATE void init_allocate_partitions_space(partition_set_t* pset) {
         subgraph->edges = (id_t*)malloc(sizeof(id_t) * subgraph->edge_count);
         assert(subgraph->edges);
         if (pset->graph->weighted) {
-          subgraph->weights = (weight_t*)malloc(sizeof(weight_t) * 
+          subgraph->weights = (weight_t*)malloc(sizeof(weight_t) *
                                                 subgraph->edge_count);
           assert(subgraph->weights);
         }
@@ -201,10 +201,10 @@ PRIVATE void init_build_map(partition_set_t* pset, id_t* plabels) {
   }
 }
 
-PRIVATE void init_build_partitions(partition_set_t* pset, id_t* plabels, 
+PRIVATE void init_build_partitions(partition_set_t* pset, id_t* plabels,
                                    processor_t* pproc) {
-  // build the map. The map maps the old vertex id to its new id in the 
-  // partition. This is necessary because the vertices assigned to a 
+  // build the map. The map maps the old vertex id to its new id in the
+  // partition. This is necessary because the vertices assigned to a
   // partition will be renamed so that the ids are contiguous from 0 to
   // partition->subgraph.vertex_count - 1.
   init_build_map(pset, plabels);
@@ -223,18 +223,18 @@ PRIVATE void init_build_partitions(partition_set_t* pset, id_t* plabels,
   for (id_t vid = 0; vid < graph->vertex_count; vid++) {
     partition_t* partition = &pset->partitions[plabels[vid]];
     graph_t* subgraph = &partition->subgraph;
-    subgraph->vertices[subgraph->vertex_count] = 
+    subgraph->vertices[subgraph->vertex_count] =
       subgraph->edge_count;
     for (id_t i = graph->vertices[vid]; i < graph->vertices[vid + 1]; i++) {
-      subgraph->edges[subgraph->edge_count] = 
+      subgraph->edges[subgraph->edge_count] =
         pset->id_in_partition[graph->edges[i]];
       if (graph->weighted) {
-        subgraph->weights[subgraph->edge_count] = 
+        subgraph->weights[subgraph->edge_count] =
           graph->weights[i];
       }
       subgraph->edge_count++;
     }
-    subgraph->vertices[subgraph->vertex_count + 1] = 
+    subgraph->vertices[subgraph->vertex_count + 1] =
       subgraph->edge_count;
     subgraph->vertex_count++;
   }
@@ -250,13 +250,13 @@ PRIVATE void init_sort_nbrs(partition_set_t* pset) {
     #endif
     for (id_t v = 0; v < subgraph->vertex_count; v++) {
       id_t* nbrs = &subgraph->edges[subgraph->vertices[v]];
-      qsort(nbrs, subgraph->vertices[v+1] - subgraph->vertices[v], 
+      qsort(nbrs, subgraph->vertices[v+1] - subgraph->vertices[v],
             sizeof(id_t), compare_ids);
     }
   }
 }
 
-PRIVATE void init_build_partitions_gpu(partition_set_t* pset) {  
+PRIVATE void init_build_partitions_gpu(partition_set_t* pset) {
   uint32_t pcount = pset->partition_count;
   for (uint32_t pid = 0; pid < pcount; pid++) {
     partition_t* partition = &pset->partitions[pid];
@@ -277,8 +277,8 @@ PRIVATE void init_build_partitions_gpu(partition_set_t* pset) {
   }
 }
 
-error_t partition_set_initialize(graph_t* graph, id_t* plabels, 
-                                 processor_t* pproc, int pcount, 
+error_t partition_set_initialize(graph_t* graph, id_t* plabels,
+                                 processor_t* pproc, int pcount,
                                  size_t msg_size, partition_set_t** pset) {
   assert(graph && plabels && pproc);
   if (pcount > MAX_PARTITION_COUNT) return FAILURE;
@@ -288,7 +288,7 @@ error_t partition_set_initialize(graph_t* graph, id_t* plabels,
 
   // Get the partition sizes
   init_compute_partitions_sizes(*pset, plabels);
-  
+
   // Allocate partitions space
   init_allocate_partitions_space(*pset);
 
@@ -303,7 +303,7 @@ error_t partition_set_initialize(graph_t* graph, id_t* plabels,
 
   // Build the state on the GPU(s) for GPU residing partitions
   init_build_partitions_gpu(*pset);
-  
+
   return SUCCESS;
  err:
   return FAILURE;
@@ -323,7 +323,7 @@ error_t partition_set_finalize(partition_set_t* pset) {
       CALL_CU_SAFE(cudaEventDestroy(partition->event_end));
       CALL_CU_SAFE(cudaFree(subgraph->edges));
       CALL_CU_SAFE(cudaFree(subgraph->vertices));
-      if (subgraph->weighted && subgraph->weights) 
+      if (subgraph->weighted && subgraph->weights)
         CALL_CU_SAFE(cudaFree(subgraph->weights));
     } else {
       assert(partition->processor.type == PROCESSOR_CPU);

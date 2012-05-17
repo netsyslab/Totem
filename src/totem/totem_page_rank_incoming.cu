@@ -63,7 +63,7 @@ error_t check_special_cases(graph_t* graph, float** rank, bool* finished) {
  * @param[in] rank an array storing the current rank of each vertex in the graph
  * @return sum of neighbors' ranks
  */
-inline __device__ 
+inline __device__
 double sum_neighbors_ranks(graph_t* graph, id_t vertex_id, float* ranks) {
   double sum = 0;
   for (uint64_t i = graph->vertices[vertex_id];
@@ -108,7 +108,7 @@ void page_rank_kernel(graph_t graph, float* inbox, float* outbox) {
 
 /**
  * This kernel is similar to the main page_rank_kernel. The difference is that
- * it does not normalize the rank by dividing it by the number of neighbors. It 
+ * it does not normalize the rank by dividing it by the number of neighbors. It
  * is invoked in the end to get the final, un-normalized, rank of each vertex.
  */
 __global__
@@ -119,7 +119,7 @@ void page_rank_final_kernel(graph_t graph, float* inbox, float* outbox) {
   // get sum of neighbors' ranks
   double sum = sum_neighbors_ranks(&graph, vertex_id, inbox);
   // calculate my rank
-  outbox[vertex_id] = 
+  outbox[vertex_id] =
     ((1 - DAMPING_FACTOR) / graph.vertex_count) + (DAMPING_FACTOR * sum);
 }
 
@@ -140,10 +140,10 @@ error_t page_rank_incoming_gpu(graph_t* graph, float *rank_i, float** rank) {
 
   // allocate inbox and outbox device buffers
   float *inbox_d;
-  CHK_CU_SUCCESS(cudaMalloc((void**)&inbox_d, graph->vertex_count * 
+  CHK_CU_SUCCESS(cudaMalloc((void**)&inbox_d, graph->vertex_count *
                        sizeof(float)), err_free_graph_d);
   float *outbox_d;
-  CHK_CU_SUCCESS(cudaMalloc((void**)&outbox_d, graph->vertex_count * 
+  CHK_CU_SUCCESS(cudaMalloc((void**)&outbox_d, graph->vertex_count *
                        sizeof(float)), err_free_inbox);
 
   /* set the number of blocks, TODO(abdullah) handle the case when
@@ -183,8 +183,8 @@ error_t page_rank_incoming_gpu(graph_t* graph, float *rank_i, float** rank) {
 
   // copy back the final result from the outbox
   *rank = (float*)mem_alloc(graph->vertex_count * sizeof(float));
-  CHK_CU_SUCCESS(cudaMemcpy(*rank, outbox_d, graph->vertex_count * 
-                            sizeof(float), cudaMemcpyDeviceToHost), 
+  CHK_CU_SUCCESS(cudaMemcpy(*rank, outbox_d, graph->vertex_count *
+                            sizeof(float), cudaMemcpyDeviceToHost),
                  err_free_all);
 
   // we are done! set the output and clean up

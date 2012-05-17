@@ -1,8 +1,8 @@
 /**
  * This header includes common constants, macros and functions used to deal
  * with the GPU.
- * This includes (i) device utility functions (i.e., used only from within a 
- * kernel) such as double precision atomicMin and atomicAdd, (ii) utility 
+ * This includes (i) device utility functions (i.e., used only from within a
+ * kernel) such as double precision atomicMin and atomicAdd, (ii) utility
  * functions to allocate, copy and free a device resident graph structure (e.g.,
  * graph_initialize_device and graph_finalize_device), (iii) utility kernels
  * such as memset_device and (iv) common constants and functions related to the
@@ -21,14 +21,14 @@
 
 // Virtual warp paramters are prefixed with "vwarp". Virtual warp is a technique
 // to reduce divergence among threads within a warp. The idea is to have all the
-// threads that belong to a warp work as a unit. To this end, instead of 
+// threads that belong to a warp work as a unit. To this end, instead of
 // dividing the work among threads, the work is divided among warps. A warp goes
-// through phases of SISD and SIMD in complete lock-step as if they were all a 
-// single thread. The technique divides the work into batches, where each warp 
-// is responsible for one batch of work. Typically, the threads of a warp 
+// through phases of SISD and SIMD in complete lock-step as if they were all a
+// single thread. The technique divides the work into batches, where each warp
+// is responsible for one batch of work. Typically, the threads of a warp
 // collaborate to fetch their assigned batch data to shared memory, and together
-// process the batch. The technique is presented in [Hong11] S. Hong, S. Kim, 
-// T. Oguntebi and K.Olukotun "Accelerating CUDA Graph Algorithms at Maximum 
+// process the batch. The technique is presented in [Hong11] S. Hong, S. Kim,
+// T. Oguntebi and K.Olukotun "Accelerating CUDA Graph Algorithms at Maximum
 // Warp, PPoPP11.
 
 /**
@@ -105,7 +105,7 @@
   } while(0)
 
 /**
- * Check if return value of stmt is cudaSuccess, jump to label and print an 
+ * Check if return value of stmt is cudaSuccess, jump to label and print an
  * error message if not.
  */
 #define CHK_CU_SUCCESS(cuda_call, label)                                \
@@ -133,22 +133,22 @@
 
 /**
  * A SIMD version of memcpy for the virtual warp technique. The assumption is
- * that the threads of a warp invoke this function to copy their batch of work 
+ * that the threads of a warp invoke this function to copy their batch of work
  * from global memory (src) to shared memory (dst). In each iteration of the for
- * loop, each thread copies one element. For example, thread 0 in the warp 
- * copies elements 0, VWARP_WARP_SIZE, (2 * VWARP_WARP_SIZE) etc., while thread 
- * thread 1 in the warp copies elements 1, (1 + VWARP_WARP_SIZE), 
- * (1 + 2 * VWARP_WARP_SIZE) and so on. Finally, this function is called only 
+ * loop, each thread copies one element. For example, thread 0 in the warp
+ * copies elements 0, VWARP_WARP_SIZE, (2 * VWARP_WARP_SIZE) etc., while thread
+ * thread 1 in the warp copies elements 1, (1 + VWARP_WARP_SIZE),
+ * (1 + 2 * VWARP_WARP_SIZE) and so on. Finally, this function is called only
  * from within a kernel.
  * @param[in] dst destination buffer (typically shared memory buffer)
  * @param[in] src the source buffer (typically global memory buffer)
  * @param[in] size number of elements to copy
  * @param[in] thread_offset_in_warp thread index within its warp
  */
-template<typename T> 
-__device__ void vwarp_memcpy(T* dst, T* src, uint32_t size, 
+template<typename T>
+__device__ void vwarp_memcpy(T* dst, T* src, uint32_t size,
                              uint32_t thread_offset_in_warp) {
-  for(int i = thread_offset_in_warp; i < size; i += VWARP_WARP_SIZE) 
+  for(int i = thread_offset_in_warp; i < size; i += VWARP_WARP_SIZE)
     dst[i] = src[i];
 }
 
@@ -167,10 +167,10 @@ __global__ void memset_device(T* buffer, T value, uint32_t size) {
 }
 
 /**
- * A double precision atomic add. Based on the algorithm in the NVIDIA CUDA 
+ * A double precision atomic add. Based on the algorithm in the NVIDIA CUDA
  * Programming Guide V4.0, Section B.11.
- * reads the 64-bit word old located at address in global or shared memory, 
- * computes (old + val), and stores the result back to memory at the same 
+ * reads the 64-bit word old located at address in global or shared memory,
+ * computes (old + val), and stores the result back to memory at the same
  * address atomically.
  * @param[in] address the content is incremented by val
  * @param[in] val the value to be added to the content of address
@@ -190,7 +190,7 @@ inline __device__ double atomicAdd(double* address, double val) {
 /**
  * A double precision atomic min function. Based on the double precisision
  * atomicAdd algorithm in the NVIDIA CUDA Programming Guide V4.0, Section B.11.
- * reads the 64-bit word old located at address in global or shared memory, 
+ * reads the 64-bit word old located at address in global or shared memory,
  * computes the minimum of old and val, and stores the result back to memory at
  * the same address atomically.
  * @param[in] address the content is compared to val, the minimum is stored back
@@ -213,7 +213,7 @@ inline __device__ double atomicMin(double* address, double val) {
 /**
  * A single precision atomic min function. Based on the double precisision
  * atomicAdd algorithm in the NVIDIA CUDA Programming Guide V4.0, Section B.11.
- * reads the 32-bit word old located at address in global or shared memory, 
+ * reads the 32-bit word old located at address in global or shared memory,
  * computes the minimum of old and val, and stores the result back to memory at
  * the same address atomically.
  * @param[in] address the content is compared to val, the minimum is stored back
@@ -255,9 +255,9 @@ inline error_t graph_initialize_device(const graph_t* graph_h,
   // overwritten next with device pointers
   **graph_d = *graph_h;
 
-  // Vertices will be processed by each warp in batches. To avoid explicitly 
+  // Vertices will be processed by each warp in batches. To avoid explicitly
   // checking for end of array boundaries, the vertices array is padded with
-  // fake vertices so that its length is multiple of batch size. The fake 
+  // fake vertices so that its length is multiple of batch size. The fake
   // vertices has no edges and they don't count in the vertex_count (much
   // like the extra vertex we used to have which enables calculating the number
   // of neighbors for the last vertex). Note that this padding does not affect
@@ -267,16 +267,16 @@ inline error_t graph_initialize_device(const graph_t* graph_h,
 
   // Allocate device buffers
   CHK_CU_SUCCESS(cudaMalloc((void**)&(*graph_d)->vertices,
-                            (vertex_count_batch_padded + 1) * 
+                            (vertex_count_batch_padded + 1) *
                             sizeof(id_t)), err);
   CHK_CU_SUCCESS(cudaMalloc((void**)&(*graph_d)->edges, graph_h->edge_count *
                             sizeof(id_t)), err_free_vertices);
   if (graph_h->weighted) {
-    CHK_CU_SUCCESS(cudaMalloc((void**)&(*graph_d)->weights, 
-                              graph_h->edge_count * sizeof(weight_t)), 
+    CHK_CU_SUCCESS(cudaMalloc((void**)&(*graph_d)->weights,
+                              graph_h->edge_count * sizeof(weight_t)),
                    err_free_edges);
   }
-  
+
   // Move data to the GPU
   CHK_CU_SUCCESS(cudaMemcpy((*graph_d)->vertices, graph_h->vertices,
                             (graph_h->vertex_count + 1) * sizeof(id_t),
@@ -289,7 +289,7 @@ inline error_t graph_initialize_device(const graph_t* graph_h,
                               graph_h->edge_count * sizeof(weight_t),
                               cudaMemcpyHostToDevice), err_free_weights);
   }
-  
+
   // Set the index of the extra vertices to the last actual vertex. This
   // renders the padded fake vertices with zero edges.
   int pad_size;
@@ -298,13 +298,13 @@ inline error_t graph_initialize_device(const graph_t* graph_h,
     dim3 blocks, threads_per_block;
     KERNEL_CONFIGURE(pad_size, blocks, threads_per_block);
     memset_device<<<blocks, threads_per_block>>>
-      (&((*graph_d)->vertices[graph_h->vertex_count + 1]), 
+      (&((*graph_d)->vertices[graph_h->vertex_count + 1]),
        graph_h->vertices[graph_h->vertex_count], pad_size);
     CHK_CU_SUCCESS(cudaGetLastError(), err_free_weights);
   }
 
   return SUCCESS;
-  
+
  err_free_weights:
   if ((*graph_d)->weighted) CALL_CU_SAFE(cudaFree((*graph_d)->weights));
  err_free_edges:

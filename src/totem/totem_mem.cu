@@ -1,6 +1,6 @@
 /**
- *  Defines memory management functions. The allocated memory is either pinned 
- *  or pageable.  The default is pinned memory, unless a compile time flag 
+ *  Defines memory management functions. The allocated memory is either pinned
+ *  or pageable.  The default is pinned memory, unless a compile time flag
  *  MEMORY=PAGEABLE is specified to use pageable memory.
  *
  *  Created on: 2011-03-03

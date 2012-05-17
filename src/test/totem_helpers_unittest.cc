@@ -137,7 +137,7 @@ TEST_F(GraphHelper, SubGraph) {
 
   // complete graph
   subgraph = NULL;
-  graph_initialize(DATA_FOLDER("complete_graph_300_nodes.totem"), 
+  graph_initialize(DATA_FOLDER("complete_graph_300_nodes.totem"),
                    false, &graph);
   mask = (bool*)malloc(graph->vertex_count * sizeof(bool));
   // alternating half
@@ -197,7 +197,7 @@ TEST_F(GraphHelper, AtomicOperations) {
   // the following are used in all tests
   srand (time(NULL));
   int buf_count = 1000;
-  // we use three different arrays instead of one just to avoid casting 
+  // we use three different arrays instead of one just to avoid casting
   // frequently to make the code more readable
   int* buf = (int*)malloc(buf_count * sizeof(int));
   float* buf_f = (float*)malloc(buf_count * sizeof(float));
@@ -211,7 +211,7 @@ TEST_F(GraphHelper, AtomicOperations) {
 
   // Atomic floating add
   // Note that for floating point operations, the order of adding a set of items
-  // affects the final sum due to rounding errors, hence in this test we use 
+  // affects the final sum due to rounding errors, hence in this test we use
   // only integers to avoid this problem
   // single precision
   float sum_float = 0;
@@ -220,7 +220,7 @@ TEST_F(GraphHelper, AtomicOperations) {
   }
   float p_sum_float = 0;
 #pragma omp parallel for
-  for (int i = 0; i < buf_count; i++) {    
+  for (int i = 0; i < buf_count; i++) {
     __sync_fetch_and_add_float(&p_sum_float, buf_f[i]);
   }
   EXPECT_FLOAT_EQ(p_sum_float, sum_float);

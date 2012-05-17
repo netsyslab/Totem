@@ -7,7 +7,7 @@
 
 #include "totem_engine.cuh"
 
-engine_context_t context = {false, NULL, 0, ENGINE_DEFAULT_CONFIG, 
+engine_context_t context = {false, NULL, 0, ENGINE_DEFAULT_CONFIG,
                             0, 0, 0, 0};
 
 #define SET_PROCESSOR(_par)                                     \
@@ -69,8 +69,8 @@ inline PRIVATE void superstep_compute() {
     context.config.ss_kernel_func();
   }
   for (int pid = 0; pid < context.pset->partition_count; pid++) {
-    // The kernel for GPU partitions is supposed not to block. The client is 
-    // supposedly invoking the GPU kernel asynchronously, and using the compute 
+    // The kernel for GPU partitions is supposed not to block. The client is
+    // supposedly invoking the GPU kernel asynchronously, and using the compute
     // "stream" available for each partition
     partition_t* par = &context.pset->partitions[pid];
     if (par->processor.type == PROCESSOR_GPU) {
@@ -167,21 +167,21 @@ error_t engine_init(engine_config_t* config) {
     case PLATFORM_ALL:
       break;
     default:
-      assert(false);        
+      assert(false);
   }
   int pcount = use_cpu ? gpu_count + 1 : gpu_count;
   processor_t* processors = (processor_t*)calloc(pcount, sizeof(processor_t));
   assert(processors);
 
-  // identify the share of each partition  
+  // identify the share of each partition
   // TODO(abdullah): ideally, we would like to split the graph among processors
-  // with different shares (e.g., a system with GPUs with different 
+  // with different shares (e.g., a system with GPUs with different
   // memory capacities).
   float* par_share = NULL;
   if (context.config.cpu_par_share && use_cpu) {
     par_share = (float*)calloc(pcount, sizeof(float));
     par_share[pcount - 1] = context.config.cpu_par_share;
-    float gpu_par_share = 
+    float gpu_par_share =
       (1.0 - context.config.cpu_par_share) / (float)gpu_count;
     float total_share = context.config.cpu_par_share;
     for (int gpu_id = 0; gpu_id < gpu_count - 1; gpu_id++) {
@@ -190,7 +190,7 @@ error_t engine_init(engine_config_t* config) {
     }
     par_share[gpu_count - 1] = 1.0 - total_share;
   }
-  
+
   // setup the processors' types and ids
   for (int gpu_id = 0; gpu_id < gpu_count; gpu_id++) {
     processors[gpu_id].type = PROCESSOR_GPU;
@@ -201,12 +201,12 @@ error_t engine_init(engine_config_t* config) {
   }
 
   // partition the graph
-  stopwatch_t stopwatch_par;  
+  stopwatch_t stopwatch_par;
   stopwatch_start(&stopwatch_par);
   id_t* par_labels;
   switch (context.config.par_algo) {
     case PAR_RANDOM:
-      CALL_SAFE(partition_random(context.config.graph, 
+      CALL_SAFE(partition_random(context.config.graph,
                                  (uint32_t)pcount, par_share,
                                  13, &par_labels));
       break;
@@ -217,8 +217,8 @@ error_t engine_init(engine_config_t* config) {
   }
   context.time_par = stopwatch_elapsed(&stopwatch_par);
   CALL_SAFE(partition_set_initialize(context.config.graph, par_labels,
-                                     processors, pcount, 
-                                     context.config.msg_size, 
+                                     processors, pcount,
+                                     context.config.msg_size,
                                      &context.pset));
   free(processors);
   free(par_labels);

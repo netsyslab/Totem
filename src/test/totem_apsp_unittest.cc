@@ -193,7 +193,7 @@ TEST_P(APSPTest, CompleteDiffWeight) {
 }
 
 INSTANTIATE_TEST_CASE_P(APSPGPUAndCPUTest, APSPTest,
-                        Values(&apsp_cpu, 
+                        Values(&apsp_cpu,
                                &apsp_gpu));
 
 #else

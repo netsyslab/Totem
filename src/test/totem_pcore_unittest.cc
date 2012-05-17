@@ -89,7 +89,7 @@ TEST_P(PCoreTest, Chain) {
   graph_initialize(DATA_FOLDER("chain_1000_nodes.totem"), true, &graph);
 
   uint32_t* round = NULL;
-  EXPECT_EQ(SUCCESS, pcore(graph, 0, 1, &round));  
+  EXPECT_EQ(SUCCESS, pcore(graph, 0, 1, &round));
   EXPECT_FALSE(round == NULL);
   for (id_t vertex = 0; vertex < graph->vertex_count; vertex++) {
     EXPECT_EQ((uint32_t)1, round[vertex]);
@@ -136,8 +136,8 @@ TEST_P(PCoreTest, Star) {
 //
 // Values() receives a list of parameters and the framework will execute the
 // whole set of tests PCoreTest for each element of Values()
-INSTANTIATE_TEST_CASE_P(PCOREGPUAndCPUTest, PCoreTest, 
-                        Values(&pcore_cpu, 
+INSTANTIATE_TEST_CASE_P(PCOREGPUAndCPUTest, PCoreTest,
+                        Values(&pcore_cpu,
                                &pcore_gpu));
 
 #else

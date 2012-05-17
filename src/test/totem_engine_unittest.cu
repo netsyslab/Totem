@@ -20,11 +20,11 @@ int* degree_h;
 __global__ void degree_kernel(partition_t par, int pcount) {
   id_t v = THREAD_GLOBAL_INDEX;
   if (v >= par.subgraph.vertex_count) return;
-  for (id_t i = par.subgraph.vertices[v]; 
+  for (id_t i = par.subgraph.vertices[v];
        i < par.subgraph.vertices[v + 1]; i++) {
     int* dst;
     id_t nbr = par.subgraph.edges[i];
-    ENGINE_FETCH_DST(par.id, nbr, par.outbox_d, (int*)par.algo_state, 
+    ENGINE_FETCH_DST(par.id, nbr, par.outbox_d, (int*)par.algo_state,
                      pcount, dst, int);
     atomicAdd(dst, 1);
   }
@@ -44,11 +44,11 @@ void degree_cpu(partition_t* par) {
   #pragma omp parallel for
   #endif
   for (id_t v = 0; v < par->subgraph.vertex_count; v++) {
-    for (id_t i = par->subgraph.vertices[v]; 
+    for (id_t i = par->subgraph.vertices[v];
          i < par->subgraph.vertices[v + 1]; i++) {
       int* dst;
       id_t nbr = par->subgraph.edges[i];
-      ENGINE_FETCH_DST(par->id, nbr, par->outbox, (int*)par->algo_state, 
+      ENGINE_FETCH_DST(par->id, nbr, par->outbox, (int*)par->algo_state,
                        pcount, dst, int);
       __sync_fetch_and_add(dst, 1);
     }
@@ -57,8 +57,8 @@ void degree_cpu(partition_t* par) {
 
 void degree(partition_t* par) {
   if (engine_superstep() == 1) {
-    if (par->processor.type == PROCESSOR_GPU) { 
-      degree_gpu(par);      
+    if (par->processor.type == PROCESSOR_GPU) {
+      degree_gpu(par);
     } else {
       assert(par->processor.type == PROCESSOR_CPU);
       degree_cpu(par);
@@ -78,9 +78,9 @@ void degree_init(partition_t* par) {
   if (par->processor.type == PROCESSOR_GPU) {
     CALL_CU_SAFE(cudaMalloc(&(par->algo_state), vcount * sizeof(int)));
     ASSERT_TRUE(par->algo_state);
-    CALL_CU_SAFE(cudaMemset(par->algo_state, 0, vcount * sizeof(int)));    
+    CALL_CU_SAFE(cudaMemset(par->algo_state, 0, vcount * sizeof(int)));
   } else {
-    ASSERT_TRUE(par->processor.type == PROCESSOR_CPU);    
+    ASSERT_TRUE(par->processor.type == PROCESSOR_CPU);
     par->algo_state = calloc(vcount, sizeof(int));
     ASSERT_TRUE(par->algo_state);
   }
@@ -186,7 +186,7 @@ TEST_P(EngineTest, CompleteGraph) {
 //
 // Values() receives a list of parameters and the framework will execute the
 // whole set of tests BFSTest for each element of Values()
-INSTANTIATE_TEST_CASE_P(EngineTestAllPlatforms, EngineTest, 
+INSTANTIATE_TEST_CASE_P(EngineTestAllPlatforms, EngineTest,
                         Values(PLATFORM_CPU,       // on the CPU only
                                PLATFORM_GPU,       // on one GPU only
                                PLATFORM_MULTI_GPU, // all available GPUs
