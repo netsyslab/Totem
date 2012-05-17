@@ -14,7 +14,7 @@ MAINOBJS =  $(filter %_main.o, $(CCOBJS)) $(filter %_main.cu_o, $(CUOBJS))
 
 all: $(TARGET)
 
-$(TARGET): lib 
+$(TARGET): lib
 	@printf "\nLinking %s executable ...\n" $(TARGET)
 	$(CC) -o $@ $(MAINOBJS) -l$(TARGET) $(LFLAGS)
 

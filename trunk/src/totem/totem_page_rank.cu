@@ -53,11 +53,11 @@ typedef struct {
 } vwarp_mem_t;
 
 /**
- * Checks for input parameters and special cases. This is invoked at the 
+ * Checks for input parameters and special cases. This is invoked at the
  * beginning of public interfaces (GPU and CPU)
 */
 PRIVATE
-error_t check_special_cases(const graph_t* graph, float** rank, 
+error_t check_special_cases(const graph_t* graph, float** rank,
                             bool* finished) {
   *finished = true;
   if (graph == NULL) {
@@ -74,12 +74,12 @@ error_t check_special_cases(const graph_t* graph, float** rank,
 }
 
 /**
- * A common initialization function for GPU implementations. It allocates and 
+ * A common initialization function for GPU implementations. It allocates and
  * initalizes state on the GPU
 */
 PRIVATE
-error_t initialize_gpu(const graph_t* graph, float* rank_i, 
-                       uint64_t rank_length, graph_t** graph_d, float **rank_d, 
+error_t initialize_gpu(const graph_t* graph, float* rank_i,
+                       uint64_t rank_length, graph_t** graph_d, float **rank_d,
                        float** mailbox_d) {
 
   /* had to define them at the beginning to avoid a compilation problem with
@@ -93,7 +93,7 @@ error_t initialize_gpu(const graph_t* graph, float* rank_i,
   // allocate mailbox and outbox device buffers
   CHK_CU_SUCCESS(cudaMalloc((void**)mailbox_d, graph->vertex_count *
                             sizeof(float)), err_free_graph_d);
-  CHK_CU_SUCCESS(cudaMalloc((void**)rank_d, rank_length * sizeof(float)), 
+  CHK_CU_SUCCESS(cudaMalloc((void**)rank_d, rank_length * sizeof(float)),
                  err_free_mailbox);
 
   if (rank_i == NULL) {
@@ -105,7 +105,7 @@ error_t initialize_gpu(const graph_t* graph, float* rank_i,
   } else {
     CHK_CU_SUCCESS(cudaMemcpy(*rank_d, rank_i, rank_length * sizeof(float),
         cudaMemcpyHostToDevice), err_free_all);
-  }  
+  }
 
   memset_device<<<blocks, threads_per_block>>>
     (*mailbox_d, (float)0.0, graph->vertex_count);
@@ -130,7 +130,7 @@ error_t initialize_gpu(const graph_t* graph, float* rank_i,
  * frees up some resources.
 */
 PRIVATE
-error_t finalize_gpu(graph_t* graph_d, float* rank_d, float* mailbox_d, 
+error_t finalize_gpu(graph_t* graph_d, float* rank_d, float* mailbox_d,
                      float** rank) {
   // Copy back the final result from the rank
   *rank = (float*)mem_alloc(graph_d->vertex_count * sizeof(float));
@@ -150,7 +150,7 @@ error_t finalize_gpu(graph_t* graph_d, float* rank_d, float* mailbox_d,
 
 /**
  * Phase1 kernel of the original PageRank GPU algorithm (i.e., non-vwarp).
- * Produce the sum of the neighbors' ranks. Each vertex atomically 
+ * Produce the sum of the neighbors' ranks. Each vertex atomically
  * adds its value to the mailbox of the destination neighbor vertex.
  */
 __global__
@@ -173,7 +173,7 @@ void sum_neighbors_rank_kernel(graph_t graph, float* rank, float* mailbox) {
  * edges is stored in the mailbox of the vertex.
  */
 __global__
-void compute_normalized_rank_kernel(graph_t graph, float* rank, 
+void compute_normalized_rank_kernel(graph_t graph, float* rank,
                                     float* mailbox) {
   // get the thread's linear index
   id_t vertex_id = THREAD_GLOBAL_INDEX;
@@ -197,7 +197,7 @@ void compute_normalized_rank_kernel(graph_t graph, float* rank,
  * It is invoked in the end to get the final, un-normalized, rank.
  */
 __global__
-void compute_unnormalized_rank_kernel(graph_t graph, float* rank, 
+void compute_unnormalized_rank_kernel(graph_t graph, float* rank,
                                       float* mailbox) {
   // get the thread's linear index
   id_t vertex_id = THREAD_GLOBAL_INDEX;
@@ -207,22 +207,22 @@ void compute_unnormalized_rank_kernel(graph_t graph, float* rank,
   float sum = mailbox[vertex_id];
 
   // calculate my rank
-  rank[vertex_id] = 
+  rank[vertex_id] =
     ((1 - DAMPING_FACTOR) / graph.vertex_count) + (DAMPING_FACTOR * sum);
 }
 
 /**
- * The neighbors processing function. This function adds the a vertex rank to 
+ * The neighbors processing function. This function adds the a vertex rank to
  * to the mailbox of all neighbors. The assumption is that the threads of a warp
- * invoke this function to process the warp's batch of work. In each iteration 
- * of the for loop, each thread processes a neighbor. For example, thread 0 in 
- * the warp processes neighbors at indices 0, VWARP_WARP_SIZE, 
- * (2 * VWARP_WARP_SIZE) etc. in the edges array, while thread 1 in the warp 
- * processes neighbors 1, (1 + VWARP_WARP_SIZE), (1 + 2 * VWARP_WARP_SIZE) and 
+ * invoke this function to process the warp's batch of work. In each iteration
+ * of the for loop, each thread processes a neighbor. For example, thread 0 in
+ * the warp processes neighbors at indices 0, VWARP_WARP_SIZE,
+ * (2 * VWARP_WARP_SIZE) etc. in the edges array, while thread 1 in the warp
+ * processes neighbors 1, (1 + VWARP_WARP_SIZE), (1 + 2 * VWARP_WARP_SIZE) and
  * so on.
 */
 __device__ inline
-void vwarp_process_neighbors(int warp_offset, int neighbor_count, 
+void vwarp_process_neighbors(int warp_offset, int neighbor_count,
                              id_t* neighbors, float my_rank, float* mailbox) {
   for(int i = warp_offset; i < neighbor_count; i += VWARP_WARP_SIZE) {
     const int neighbor_id = neighbors[i];
@@ -243,23 +243,23 @@ void vwarp_sum_neighbors_rank_kernel(graph_t graph, float* rank, float* mailbox,
 
   int warp_offset = THREAD_GLOBAL_INDEX % VWARP_WARP_SIZE;
   int warp_id     = THREAD_GLOBAL_INDEX / VWARP_WARP_SIZE;
-  
-  __shared__ vwarp_mem_t shared_memory[(MAX_THREADS_PER_BLOCK / 
+
+  __shared__ vwarp_mem_t shared_memory[(MAX_THREADS_PER_BLOCK /
                                         VWARP_WARP_SIZE)];
   vwarp_mem_t* my_space = shared_memory + (THREAD_GRID_INDEX / VWARP_WARP_SIZE);
 
   // copy my work to local space
   int v_ = warp_id * VWARP_BATCH_SIZE;
   vwarp_memcpy(my_space->rank, &rank[v_], VWARP_BATCH_SIZE, warp_offset);
-  vwarp_memcpy(my_space->vertices, &(graph.vertices[v_]), VWARP_BATCH_SIZE + 1, 
+  vwarp_memcpy(my_space->vertices, &(graph.vertices[v_]), VWARP_BATCH_SIZE + 1,
                warp_offset);
 
   // iterate over my work
   for(uint32_t v = 0; v < VWARP_BATCH_SIZE; v++) {
     int neighbor_count = my_space->vertices[v + 1] - my_space->vertices[v];
     id_t* neighbors = &(graph.edges[my_space->vertices[v]]);
-    vwarp_process_neighbors(warp_offset, neighbor_count, neighbors, 
-                            my_space->rank[v], mailbox);    
+    vwarp_process_neighbors(warp_offset, neighbor_count, neighbors,
+                            my_space->rank[v], mailbox);
   }
 }
 
@@ -269,7 +269,7 @@ void vwarp_sum_neighbors_rank_kernel(graph_t graph, float* rank, float* mailbox,
  * edges is stored in the mailbox of the vertex.
  */
 __global__
-void vwarp_compute_normalized_rank_kernel(graph_t graph, float* rank, 
+void vwarp_compute_normalized_rank_kernel(graph_t graph, float* rank,
                                           float* mailbox) {
   // get the thread's linear index
   id_t vertex_id = THREAD_GLOBAL_INDEX;
@@ -291,7 +291,7 @@ void vwarp_compute_normalized_rank_kernel(graph_t graph, float* rank,
  * It is invoked in the end to get the final, un-normalized, rank.
  */
 __global__
-void vwarp_compute_unnormalized_rank_kernel(graph_t graph, float* rank, 
+void vwarp_compute_unnormalized_rank_kernel(graph_t graph, float* rank,
                                             float* mailbox) {
   // get the thread's linear index
   id_t vertex_id = THREAD_GLOBAL_INDEX;
@@ -321,17 +321,17 @@ error_t page_rank_vwarp_gpu(graph_t* graph, float* rank_i, float** rank) {
   CHK_SUCCESS(initialize_gpu(graph, rank_i, rank_length, &graph_d, &rank_d,
                              &mailbox_d), err);
 
-  {// Configure the kernels. Setup the number of threads for phase1 and phase2, 
+  {// Configure the kernels. Setup the number of threads for phase1 and phase2,
   // configure the on-chip memory as shared memory rather than L1 cache
   dim3 blocks1, threads_per_block1, blocks2, threads_per_block2;
-  int phase1_thread_count = VWARP_WARP_SIZE * 
+  int phase1_thread_count = VWARP_WARP_SIZE *
     VWARP_BATCH_COUNT(graph->vertex_count);
   KERNEL_CONFIGURE(phase1_thread_count, blocks1, threads_per_block1);
   KERNEL_CONFIGURE(graph->vertex_count, blocks2, threads_per_block2);
-  cudaFuncSetCacheConfig(vwarp_sum_neighbors_rank_kernel, 
+  cudaFuncSetCacheConfig(vwarp_sum_neighbors_rank_kernel,
                          cudaFuncCachePreferShared);
 
-  // Iterate for a specific number of rounds 
+  // Iterate for a specific number of rounds
   for (uint32_t round = 0; round < PAGE_RANK_ROUNDS - 1; round++) {
     // call the kernel
     vwarp_sum_neighbors_rank_kernel<<<blocks1, threads_per_block1>>>
@@ -344,7 +344,7 @@ error_t page_rank_vwarp_gpu(graph_t* graph, float* rank_i, float** rank) {
   // Final round is seprate. It computes an un-normalized final rank
   vwarp_sum_neighbors_rank_kernel<<<blocks1, threads_per_block1>>>
     (*graph_d, rank_d, mailbox_d, phase1_thread_count);
-  CHK_CU_SUCCESS(cudaGetLastError(), err_free_all);  
+  CHK_CU_SUCCESS(cudaGetLastError(), err_free_all);
   vwarp_compute_unnormalized_rank_kernel<<<blocks2, threads_per_block2>>>
     (*graph_d, rank_d, mailbox_d);
   CHK_CU_SUCCESS(cudaGetLastError(), err_free_all);
@@ -383,8 +383,8 @@ error_t page_rank_gpu(graph_t* graph, float* rank_i, float** rank) {
   {// Configure the kernel
   dim3 blocks, threads_per_block;
   KERNEL_CONFIGURE(graph->vertex_count, blocks, threads_per_block);
-  // Iterate for a specific number of rounds 
-  for (uint32_t round = 0; round < PAGE_RANK_ROUNDS - 1; round++) {    
+  // Iterate for a specific number of rounds
+  for (uint32_t round = 0; round < PAGE_RANK_ROUNDS - 1; round++) {
     sum_neighbors_rank_kernel<<<blocks, threads_per_block>>>
       (*graph_d, rank_d, mailbox_d);
     CHK_CU_SUCCESS(cudaGetLastError(), err_free_all);
@@ -395,7 +395,7 @@ error_t page_rank_gpu(graph_t* graph, float* rank_i, float** rank) {
   // Final round is seprate. It computes an un-normalized final rank
   sum_neighbors_rank_kernel<<<blocks, threads_per_block>>>
     (*graph_d, rank_d, mailbox_d);
-  CHK_CU_SUCCESS(cudaGetLastError(), err_free_all);  
+  CHK_CU_SUCCESS(cudaGetLastError(), err_free_all);
   compute_unnormalized_rank_kernel<<<blocks, threads_per_block>>>
     (*graph_d, rank_d, mailbox_d);
   CHK_CU_SUCCESS(cudaGetLastError(), err_free_all);

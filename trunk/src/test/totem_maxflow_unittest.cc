@@ -140,9 +140,9 @@ TEST_P(MaxFlowTest, WashingtonRandom) {
 //
 // Values() receives a list of parameters and the framework will execute the
 // whole set of tests MaxFlowTest for each element of Values()
-INSTANTIATE_TEST_CASE_P(MaxFlowGPUAndCPUTest, MaxFlowTest, 
+INSTANTIATE_TEST_CASE_P(MaxFlowGPUAndCPUTest, MaxFlowTest,
                         Values(&maxflow_cpu,
-                               &maxflow_gpu, 
+                               &maxflow_gpu,
                                &maxflow_vwarp_gpu));
 
 #else

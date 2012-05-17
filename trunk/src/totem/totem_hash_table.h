@@ -1,17 +1,17 @@
 /**
- * Defines a hash table interface. Mainly the data-structure the build and 
+ * Defines a hash table interface. Mainly the data-structure the build and
  * the retrieve operations. Based on the hash table described in [Alcantara09].
  * D.A. Alcantara et al., "Real-time parallel hashing on the GPU," in
  * ACM Transactions on Graphics (TOG).
- * 
+ *
  * Two important notes:
- * 1) Only one type of value is supported: int32_t. To use other types, the 
+ * 1) Only one type of value is supported: int32_t. To use other types, the
  * integer value can be used as an index in another array of the other type,
  * which we anticipate to be the common use-case.
  *
  * 2) this implementation does not support inserting individual items
- * to the table for the gpu version, it allows for only building the hash table 
- * at once (i.e., all (key,value) pairs to be inserted in the table should be 
+ * to the table for the gpu version, it allows for only building the hash table
+ * at once (i.e., all (key,value) pairs to be inserted in the table should be
  * known at initialization time). But allows for individual retrieval of items.
  *
  *  Created on: 2011-12-30
@@ -24,7 +24,7 @@
 #include "totem_comdef.h"
 
 /**
- * Macros to manage hash table entries. An entry is a 64-bit that combines a 
+ * Macros to manage hash table entries. An entry is a 64-bit that combines a
  * key (32 higher-order bits) and the value (32 lower-order bits)
 */
 #define HT_MAKE_ENTRY(_key, _value) (((uint64_t)_key << 32) + (_value))
@@ -95,13 +95,13 @@
   } while(0)
 
 /**
- * Defines a hash table data structure. Note that users are not supposed to 
+ * Defines a hash table data structure. Note that users are not supposed to
  * directly manipulate the state.
  */
 typedef struct hash_table_s {
   uint32_t  size;       /**< the size of the table */
-  uint64_t* entries;    /**< an entry in the array encodes two things: a key 
-                           (higher-order 32-bits) and the value (lower-order 
+  uint64_t* entries;    /**< an entry in the array encodes two things: a key
+                           (higher-order 32-bits) and the value (lower-order
                            32-bits) */
   bool      allocated;  /**< indicates whether the hash_table is allocated
                            by the interface or not */
@@ -116,7 +116,7 @@ typedef struct hash_table_s {
 error_t hash_table_initialize_cpu(uint32_t count, hash_table_t** hash_table);
 
 /**
- * Initializes a hash table. The hash table struct is allocated by the caller 
+ * Initializes a hash table. The hash table struct is allocated by the caller
  * @param[in] count  the number of values
  * @param[out] hash_table a reference to the created hash table
  * @return generic success or failure
@@ -125,7 +125,7 @@ error_t hash_table_initialize_cpu(uint32_t count, hash_table_t* hash_table);
 
 /**
  * Overloaded initialization. It allocates the state and builds the hash table
- * by inserting the key-value entries in the table. The assumption is that the 
+ * by inserting the key-value entries in the table. The assumption is that the
  * value of a key is the key's index in the keys array.
  * @param[in] values an array of values to be inserted in the table
  * @param[in] keys   the corresponding keys of the values
@@ -180,11 +180,11 @@ error_t hash_table_get_cpu(hash_table_t* hash_table, uint32_t* keys,
  * @param[out] count number of keys
  * @return SUCCESS if all are found, FAILURE otherwise
  */
-error_t hash_table_get_keys_cpu(hash_table_t* hash_table, uint32_t** keys, 
+error_t hash_table_get_keys_cpu(hash_table_t* hash_table, uint32_t** keys,
                                 uint32_t* count);
 
 /**
- * Initializes a hash table on the gpu. It allocates the state on the cpu and 
+ * Initializes a hash table on the gpu. It allocates the state on the cpu and
  * moves it to the gpu
  * @param[in] values an array of values to be inserted in the table
  * @param[in] keys   the corresponding keys of the values
@@ -192,11 +192,11 @@ error_t hash_table_get_keys_cpu(hash_table_t* hash_table, uint32_t** keys,
  * @param[out] hash_table_ret a reference to the created hash table
  * @return generic success or failure
  */
-error_t hash_table_initialize_gpu(uint32_t* keys, uint32_t count, 
+error_t hash_table_initialize_gpu(uint32_t* keys, uint32_t count,
                                   hash_table_t** hash_table);
 
 /**
- * Initializes a hash table on the gpu from a hash table that already exists 
+ * Initializes a hash table on the gpu from a hash table that already exists
  * on the host. The structure of the newly created hash table is allocated
  * by the function.
  * @param[in] hash_table a reference to the host hash table
@@ -207,7 +207,7 @@ error_t hash_table_initialize_gpu(hash_table_t* hash_table,
                                   hash_table_t** hash_table_d);
 
 /**
- * Initializes a hash table on the gpu from a hash table that already exists 
+ * Initializes a hash table on the gpu from a hash table that already exists
  * on the host. The structure of the newly created hash table is allocated
  * by the caller.
  * @param[in] hash_table a reference to the host hash table
@@ -227,12 +227,12 @@ error_t hash_table_finalize_gpu(hash_table_t* hash_table);
 /**
  * Retrieves a group of values from the gpu-based table.
  * @param[in] hash_table a reference to the hash table
- * @param[in] keys the list of keys to be looked up 
+ * @param[in] keys the list of keys to be looked up
  * @param[in] count number of keys
  * @param[out] values the list of retrieved values (allocated via mem_alloc)
  * @return SUCCESS if all are found, FAILURE otherwise
  */
-error_t hash_table_get_gpu(hash_table_t* hash_table, uint32_t* keys, 
+error_t hash_table_get_gpu(hash_table_t* hash_table, uint32_t* keys,
                            uint32_t count, int** values);
 
 #endif  // TOTEM_HASH_TABLE_H

@@ -30,7 +30,7 @@ void init_preflow(graph_t graph, id_t edge_base, id_t edge_end, weight_t* flow,
                   weight_t* excess, id_t* reverse_indices);
 
 /**
-   This structure is used by the virtual warp-based implementation. It stores a 
+   This structure is used by the virtual warp-based implementation. It stores a
    batch of work. It is typically allocated on shared memory and is processed by
    a single virtual warp.
  */
@@ -261,7 +261,7 @@ void vwarp_push_relabel_kernel(graph_t graph, weight_t* flow, weight_t* excess,
   // copy my work to local space
   int v_ = warp_id * VWARP_BATCH_SIZE;
   vwarp_memcpy(my_space->height, &(height[v_]), VWARP_BATCH_SIZE, warp_offset);
-  vwarp_memcpy(my_space->vertices, &(graph.vertices[v_]), VWARP_BATCH_SIZE + 1, 
+  vwarp_memcpy(my_space->vertices, &(graph.vertices[v_]), VWARP_BATCH_SIZE + 1,
                warp_offset);
 
   int count = KERNEL_CYCLES;
@@ -323,7 +323,7 @@ void vwarp_push_relabel_kernel(graph_t graph, weight_t* flow, weight_t* excess,
  * output buffer, moves the final results from GPU to the host buffers and
  * frees up some resources.
  */
-PRIVATE 
+PRIVATE
 error_t finalize_gpu(graph_t* graph_d, weight_t* flow_d, weight_t* excess_d,
                      uint32_t* height_d, id_t* reverse_indices_d,
                      bool* finished_d, weight_t* flow_ret, id_t sink_id) {

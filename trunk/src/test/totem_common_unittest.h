@@ -31,7 +31,7 @@
 
 /**
  * A simple macro to do basic true/false condition testing for kernels
- * TODO(abdullah): change the way state is tested to use standard report from 
+ * TODO(abdullah): change the way state is tested to use standard report from
  * the GTest framework as follows:
  * 1. to use the macro to test (so the code will be simple).
  * 2. still have the variable to store the line number where it fails or -1

@@ -12,7 +12,7 @@
 #include "totem_comdef.h"
 
 /**
- * Allocates a buffer of size "size". Depending on the feature 
+ * Allocates a buffer of size "size". Depending on the feature
  * FEATURE_PINNED_MEMORY, the buffer is either allocated in pinned or pageable
  * memory.
  * @param[in] size buffer size to allocate

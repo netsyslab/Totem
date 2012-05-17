@@ -15,9 +15,9 @@
 using ::testing::TestWithParam;
 using ::testing::Values;
 
-// The following implementation relies on 
-// TestWithParam<GetComponentsFunction> to test the two versions of 
-// GetComponents implemented: CPU and GPU. Details on how to use 
+// The following implementation relies on
+// TestWithParam<GetComponentsFunction> to test the two versions of
+// GetComponents implemented: CPU and GPU. Details on how to use
 // TestWithParam<T> can be found at:
 // http://code.google.com/p/googletest/source/browse/trunk/samples/sample7_unittest.cc
 
@@ -89,7 +89,7 @@ TEST_P(GetComponentsTest, EmptyEdges) {
     // each vertex will be a componenet on its own
     EXPECT_EQ((uint32_t)vid, comp_set->marker[vid]);
   }
-  // All components are of the same size. The biggest component is the one with 
+  // All components are of the same size. The biggest component is the one with
   // the lowest id
   EXPECT_EQ(comp_set->biggest, (id_t)0);
 }
@@ -101,14 +101,14 @@ TEST_P(GetComponentsTest, Chain) {
   EXPECT_FALSE(NULL == comp_set);
   EXPECT_EQ(comp_set->count, (id_t)1);
   EXPECT_EQ(comp_set->vertex_count[0], graph->vertex_count);
-  EXPECT_EQ(comp_set->edge_count[0], graph->edge_count);  
+  EXPECT_EQ(comp_set->edge_count[0], graph->edge_count);
   for (id_t vid = 0; vid < graph->vertex_count; vid++) {
     EXPECT_EQ(comp_set->marker[vid], (id_t)0);
   }
   EXPECT_EQ(comp_set->biggest, (id_t)0);
 }
 
-// Tests GetComponents for a graph of four chains. The first two have 10 
+// Tests GetComponents for a graph of four chains. The first two have 10
 // vertices the thrid has 11 while the last has 9.
 TEST_P(GetComponentsTest, MultiChain) {
   graph_initialize(DATA_FOLDER("chain_4_comp_40_nodes.totem"), false, &graph);
@@ -116,15 +116,15 @@ TEST_P(GetComponentsTest, MultiChain) {
   EXPECT_FALSE(NULL == comp_set);
   EXPECT_EQ(comp_set->count, (id_t)4);
   for (id_t comp = 0; comp < comp_set->count; comp++) {
-    id_t vertex_count = comp == comp_set->count - 1 ? 
+    id_t vertex_count = comp == comp_set->count - 1 ?
       9 : comp == comp_set->count -2 ? 11 : 10;
     EXPECT_EQ(comp_set->vertex_count[comp], vertex_count);
     EXPECT_EQ(comp_set->edge_count[comp], vertex_count * 2 - 2);
   }
-  
+
   for (id_t vid = 0; vid < graph->vertex_count; vid++) {
     // the second to last chain is one vertex longer
-    id_t comp = vid == 30 ? (comp_set->count - 2) : vid / 10; 
+    id_t comp = vid == 30 ? (comp_set->count - 2) : vid / 10;
     EXPECT_EQ(comp_set->marker[vid], comp);
   }
   // the biggest component is the second to last one
@@ -140,7 +140,7 @@ TEST_P(GetComponentsTest, CompleteGraph) {
   EXPECT_EQ(comp_set->count, (id_t)1);
   EXPECT_EQ(comp_set->vertex_count[0], graph->vertex_count);
   EXPECT_EQ(comp_set->edge_count[0], graph->edge_count);
-  
+
   for (id_t vid = 0; vid < graph->vertex_count; vid++) {
     EXPECT_EQ(comp_set->marker[vid], (id_t)0);
   }
@@ -155,7 +155,7 @@ TEST_P(GetComponentsTest, Star) {
   EXPECT_EQ(comp_set->count, (id_t)1);
   EXPECT_EQ(comp_set->vertex_count[0], graph->vertex_count);
   EXPECT_EQ(comp_set->edge_count[0], graph->edge_count);
-  
+
   for (id_t vid = 0; vid < graph->vertex_count; vid++) {
     EXPECT_EQ(comp_set->marker[vid], (id_t)0);
   }
@@ -170,7 +170,7 @@ TEST_P(GetComponentsTest, Star) {
 //
 // Values() receives a list of parameters and the framework will execute the
 // whole set of tests GetComponentsTest for each element of Values()
-INSTANTIATE_TEST_CASE_P(GetComponentsGPUAndCPUTest, GetComponentsTest, 
+INSTANTIATE_TEST_CASE_P(GetComponentsGPUAndCPUTest, GetComponentsTest,
                         Values(&get_components_cpu));
 
 #else

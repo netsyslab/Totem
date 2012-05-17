@@ -1,19 +1,19 @@
 /**
  *
- * Implements a parallel version of a variation of the k-cores algorithm 
- * described in [Batagelj2002] V. Batagelj and M. Zaversnik, "An O(m) 
+ * Implements a parallel version of a variation of the k-cores algorithm
+ * described in [Batagelj2002] V. Batagelj and M. Zaversnik, "An O(m)
  * Algorithm for Cores Decomposition of Networks".
  *
- * The k-core "is a maximal subset of vertices such that each is connected to 
- * at least k others in the subset. The word maximal here means that there is 
+ * The k-core "is a maximal subset of vertices such that each is connected to
+ * at least k others in the subset. The word maximal here means that there is
  * no other vertex in the graph that can be added to the subset while preserving
- * the propoerty that every vertex is connected to k other vertices" 
+ * the propoerty that every vertex is connected to k other vertices"
  * [Newman2010] M. E. J. Newman, "Networks: An Introduction".
  *
- * This implementation takes into account the weights on the edges instead of 
- * the number of edges each vertex is connected to. Hence, we call the 
+ * This implementation takes into account the weights on the edges instead of
+ * the number of edges each vertex is connected to. Hence, we call the
  * algorithm p-core.
- * 
+ *
  *  Created on: 2011-05-24
  *      Author: Abdullah Gharaibeh (abdullah@ece.ubc.ca)
  */
@@ -33,8 +33,8 @@
 
 /**
  * Set the initial state of the algorithm. The weights_sum array is initalized
- * with the sum of edge weights each vertex is connected to. The round array is 
- * initalized to the flag ACTIVE_FLAG indicating that all vertices are active 
+ * with the sum of edge weights each vertex is connected to. The round array is
+ * initalized to the flag ACTIVE_FLAG indicating that all vertices are active
  * and that none of them has its round set yet.
  * @param[in] graph an instance of the graph structure
  * @param[in|out] weights_sum sum of edge weights for each vertex
@@ -60,7 +60,7 @@ void init_state_kernel(graph_t graph, int* weights_sum, uint32_t* round) {
 
 /**
  * Perform a single iteration in the context of a specific round (cur_round).
- * The vertices that belong to this round are set. Also, The finish_flags are 
+ * The vertices that belong to this round are set. Also, The finish_flags are
  * set to indicate end of round and overall end of processing.
  * @param[in]  graph an instance of the graph structure
  * @param[in]  weights_sum sum of edge weights for each vertex
@@ -70,13 +70,13 @@ void init_state_kernel(graph_t graph, int* weights_sum, uint32_t* round) {
  * @param[out] finish_flags represetnts two flags, one indicates if the overall
  *             processing is done, another indicates if the round is done.
  */
-__global__ 
-void pcore_kernel(graph_t graph, int* weights_sum, uint32_t* round, 
-                  uint32_t cur_round,  uint32_t cur_threshold, 
+__global__
+void pcore_kernel(graph_t graph, int* weights_sum, uint32_t* round,
+                  uint32_t cur_round,  uint32_t cur_threshold,
                   bool* finish_flags) {
   // get the thread's linear index
   id_t vertex_id = THREAD_GLOBAL_INDEX;
-  if (vertex_id >= graph.vertex_count || 
+  if (vertex_id >= graph.vertex_count ||
       round[vertex_id] != ACTIVE_FLAG) return;
 
   // check if the vertex belongs to the current p-[range]-core
@@ -84,9 +84,9 @@ void pcore_kernel(graph_t graph, int* weights_sum, uint32_t* round,
     // deactivate the vertex (assign its round value)
     round[vertex_id] = cur_round;
     /* since this vertex has been deactivated, it is virtually not part of
-       the graph anymore; therefore, we update the weight_sum of each of 
-       its neighbors (remember that the graph is undirected). Note that 
-       the round_finished flag is set to false to guarantee that the 
+       the graph anymore; therefore, we update the weight_sum of each of
+       its neighbors (remember that the graph is undirected). Note that
+       the round_finished flag is set to false to guarantee that the
        active neighbors of this vertex will be visited again after their
        weights_sum have been updated */
     finish_flags[ROUND_INDEX] = false;
@@ -111,12 +111,12 @@ void pcore_kernel(graph_t graph, int* weights_sum, uint32_t* round,
  */
 PRIVATE inline
 error_t verify_input(const graph_t* graph, uint32_t start, uint32_t step) {
-  if (!graph || !graph->weighted || graph->directed || step == 0 || 
+  if (!graph || !graph->weighted || graph->directed || step == 0 ||
       !graph->vertex_count) return FAILURE;
   return SUCCESS;
 }
 
-error_t pcore_gpu(const graph_t* graph, uint32_t start, uint32_t step, 
+error_t pcore_gpu(const graph_t* graph, uint32_t start, uint32_t step,
                   uint32_t** round_out) {
 
   // kernel configuration parameters
@@ -138,13 +138,13 @@ error_t pcore_gpu(const graph_t* graph, uint32_t start, uint32_t step,
 
   // allocate algorithm-specific state
   int* weights_sum_d;
-  CHK_CU_SUCCESS(cudaMalloc((void**)&weights_sum_d, graph->vertex_count * 
+  CHK_CU_SUCCESS(cudaMalloc((void**)&weights_sum_d, graph->vertex_count *
                             sizeof(int)), err_free_graph);
   uint32_t* round_d;
-  CHK_CU_SUCCESS(cudaMalloc((void**)&round_d, graph->vertex_count * 
+  CHK_CU_SUCCESS(cudaMalloc((void**)&round_d, graph->vertex_count *
                             sizeof(uint32_t)), err_free_weights_sum);
   bool* finish_flags_d;
-  CHK_CU_SUCCESS(cudaMalloc((void**)&finish_flags_d, 2 * sizeof(bool)), 
+  CHK_CU_SUCCESS(cudaMalloc((void**)&finish_flags_d, 2 * sizeof(bool)),
                  err_free_round);
 
   // compute the number of blocks
@@ -156,8 +156,8 @@ error_t pcore_gpu(const graph_t* graph, uint32_t start, uint32_t step,
   /* for each round (the outer-most for loop), p-core is computed for the set of
      active vertices for p = cur_threshold + epsilon. The vertices that don't
      belong to current p-core, their round is set (to cur_round), hence they get
-     deactivated (i.e., will not be considered in future rounds). The process 
-     finishes when all vertices are deactivated (i.e., all vertices have been 
+     deactivated (i.e., will not be considered in future rounds). The process
+     finishes when all vertices are deactivated (i.e., all vertices have been
      assigned a round). */
   bool*    finish_flags;
   finish_flags = (bool*)mem_alloc(2 * sizeof(bool));
@@ -173,7 +173,7 @@ error_t pcore_gpu(const graph_t* graph, uint32_t start, uint32_t step,
       CHK_CU_SUCCESS(cudaMemset(finish_flags_d, true, 2 * sizeof(bool)),
                      err_free_finish_flags);
       pcore_kernel<<<block_count, threads_per_block>>>
-        (*graph_d, weights_sum_d, round_d, cur_round, 
+        (*graph_d, weights_sum_d, round_d, cur_round,
          cur_threshold, finish_flags_d);
       CHK_CU_SUCCESS(cudaMemcpy(finish_flags, finish_flags_d, 2 * sizeof(bool),
                                 cudaMemcpyDeviceToHost), err_free_finish_flags);
@@ -182,10 +182,10 @@ error_t pcore_gpu(const graph_t* graph, uint32_t start, uint32_t step,
     cur_threshold += step;
     cur_round++;
   } // while !finished
-  
+
   uint32_t* round;
   round  = (uint32_t*)mem_alloc(graph->vertex_count * sizeof(uint32_t));
-  CHK_CU_SUCCESS(cudaMemcpy(round, round_d, 
+  CHK_CU_SUCCESS(cudaMemcpy(round, round_d,
                             graph->vertex_count * sizeof(uint32_t),
                             cudaMemcpyDeviceToHost), err_free_all);
   *round_out = round;
@@ -215,7 +215,7 @@ error_t pcore_gpu(const graph_t* graph, uint32_t start, uint32_t step,
   return FAILURE;
 }
 
-error_t pcore_cpu(const graph_t* graph, uint32_t start, uint32_t step, 
+error_t pcore_cpu(const graph_t* graph, uint32_t start, uint32_t step,
                   uint32_t** round_out) {
   CHK_SUCCESS(verify_input(graph, start, step), err);
 
@@ -246,12 +246,12 @@ error_t pcore_cpu(const graph_t* graph, uint32_t start, uint32_t step,
       weights_sum[vertex_id] += (int)graph->weights[i];
     } // for
   } // for
-  
+
   /* for each round (the outer-most for loop), p-core is computed for the set of
      active vertices for p = cur_threshold + epsilon. The vertices that don't
      belong to current p-core, their round is set (to cur_round), hence they get
-     deactivated (i.e., will not be considered in future rounds). The process 
-     finishes when all vertices are deactivated (i.e., all vertices have been 
+     deactivated (i.e., will not be considered in future rounds). The process
+     finishes when all vertices are deactivated (i.e., all vertices have been
      assigned a round). */
   bool     finished;
   uint32_t cur_round;
@@ -277,9 +277,9 @@ error_t pcore_cpu(const graph_t* graph, uint32_t start, uint32_t step,
           // deactivate the vertex (assign its round value)
           round[vertex_id] = cur_round;
           /* since this vertex has been deactivated, it is virtually not part of
-             the graph anymore; therefore, we update the weight_sum of each of 
-             its neighbors (remember that the graph is undirected). Note that 
-             the round_finished flag is set to false to guarantee that the 
+             the graph anymore; therefore, we update the weight_sum of each of
+             its neighbors (remember that the graph is undirected). Note that
+             the round_finished flag is set to false to guarantee that the
              active neighbors of this vertex will be visited again after their
              weights_sum have been updated */
           round_finished = false;
@@ -287,7 +287,7 @@ error_t pcore_cpu(const graph_t* graph, uint32_t start, uint32_t step,
                i < graph->vertices[vertex_id + 1]; i++) {
             id_t neighbor_id = graph->edges[i];
             // atomically modify the neighbor's sum of edge weights
-            __sync_sub_and_fetch(&(weights_sum[neighbor_id]), 
+            __sync_sub_and_fetch(&(weights_sum[neighbor_id]),
                                  (int)graph->weights[i]);
           }
         } else {
@@ -296,12 +296,12 @@ error_t pcore_cpu(const graph_t* graph, uint32_t start, uint32_t step,
         } // if
       } // for
     } // while !round_finished
-    
+
     // prepare state for the next round
     cur_threshold += step;
     cur_round++;
   } // while !finished
-  
+
   *round_out = round;
   return SUCCESS;
 

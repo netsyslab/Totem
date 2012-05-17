@@ -150,14 +150,14 @@ inline double __sync_fetch_and_add_double(double* address, double val) {
   do {
     assumed = old;
     double sum = val + (*((double*)&assumed));
-    old = __sync_val_compare_and_swap(address_as_int64, assumed, 
+    old = __sync_val_compare_and_swap(address_as_int64, assumed,
                                       *((int64_t*)&sum));
   } while (assumed != old);
   return *((double *)&old);
 }
 
 /**
- * Atomic min for int values. Atomically store the minimum of value at address 
+ * Atomic min for int values. Atomically store the minimum of value at address
  * and val back at address and returns the old value at address.
  * @param[in] address stores the minimum of val and old value at address
  * @param[in] val the value to be compared with
@@ -174,7 +174,7 @@ inline int __sync_fetch_and_min(int* address, int val) {
 }
 
 /**
- * A single precision atomic min. Atomically store the minimum of value at 
+ * A single precision atomic min. Atomically store the minimum of value at
  * address and val back at address and returns the old value at address.
  * @param[in] address stores the minimum of val and old value at address
  * @param[in] val the value to be compared with
@@ -193,7 +193,7 @@ inline float __sync_fetch_and_min_float(float* address, float val) {
 }
 
 /**
- * A double precision atomic min. Atomically store the minimum of value at 
+ * A double precision atomic min. Atomically store the minimum of value at
  * address and val back at address and returns the old value at address.
  * @param[in] address stores the minimum of val and old value at address
  * @param[in] val the value to be compared with
@@ -206,7 +206,7 @@ inline double __sync_fetch_and_min_double(double* address, double val) {
     assumed = old;
     double assumed_double = *((double*)&assumed);
     double min = (val < assumed_double) ? val : assumed_double;
-    old = __sync_val_compare_and_swap(address_as_int64, assumed, 
+    old = __sync_val_compare_and_swap(address_as_int64, assumed,
                                       *((int64_t*)&min));
   } while (assumed != old);
   return *((double *)&old);

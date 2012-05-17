@@ -1,16 +1,16 @@
 /**
- * This is an internal header file that is included only by the engine itself. 
- * This header file helps separating some internal functionality of the engine 
+ * This is an internal header file that is included only by the engine itself.
+ * This header file helps separating some internal functionality of the engine
  * that must be placed in a .h file (e.g., templatized interfaces).
- * 
+ *
  * Currently it includes inbox scatter/reduce functions. These functions allow
- * for distributing the data received at the inbox table into the algorithm's 
- * state variables. The assumption is that they will be invoked from inside the 
+ * for distributing the data received at the inbox table into the algorithm's
+ * state variables. The assumption is that they will be invoked from inside the
  * engine_scatter_func callback function.
  *
  * For example, PageRank has a "rank" array that represents the rank of each
- * vertex. The rank of each vertex is computed by summing the ranks of the 
- * neighboring vertices. In each superstep, the ranks of remote neighbors of 
+ * vertex. The rank of each vertex is computed by summing the ranks of the
+ * neighboring vertices. In each superstep, the ranks of remote neighbors of
  * a vertex are communicated into the inbox table of the partition. To this end,
  * a scatter function simply aggregates the "rank" of the remote neighbor with
  * the rank of the destination vertex (the aggregation is "add" in this case).
@@ -82,21 +82,21 @@ extern engine_context_t context;
     (_dst)[vid] = value > (_dst)[vid] ? value : (_dst)[vid];    \
   } while(0)
 
-template<typename T> 
+template<typename T>
 __global__ void scatter_add(grooves_box_table_t inbox, T* dst) {
   uint32_t index = THREAD_GLOBAL_INDEX;
   if (index >= inbox.count) return;
   _REDUCE_ENTRY_ADD(&inbox, index, dst);
 }
 
-template<typename T> 
+template<typename T>
 __global__ void scatter_min(grooves_box_table_t inbox, T* dst) {
   uint32_t index = THREAD_GLOBAL_INDEX;
   if (index >= inbox.count) return;
   _REDUCE_ENTRY_MIN(&inbox, index, dst);
 }
 
-template<typename T> 
+template<typename T>
 __global__ void scatter_max(grooves_box_table_t inbox, T* dst) {
   uint32_t index = THREAD_GLOBAL_INDEX;
   if (index >= inbox.count) return;
@@ -186,7 +186,7 @@ void engine_set_outbox(uint32_t pid, T value) {
     if (par->processor.type == PROCESSOR_GPU) {
       dim3 blocks, threads;
       KERNEL_CONFIGURE(outbox->count, blocks, threads);
-      memset_device<<<blocks, threads, 0, par->streams[1]>>>(values, value, 
+      memset_device<<<blocks, threads, 0, par->streams[1]>>>(values, value,
                                                              outbox->count);
       CALL_CU_SAFE(cudaGetLastError());
     } else {

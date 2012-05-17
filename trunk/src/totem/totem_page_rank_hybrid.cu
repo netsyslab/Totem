@@ -54,16 +54,16 @@ typedef struct page_rank_state_s {
 float* rank_g = NULL;
 
 /**
- * Used as a temporary buffer to host the final result produced by 
+ * Used as a temporary buffer to host the final result produced by
  * GPU partitions
  */
-float* rank_h = NULL; 
+float* rank_h = NULL;
 
 /**
- * Checks for input parameters and special cases. This is invoked at the 
+ * Checks for input parameters and special cases. This is invoked at the
  * beginning of public interfaces (GPU and CPU)
 */
-PRIVATE 
+PRIVATE
 error_t check_special_cases(graph_t* graph, float** rank, bool* finished) {
   *finished = true;
   if (graph == NULL) {
@@ -94,17 +94,17 @@ typedef struct {
 } vwarp_mem_t;
 
 /**
- * Phase1 kernel of the PageRank GPU algorithm. Produce the sum of 
- * the neighbors' ranks. Each vertex atomically adds its value to 
+ * Phase1 kernel of the PageRank GPU algorithm. Produce the sum of
+ * the neighbors' ranks. Each vertex atomically adds its value to
  * the temporary rank (rank_s) of the destination neighbor vertex.
  */
 __global__
-void vwarp_sum_neighbors_rank_kernel(partition_t par, int pc, float* rank, 
+void vwarp_sum_neighbors_rank_kernel(partition_t par, int pc, float* rank,
                                      float* rank_s, int thread_count) {
   if (THREAD_GLOBAL_INDEX >= thread_count) return;
   int warp_offset = THREAD_GLOBAL_INDEX % VWARP_WARP_SIZE;
   int warp_id     = THREAD_GLOBAL_INDEX / VWARP_WARP_SIZE;
-  
+
   // copy my work to local space
   __shared__ vwarp_mem_t smem[(MAX_THREADS_PER_BLOCK / VWARP_WARP_SIZE)];
   vwarp_mem_t* my_space = smem + (THREAD_GRID_INDEX / VWARP_WARP_SIZE);
@@ -114,7 +114,7 @@ void vwarp_sum_neighbors_rank_kernel(partition_t par, int pc, float* rank,
     my_batch_size = par.subgraph.vertex_count - v_;
   }
   vwarp_memcpy(my_space->rank, &rank[v_], my_batch_size, warp_offset);
-  vwarp_memcpy(my_space->vertices, &(par.subgraph.vertices[v_]), 
+  vwarp_memcpy(my_space->vertices, &(par.subgraph.vertices[v_]),
                my_batch_size + 1, warp_offset);
 
   // iterate over my work
@@ -140,7 +140,7 @@ void compute_normalized_rank_kernel(partition_t par, uint64_t vc,
 }
 
 __global__
-void compute_unnormalized_rank_kernel(partition_t par, uint64_t vc, 
+void compute_unnormalized_rank_kernel(partition_t par, uint64_t vc,
                                       float* rank, float* rank_s) {
   id_t v = THREAD_GLOBAL_INDEX;
   if (v >= par.subgraph.vertex_count) return;
@@ -152,11 +152,11 @@ PRIVATE void page_rank_gpu(partition_t* par) {
   if (engine_superstep() > 1) {
     // compute my rank
     if (engine_superstep() != PAGE_RANK_ROUNDS) {
-      compute_normalized_rank_kernel<<<ps->blocks_rank, ps->threads_rank, 0, 
+      compute_normalized_rank_kernel<<<ps->blocks_rank, ps->threads_rank, 0,
         par->streams[1]>>>(*par, engine_vertex_count(), ps->rank, ps->rank_s);
       CALL_CU_SAFE(cudaGetLastError());
     } else {
-      compute_unnormalized_rank_kernel<<<ps->blocks_rank, ps->threads_rank, 0, 
+      compute_unnormalized_rank_kernel<<<ps->blocks_rank, ps->threads_rank, 0,
         par->streams[1]>>>(*par, engine_vertex_count(), ps->rank, ps->rank_s);
       CALL_CU_SAFE(cudaGetLastError());
     }
@@ -184,7 +184,7 @@ PRIVATE void page_rank_cpu(partition_t* par) {
     #endif
     for(id_t v = 0; v < subgraph->vertex_count; v++) {
       uint32_t nbrs = subgraph->vertices[v + 1] - subgraph->vertices[v];
-      float rank = ((1 - DAMPING_FACTOR) / vcount) + 
+      float rank = ((1 - DAMPING_FACTOR) / vcount) +
         (DAMPING_FACTOR * ps->rank_s[v]);
       ps->rank[v] = (round == (PAGE_RANK_ROUNDS)) ? rank : rank / nbrs;
       ps->rank_s[v] = 0;
@@ -207,7 +207,7 @@ PRIVATE void page_rank_cpu(partition_t* par) {
 }
 
 PRIVATE void page_rank(partition_t* partition) {
-  if (partition->processor.type == PROCESSOR_GPU) { 
+  if (partition->processor.type == PROCESSOR_GPU) {
     page_rank_gpu(partition);
   } else {
     assert(partition->processor.type == PROCESSOR_CPU);
@@ -243,24 +243,24 @@ PRIVATE void page_rank_aggr(partition_t* partition) {
   }
 }
 
-PRIVATE void page_rank_init_gpu(partition_t* par, page_rank_state_t* ps, 
+PRIVATE void page_rank_init_gpu(partition_t* par, page_rank_state_t* ps,
                                 float init_value) {
   uint64_t vcount = par->subgraph.vertex_count;
   CALL_CU_SAFE(cudaMalloc((void**)&(ps->rank), vcount * sizeof(float)));
   CALL_CU_SAFE(cudaMalloc((void**)&(ps->rank_s), vcount * sizeof(float)));
-  KERNEL_CONFIGURE(VWARP_WARP_SIZE * VWARP_BATCH_COUNT(vcount), 
+  KERNEL_CONFIGURE(VWARP_WARP_SIZE * VWARP_BATCH_COUNT(vcount),
                    ps->blocks_sum, ps->threads_sum);
   KERNEL_CONFIGURE(vcount, ps->blocks_rank, ps->threads_rank);
   // TODO(abdullah): Use user provided initialization values
-  memset_device<<<ps->blocks_rank, ps->threads_rank, 0, 
+  memset_device<<<ps->blocks_rank, ps->threads_rank, 0,
     par->streams[1]>>>(ps->rank, init_value, vcount);
   CALL_CU_SAFE(cudaGetLastError());
-  memset_device<<<ps->blocks_rank, ps->threads_rank, 0, 
+  memset_device<<<ps->blocks_rank, ps->threads_rank, 0,
     par->streams[1]>>>(ps->rank_s, (float)0.0, vcount);
   CALL_CU_SAFE(cudaGetLastError());
 }
 
-PRIVATE void page_rank_init_cpu(partition_t* par, page_rank_state_t* ps, 
+PRIVATE void page_rank_init_cpu(partition_t* par, page_rank_state_t* ps,
                                 float init_value) {
   uint64_t vcount = par->subgraph.vertex_count;
   assert(par->processor.type == PROCESSOR_CPU);
@@ -274,7 +274,7 @@ PRIVATE void page_rank_init(partition_t* par) {
   if (!par->subgraph.vertex_count) return;
   page_rank_state_t* ps = (page_rank_state_t*)malloc(sizeof(page_rank_state_t));
   assert(ps);
-  float init_value = 1 / (float)engine_vertex_count();  
+  float init_value = 1 / (float)engine_vertex_count();
   if (par->processor.type == PROCESSOR_GPU) {
     page_rank_init_gpu(par, ps, init_value);
   } else {
@@ -300,7 +300,7 @@ PRIVATE void page_rank_finalize(partition_t* partition) {
 }
 
 // TODO(abdullah): Add partitioning algorithm as an input parameter
-error_t page_rank_hybrid(graph_t* graph, totem_attr_t* attr, 
+error_t page_rank_hybrid(graph_t* graph, totem_attr_t* attr,
                          float *rank_i, float** rank) {
   // check for special cases
   bool finished = false;

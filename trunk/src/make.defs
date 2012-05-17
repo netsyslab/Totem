@@ -1,9 +1,9 @@
 #--------------------------------------------------------------------------
 # Common definitions to all internal makefiles
 #
-# Features (e.g., make MEMORY="PINNED"): 
+# Features (e.g., make MEMORY="PINNED"):
 #   MEMORY=PAGEABLE // enables using pageable instead of pinned memory
-#   MP=NO           // disables OpenMP 
+#   MP=NO           // disables OpenMP
 #   VERBOSE=YES     // verbose nvcc output (host symbols are always produced)
 #   DEBUG=DEVICE    // produce device debugging symbols
 #   MAXREG=[number] // maximum number of registers per cuda thread (default 16)
@@ -23,12 +23,12 @@ endif
 # OpenMP support, default is enabled
 OPENMP    = -fopenmp
 ifeq ($(MP), NO)
-  OPENMP  = 
+  OPENMP  =
 endif
 
 # Set compilation options
 NVCCFLAGS =
-CCFLAGS = 
+CCFLAGS =
 # enable verbose output
 ifeq ($(VERBOSE), YES)
   NVCCFLAGS  += --ptxas-options=-v
@@ -49,7 +49,7 @@ endif
 # Architecture to compile for
 ARCH = $(shell getconf LONG_BIT)
 ifeq ($(ARCH), 32)
-  ARCH = 
+  ARCH =
 endif
 
 # directory definitions

@@ -20,26 +20,26 @@
 #include "totem_mem.h"
 
 /**
-   This structure is used by the virtual warp-based implementation. It stores a 
+   This structure is used by the virtual warp-based implementation. It stores a
    batch of work. It is typically allocated on shared memory and is processed by
    a single virtual warp.
  */
 typedef struct {
   uint32_t cost[VWARP_BATCH_SIZE];
   id_t vertices[VWARP_BATCH_SIZE + 1];
-  // the following ensures 64-bit alignment, it assumes that the 
+  // the following ensures 64-bit alignment, it assumes that the
   // cost and vertices arrays are of 32-bit elements.
   // TODO(abdullah) a portable way to do this (what if id_t is 64-bit?)
-  int pad; 
+  int pad;
 } vwarp_mem_t;
 
 /**
- * A common initialization function for GPU implementations. It allocates and 
+ * A common initialization function for GPU implementations. It allocates and
  * initalizes state on the GPU
 */
-PRIVATE 
-error_t initialize_gpu(const graph_t* graph, id_t source_id, uint64_t cost_len, 
-                       graph_t** graph_d, uint32_t** cost_d, 
+PRIVATE
+error_t initialize_gpu(const graph_t* graph, id_t source_id, uint64_t cost_len,
+                       graph_t** graph_d, uint32_t** cost_d,
                        bool** finished_d) {
 
   // TODO(lauro) Next four lines are not directly related to this function and
@@ -75,7 +75,7 @@ error_t initialize_gpu(const graph_t* graph, id_t source_id, uint64_t cost_len,
  * output buffer, moves the final results from GPU to the host buffers and
  * frees up some resources.
 */
-PRIVATE 
+PRIVATE
 error_t finalize_gpu(graph_t* graph_d, uint32_t* cost_d, uint32_t** cost) {
   *cost = (uint32_t*) mem_alloc(graph_d->vertex_count * sizeof(uint32_t));
   CHK_CU_SUCCESS(cudaMemcpy(*cost, cost_d, graph_d->vertex_count *
@@ -125,31 +125,31 @@ void bfs_kernel(graph_t graph, uint32_t level, bool* finished, uint32_t* cost) {
 }
 
 /**
- * The neighbors processing function. This function sets the level of the 
- * neighbors' vertex to one level more than the vertex. The assumption is that 
- * the threads of a warp invoke this function to process the warp's batch of 
- * work. In each iteration of the for loop, each thread processes a neighbor. 
- * For example, thread 0 in the warp processes neighbors at indices 0, 
- * VWARP_WARP_SIZE, (2 * VWARP_WARP_SIZE) etc. in the edges array, while thread 
- * 1 in the warp processes neighbors 1, (1 + VWARP_WARP_SIZE), 
+ * The neighbors processing function. This function sets the level of the
+ * neighbors' vertex to one level more than the vertex. The assumption is that
+ * the threads of a warp invoke this function to process the warp's batch of
+ * work. In each iteration of the for loop, each thread processes a neighbor.
+ * For example, thread 0 in the warp processes neighbors at indices 0,
+ * VWARP_WARP_SIZE, (2 * VWARP_WARP_SIZE) etc. in the edges array, while thread
+ * 1 in the warp processes neighbors 1, (1 + VWARP_WARP_SIZE),
  * (1 + 2 * VWARP_WARP_SIZE) and so on.
 */
 __device__
-void vwarp_process_neighbors(int warp_offset, int neighbor_count, id_t* edges, 
+void vwarp_process_neighbors(int warp_offset, int neighbor_count, id_t* edges,
                              uint32_t* cost, int level, bool* finished) {
   for(int i = warp_offset; i < neighbor_count; i += VWARP_WARP_SIZE) {
     int neighbor_id = edges[i];
     if (cost[neighbor_id] == INFINITE) {
       cost[neighbor_id] = level + 1;
       *finished = false;
-    } 
+    }
   }
 }
 
 /**
- * A warp-based implementation of the BFS kernel. Please refer to the 
+ * A warp-based implementation of the BFS kernel. Please refer to the
  * description of the warp technique for details. Also, please refer to
- * bfs_kernel for details on the BFS implementation. 
+ * bfs_kernel for details on the BFS implementation.
  */
 __global__
 void vwarp_bfs_kernel(graph_t graph, uint32_t level, bool* finished,
@@ -159,15 +159,15 @@ void vwarp_bfs_kernel(graph_t graph, uint32_t level, bool* finished,
 
   int warp_offset = THREAD_GLOBAL_INDEX % VWARP_WARP_SIZE;
   int warp_id     = THREAD_GLOBAL_INDEX / VWARP_WARP_SIZE;
-  
-  __shared__ vwarp_mem_t shared_memory[(MAX_THREADS_PER_BLOCK / 
+
+  __shared__ vwarp_mem_t shared_memory[(MAX_THREADS_PER_BLOCK /
                                         VWARP_WARP_SIZE)];
   vwarp_mem_t* my_space = shared_memory + (THREAD_GRID_INDEX / VWARP_WARP_SIZE);
 
   // copy my work to local space
   int v_ = warp_id * VWARP_BATCH_SIZE;
   vwarp_memcpy(my_space->cost, &cost[v_], VWARP_BATCH_SIZE, warp_offset);
-  vwarp_memcpy(my_space->vertices, &(graph.vertices[v_]), VWARP_BATCH_SIZE + 1, 
+  vwarp_memcpy(my_space->vertices, &(graph.vertices[v_]), VWARP_BATCH_SIZE + 1,
                warp_offset);
 
   // iterate over my work
@@ -175,7 +175,7 @@ void vwarp_bfs_kernel(graph_t graph, uint32_t level, bool* finished,
     if (my_space->cost[v] == level) {
       int neighbor_count = my_space->vertices[v + 1] - my_space->vertices[v];
       id_t* neighbors = &(graph.edges[my_space->vertices[v]]);
-      vwarp_process_neighbors(warp_offset, neighbor_count, neighbors, cost, 
+      vwarp_process_neighbors(warp_offset, neighbor_count, neighbors, cost,
                               level, finished);
     }
   }
@@ -188,14 +188,14 @@ void vwarp_bfs_kernel(graph_t graph, uint32_t level, bool* finished,
  * an elegant soultion for the multi-version algorithms.
 */
 __global__
-void vwarp_bfs_kernel_no_shared(graph_t graph, uint32_t level, bool* finished, 
+void vwarp_bfs_kernel_no_shared(graph_t graph, uint32_t level, bool* finished,
                                 uint32_t* cost, uint32_t thread_count) {
 
   if (THREAD_GLOBAL_INDEX >= thread_count) return;
 
   int warp_offset = THREAD_GLOBAL_INDEX % VWARP_WARP_SIZE;
   int warp_id     = THREAD_GLOBAL_INDEX / VWARP_WARP_SIZE;
-  
+
   // iterate over my work
   int batch_offset = warp_id * VWARP_BATCH_SIZE;
   for(uint64_t v = batch_offset; v < (VWARP_BATCH_SIZE + batch_offset); v++) {
@@ -228,12 +228,12 @@ error_t bfs_vwarp_gpu(graph_t* graph, id_t source_id, uint32_t** cost) {
   uint64_t cost_length;
   bool* finished_d;
   cost_length = VWARP_BATCH_SIZE * VWARP_BATCH_COUNT(graph->vertex_count);
-  CHK_SUCCESS(initialize_gpu(graph, source_id, cost_length, &graph_d, 
+  CHK_SUCCESS(initialize_gpu(graph, source_id, cost_length, &graph_d,
                              &cost_d, &finished_d), err_free_all);
 
   // {} used to limit scope and avoid problems with error handles.
   {
-  // Configure the kernel's threads and on-chip memory. On-ship memory is 
+  // Configure the kernel's threads and on-chip memory. On-ship memory is
   // configured as shared memory rather than L1 cache
   dim3 blocks;
   dim3 threads_per_block;
@@ -282,9 +282,9 @@ error_t bfs_gpu(graph_t* graph, id_t source_id, uint32_t** cost) {
   graph_t* graph_d;
   uint32_t* cost_d;
   bool* finished_d;
-  CHK_SUCCESS(initialize_gpu(graph, source_id, graph->vertex_count, 
+  CHK_SUCCESS(initialize_gpu(graph, source_id, graph->vertex_count,
                              &graph_d, &cost_d, &finished_d), err_free_all);
-  
+
   // {} used to limit scope and avoid problems with error handles.
   {
   dim3 blocks;
@@ -292,7 +292,7 @@ error_t bfs_gpu(graph_t* graph, id_t source_id, uint32_t** cost) {
   KERNEL_CONFIGURE(graph->vertex_count, blocks, threads_per_block);
   bool finished = false;
   // while the current level has vertices to be processed.
-  for (uint32_t level = 0; !finished; level++) {    
+  for (uint32_t level = 0; !finished; level++) {
     CHK_CU_SUCCESS(cudaMemset(finished_d, true, 1), err_free_all);
     // for each vertex V in parallel do
     bfs_kernel<<<blocks, threads_per_block>>>(*graph_d, level, finished_d,

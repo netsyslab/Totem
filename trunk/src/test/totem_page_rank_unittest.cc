@@ -27,7 +27,7 @@ typedef error_t(*PageRankFunction)(graph_t*, float*, float**);
 // of the hybrid algorithm forced this work-around.
 typedef struct page_rank_param_s {
   bool             hybrid; // true when using the hybrid algorithm
-  PageRankFunction func;   // the vanilla page_rank function if hybrid 
+  PageRankFunction func;   // the vanilla page_rank function if hybrid
                            // flag is false
 } page_rank_param_t;
 
@@ -43,7 +43,7 @@ class PageRankTest : public TestWithParam<page_rank_param_t*> {
     if (page_rank_param->hybrid) {
       totem_attr_t attr = TOTEM_DEFAULT_ATTR;
       return page_rank_hybrid(graph, &attr, rank_i, rank);
-    } 
+    }
     return page_rank_param->func(graph, rank_i, rank);
   }
  protected:
@@ -80,7 +80,7 @@ TEST_P(PageRankTest, Chain) {
   EXPECT_EQ(SUCCESS, graph_initialize(DATA_FOLDER("chain_1000_nodes.totem"),
                                       false, &graph));
 
-  // the graph should be undirected because the test is shared between the 
+  // the graph should be undirected because the test is shared between the
   // two versions of the PageRank algorithm: incoming- and outgoing- based.
   EXPECT_FALSE(graph->directed);
 
@@ -100,7 +100,7 @@ TEST_P(PageRankTest, CompleteGraph) {
   EXPECT_EQ(SUCCESS,
             graph_initialize(DATA_FOLDER("complete_graph_300_nodes.totem"),
                              false, &graph));
-  // the graph should be undirected because the test is shared between the 
+  // the graph should be undirected because the test is shared between the
   // two versions of the PageRank algorithm: incoming- and outgoing- based.
   EXPECT_FALSE(graph->directed);
 
@@ -121,7 +121,7 @@ TEST_P(PageRankTest, Star) {
             graph_initialize(DATA_FOLDER("star_1000_nodes.totem"),
                              false, &graph));
 
-  // the graph should be undirected because the test is shared between the 
+  // the graph should be undirected because the test is shared between the
   // two versions of the PageRank algorithm: incoming- and outgoing- based.
   EXPECT_FALSE(graph->directed);
 
@@ -151,8 +151,8 @@ page_rank_param_t page_rank_params[] = {{false, &page_rank_cpu},
 
 // Values() receives a list of parameters and the framework will execute the
 // whole set of tests PageRankTest for each element of Values()
-// TODO(abdullah): both versions of the PageRank algorithm (the incoming- and 
-// outgoing- based) can share the same tests because all the graphs are 
+// TODO(abdullah): both versions of the PageRank algorithm (the incoming- and
+// outgoing- based) can share the same tests because all the graphs are
 // undirected. Separate the two for cases where the graphs are directed.
 INSTANTIATE_TEST_CASE_P(PageRankGPUAndCPUTest, PageRankTest,
                         Values(&page_rank_params[0],

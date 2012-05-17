@@ -276,7 +276,7 @@ TEST_P(DijkstraTest, CompleteDiffWeight) {
 
 INSTANTIATE_TEST_CASE_P(DijkstraGPUAndCPUTest, DijkstraTest,
                         Values(&dijkstra_cpu,
-                               &dijkstra_gpu, 
+                               &dijkstra_gpu,
                                &dijkstra_vwarp_gpu));
 
 #else

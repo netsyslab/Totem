@@ -42,7 +42,7 @@ class BFSTest : public TestWithParam<bfs_param_t*> {
     if (bfs_param->hybrid) {
       totem_attr_t attr = TOTEM_DEFAULT_ATTR;
       return bfs_hybrid(graph, &attr, src, cost);
-    } 
+    }
     return bfs_param->func(graph, src, cost);
   }
  protected:
@@ -264,9 +264,9 @@ bfs_param_t bfs_params[] = {{false, &bfs_cpu},
 //
 // Values() receives a list of parameters and the framework will execute the
 // whole set of tests BFSTest for each element of Values()
-INSTANTIATE_TEST_CASE_P(BFSGPUAndCPUTest, BFSTest, Values(&bfs_params[0], 
-                                                          &bfs_params[1], 
-                                                          &bfs_params[2], 
+INSTANTIATE_TEST_CASE_P(BFSGPUAndCPUTest, BFSTest, Values(&bfs_params[0],
+                                                          &bfs_params[1],
+                                                          &bfs_params[2],
                                                           &bfs_params[3]));
 
 #else

@@ -28,13 +28,13 @@ typedef struct bfs_state_s {
 uint32_t* cost_g     = NULL;
 
 /**
- * Used as a temporary buffer to host the final result produced by 
+ * Used as a temporary buffer to host the final result produced by
  * GPU partitions
  */
 uint32_t* cost_h     = NULL;
 
 /**
- * A global finish flag. This flag is set to true at the beginning of each 
+ * A global finish flag. This flag is set to true at the beginning of each
  * superstep. Any partition that still has vertices to process sets this
  * flag to false. There is no need to synchronize access to it since
  * there is only one possible write value (false).
@@ -47,10 +47,10 @@ bool* finished_g = NULL;
 id_t src_g;
 
 /**
- * Checks for input parameters and special cases. This is invoked at the 
+ * Checks for input parameters and special cases. This is invoked at the
  * beginning of public interfaces (GPU and CPU)
 */
-PRIVATE error_t check_special_cases(graph_t* graph, id_t src, uint32_t** cost, 
+PRIVATE error_t check_special_cases(graph_t* graph, id_t src, uint32_t** cost,
                                     bool* finished) {
   *finished = true;
   if((graph == NULL) || (src >= graph->vertex_count)) {
@@ -66,23 +66,23 @@ PRIVATE error_t check_special_cases(graph_t* graph, id_t src, uint32_t** cost,
 }
 
 /**
-   This structure is used by the virtual warp-based implementation. It stores a 
+   This structure is used by the virtual warp-based implementation. It stores a
    batch of work. It is typically allocated on shared memory and is processed by
    a single virtual warp.
  */
 typedef struct {
   uint32_t cost[VWARP_BATCH_SIZE];
   id_t vertices[VWARP_BATCH_SIZE + 1];
-  // the following ensures 64-bit alignment, it assumes that the 
+  // the following ensures 64-bit alignment, it assumes that the
   // cost and vertices arrays are of 32-bit elements.
   // TODO(abdullah) a portable way to do this (what if id_t is 64-bit?)
-  int pad; 
+  int pad;
 } vwarp_mem_t;
 
 /**
- * A warp-based implementation of the BFS kernel. Please refer to the 
+ * A warp-based implementation of the BFS kernel. Please refer to the
  * description of the warp technique for details. Also, please refer to
- * bfs_kernel for details on the BFS implementation. 
+ * bfs_kernel for details on the BFS implementation.
  */
 __global__
 void vwarp_bfs_kernel(partition_t par, int pc, uint32_t level, bool* finished,
@@ -90,13 +90,13 @@ void vwarp_bfs_kernel(partition_t par, int pc, uint32_t level, bool* finished,
   if (THREAD_GLOBAL_INDEX >= thread_count) return;
   int warp_offset = THREAD_GLOBAL_INDEX % VWARP_WARP_SIZE;
   int warp_id     = THREAD_GLOBAL_INDEX / VWARP_WARP_SIZE;
-  
+
   // This flag is used to report the finish state of a block of threads. This
   // is useful to avoid having many threads writing to the global finished
-  // flag, which can hurt performance (since "finished" is actually allocated 
+  // flag, which can hurt performance (since "finished" is actually allocated
   // on the host, and each write will cause a transfer over the PCI-E bus)
   __shared__ bool finished_block;
-  finished_block = true; 
+  finished_block = true;
   __syncthreads();
 
   // copy my work to local space
@@ -106,7 +106,7 @@ void vwarp_bfs_kernel(partition_t par, int pc, uint32_t level, bool* finished,
   int batch_size = (v + VWARP_BATCH_SIZE) > par.subgraph.vertex_count ?
     (par.subgraph.vertex_count - v) : VWARP_BATCH_SIZE;
   vwarp_memcpy(my_space->cost, &cost[v], batch_size, warp_offset);
-  vwarp_memcpy(my_space->vertices, &(par.subgraph.vertices[v]), 
+  vwarp_memcpy(my_space->vertices, &(par.subgraph.vertices[v]),
                batch_size + 1, warp_offset);
 
   // iterate over my work
@@ -129,15 +129,15 @@ void vwarp_bfs_kernel(partition_t par, int pc, uint32_t level, bool* finished,
 }
 
 __global__
-void bfs_kernel(partition_t par, int pc, uint32_t level, 
+void bfs_kernel(partition_t par, int pc, uint32_t level,
                 bool* finished, uint32_t* cost) {
   const int v = THREAD_GLOBAL_INDEX;
   if (v >= par.subgraph.vertex_count || cost[v] != level) return;
 
-  for (id_t i = par.subgraph.vertices[v]; 
+  for (id_t i = par.subgraph.vertices[v];
        i < par.subgraph.vertices[v + 1]; i++) {
     uint32_t* dst; id_t nbr = par.subgraph.edges[i];
-    
+
     ENGINE_FETCH_DST(par.id, nbr, par.outbox_d, cost,
                      pc, dst, uint32_t);
     if (*dst == INFINITE) {
@@ -172,7 +172,7 @@ PRIVATE void bfs_cpu(partition_t* par) {
     if (state->cost[v] != state->level) continue;
     for (id_t i = subgraph->vertices[v]; i < subgraph->vertices[v + 1]; i++) {
       uint32_t* dst; id_t nbr = subgraph->edges[i];
-      ENGINE_FETCH_DST(par->id, nbr, par->outbox, state->cost, pc, 
+      ENGINE_FETCH_DST(par->id, nbr, par->outbox, state->cost, pc,
                        dst, uint32_t);
       if (*dst == INFINITE) {
         *dst = state->level + 1;
@@ -184,7 +184,7 @@ PRIVATE void bfs_cpu(partition_t* par) {
 
 PRIVATE void bfs(partition_t* par) {
   bfs_state_t* state = (bfs_state_t*)par->algo_state;
-  if (par->processor.type == PROCESSOR_GPU) { 
+  if (par->processor.type == PROCESSOR_GPU) {
     bfs_gpu(par);
   } else {
     assert(par->processor.type == PROCESSOR_CPU);
@@ -199,10 +199,10 @@ PRIVATE void bfs_ss() {
 }
 
 PRIVATE void bfs_scatter(partition_t* par) {
-  // this callback function is invoked at the end of a superstep. i.e., it is 
-  // guaranteed at this point that all kernels has finished execution (remember 
+  // this callback function is invoked at the end of a superstep. i.e., it is
+  // guaranteed at this point that all kernels has finished execution (remember
   // that GPU kernels are inovked asynchronously, and messages to remote
-  // vertices has been communicated to the inboxes. 
+  // vertices has been communicated to the inboxes.
   // The most important point here is that only at this stage it is guaranteed
   // that, if a kernel has set the shared flag "finished_g" to false, this write
   // has been propagated to the host memory.
@@ -243,10 +243,10 @@ PRIVATE void bfs_init(partition_t* par) {
   uint64_t vcount = par->subgraph.vertex_count;
   if (par->processor.type == PROCESSOR_GPU) {
     CALL_CU_SAFE(cudaMalloc((void**)&(state->cost), vcount * sizeof(uint32_t)));
-    CALL_CU_SAFE(cudaHostGetDevicePointer((void **)&(state->finished), 
+    CALL_CU_SAFE(cudaHostGetDevicePointer((void **)&(state->finished),
                                           (void *)finished_g, 0));
     KERNEL_CONFIGURE(vcount, state->blocks, state->threads);
-    memset_device<<<state->blocks, state->threads, 0, 
+    memset_device<<<state->blocks, state->threads, 0,
       par->streams[1]>>>(state->cost, INFINITE, vcount);
     CALL_CU_SAFE(cudaGetLastError());
     if (src_pid == par->id) {
@@ -285,7 +285,7 @@ PRIVATE void bfs_finalize(partition_t* par) {
 }
 
 // TODO(abdullah): Add partitioning algorithm as an input parameter
-error_t bfs_hybrid(graph_t* graph, totem_attr_t* attr, 
+error_t bfs_hybrid(graph_t* graph, totem_attr_t* attr,
                    id_t src, uint32_t** cost) {
   // check for special cases
   bool finished = false;
@@ -293,13 +293,13 @@ error_t bfs_hybrid(graph_t* graph, totem_attr_t* attr,
   if (finished) return rc;
 
   cost_g = (uint32_t*)mem_alloc(graph->vertex_count * sizeof(uint32_t));
-  // The global finish flag is allocated on the host using the 
+  // The global finish flag is allocated on the host using the
   // cudaHostAllocMapped option which allows GPU kernels to access it directly
   // from within the GPU. This flag is initialized to true in the algo_ss_kernel
   // invoked at the beginning of each superstep (before the per-partition kernel
   // callback. Any of the processors (partitions) set this flag to false if it
   // still has work to do.
-  CALL_CU_SAFE(cudaHostAlloc((void **)&finished_g, sizeof(bool), 
+  CALL_CU_SAFE(cudaHostAlloc((void **)&finished_g, sizeof(bool),
                              cudaHostAllocPortable | cudaHostAllocMapped));
 
   // initialize the engine
@@ -319,7 +319,7 @@ error_t bfs_hybrid(graph_t* graph, totem_attr_t* attr,
   src_g = src;
   engine_init(&config);
   if (engine_largest_gpu_partition()) {
-    cost_h = (uint32_t*)mem_alloc(engine_largest_gpu_partition() * 
+    cost_h = (uint32_t*)mem_alloc(engine_largest_gpu_partition() *
                                   sizeof(uint32_t));
   }
   engine_execute();

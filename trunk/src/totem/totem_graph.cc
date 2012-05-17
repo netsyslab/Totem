@@ -24,7 +24,7 @@ PRIVATE char line[MAX_LINE_LENGTH];
  * @return generic success or failure
  */
 PRIVATE error_t parse_metadata(FILE* file_handler, uint64_t* vertex_count,
-                               uint64_t* edge_count, bool* directed, 
+                               uint64_t* edge_count, bool* directed,
                                bool* valued) {
   // logistics for parsing
   char*         token          = NULL;
@@ -55,8 +55,8 @@ PRIVATE error_t parse_metadata(FILE* file_handler, uint64_t* vertex_count,
 
   /* get the metadata, the vertex and edge counts and whether the graph is
      directed or not. The assumption is that the metadata exists is the
-     first four lines demonstrated below. 
-     Note that the flag [Y] after vertex_count indicates that a vertex list 
+     first four lines demonstrated below.
+     Note that the flag [Y] after vertex_count indicates that a vertex list
      should be expected.
      # Nodes: vertex_count [Y]
      # Edges: edge_count
@@ -90,7 +90,7 @@ PRIVATE error_t parse_metadata(FILE* file_handler, uint64_t* vertex_count,
         CHK((token = strtok(NULL, delimiters)) != NULL, err_format);
         CHK(is_numeric(token), err_format);
         *vertex_count = atoi(token);
-        if (((token = strtok(NULL, delimiters)) != NULL) && 
+        if (((token = strtok(NULL, delimiters)) != NULL) &&
             tolower(*token) == 'y') {
           *valued = true;
         }
@@ -123,9 +123,9 @@ PRIVATE error_t parse_metadata(FILE* file_handler, uint64_t* vertex_count,
 }
 
 /**
- * Parse the vertex list. The vertex list assigns values to each vertex. The 
- * list must be sorted. Although a value is not needed for each and every 
- * vertex,a value for the last vertex (i.e., vertex id graph->vertex_count - 1) 
+ * Parse the vertex list. The vertex list assigns values to each vertex. The
+ * list must be sorted. Although a value is not needed for each and every
+ * vertex,a value for the last vertex (i.e., vertex id graph->vertex_count - 1)
  * is required as it is used as an end-of-list signal.
  * @param[in] file_handler a handler to an opened graph file
  * @param[in|out] graph reference to graph type to store the vertex list values
@@ -161,7 +161,7 @@ PRIVATE error_t parse_vertex_list(FILE* file_handler, graph_t* graph) {
 
     if (vertex_id != vertex_index) {
       // vertices must be in increasing order and less than the maximum count
-      CHK(((vertex_id > vertex_index) && 
+      CHK(((vertex_id > vertex_index) &&
            (vertex_id < graph->vertex_count)), err);
 
       // vertices without values will be assigned a default one
@@ -171,7 +171,7 @@ PRIVATE error_t parse_vertex_list(FILE* file_handler, graph_t* graph) {
     }
 
     // set the value
-    graph->values[vertex_index++] = value;    
+    graph->values[vertex_index++] = value;
   }
 
   return SUCCESS;
@@ -279,7 +279,7 @@ PRIVATE error_t parse_edge_list(FILE* file_handler, graph_t* graph) {
  * @param[out] graph reference to allocated graph type to store the edge list
  * @return generic success or failure
  */
-PRIVATE void allocate_graph(uint64_t vertex_count, uint64_t edge_count, 
+PRIVATE void allocate_graph(uint64_t vertex_count, uint64_t edge_count,
                             bool directed, bool weighted, bool valued,
                             graph_t** graph_ret) {
   // Allocate the main structure
@@ -289,13 +289,13 @@ PRIVATE void allocate_graph(uint64_t vertex_count, uint64_t edge_count,
   // make it easy to calculate the number of neighbors of the last vertex.
   graph->vertices = (id_t*)malloc((vertex_count + 1) * sizeof(id_t));
   graph->edges    = (id_t*)malloc(edge_count * sizeof(id_t));
-  graph->weights  = weighted ? 
+  graph->weights  = weighted ?
     (weight_t*)malloc(edge_count * sizeof(weight_t)) : NULL;
   graph->values  = valued ?
     (weight_t*)malloc(vertex_count * sizeof(weight_t)) : NULL;
   // Ensure buffer allocation
-  assert((graph->vertices && graph->edges) && 
-         ((valued && graph->values) || (!valued && !graph->values)) && 
+  assert((graph->vertices && graph->edges) &&
+         ((valued && graph->values) || (!valued && !graph->values)) &&
          ((weighted && graph->weights) || (!weighted && !graph->weights)));
   // Set the member variables
   graph->vertex_count = vertex_count;
@@ -323,7 +323,7 @@ error_t graph_initialize(const char* graph_file, bool weighted,
   CHK(file_handler != NULL, err_openfile);
 
   // get graph characteristics
-  CHK(parse_metadata(file_handler, &vertex_count, &edge_count, 
+  CHK(parse_metadata(file_handler, &vertex_count, &edge_count,
                      &directed, &valued) == SUCCESS, err);
 
   // allocate the graph and its buffers
@@ -348,8 +348,8 @@ error_t graph_initialize(const char* graph_file, bool weighted,
   err_format_clean:
     fclose(file_handler);
     graph_finalize(graph);
-    fprintf(stderr, "Incorrect file format at line number %d.\n" 
-            "Check the file format described in totem_graph.h\n", 
+    fprintf(stderr, "Incorrect file format at line number %d.\n"
+            "Check the file format described in totem_graph.h\n",
             line_number);
   err:
     return FAILURE;
@@ -359,7 +359,7 @@ error_t get_subgraph(const graph_t* graph, bool* mask, graph_t** subgraph_ret) {
 
   assert(graph && mask);
 
-  // Used to map vertices in the graph to the subgraph to maintain the 
+  // Used to map vertices in the graph to the subgraph to maintain the
   // requirement that vertex ids start from 0 to vertex_count
   id_t* map = (id_t*)calloc(graph->vertex_count, sizeof(id_t));
 
@@ -370,16 +370,16 @@ error_t get_subgraph(const graph_t* graph, bool* mask, graph_t** subgraph_ret) {
     if (mask[vertex_id]) {
       map[vertex_id] = subgraph_vertex_count;
       subgraph_vertex_count++;
-      for (uint32_t i = graph->vertices[vertex_id]; 
+      for (uint32_t i = graph->vertices[vertex_id];
            i < graph->vertices[vertex_id + 1]; i++) {
-        if (mask[graph->edges[i]]) subgraph_edge_count++;     
+        if (mask[graph->edges[i]]) subgraph_edge_count++;
       }
     }
   }
 
   // allocate the subgraph and its buffers
   graph_t* subgraph = NULL;
-  allocate_graph(subgraph_vertex_count, subgraph_edge_count, graph->directed, 
+  allocate_graph(subgraph_vertex_count, subgraph_edge_count, graph->directed,
                  graph->weighted, graph->valued, &subgraph);
 
   // build the vertex and edge lists
@@ -393,11 +393,11 @@ error_t get_subgraph(const graph_t* graph, bool* mask, graph_t** subgraph_ret) {
       }
       subgraph_vertex_index++;
 
-      for (uint32_t i = graph->vertices[vertex_id]; 
+      for (uint32_t i = graph->vertices[vertex_id];
            i < graph->vertices[vertex_id + 1]; i++) {
         if (mask[graph->edges[i]]) {
           subgraph->edges[subgraph_edge_index] = map[graph->edges[i]];
-          if (subgraph->weighted) { 
+          if (subgraph->weighted) {
             subgraph->weights[subgraph_edge_index] = graph->weights[i];
           }
           subgraph_edge_index++;
