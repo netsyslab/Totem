@@ -12,13 +12,6 @@
 #include "totem_graph.h"
 #include "totem_mem.h"
 
-/********* STOPWATCH ********/
-stopwatch_t stopwatch;
-double time_init = 0.0;
-double time_mem = 0.0;
-double time_exec = 0.0;
-/********* STOPWATCH ********/
-
 /**
  * Checks for input parameters and special cases. This is invoked at the
  * beginning of public interfaces (GPU and CPU).
@@ -332,9 +325,6 @@ void unweighted_back_sum_kernel(graph_t graph, id_t source, int32_t dist,
  */
 error_t betweenness_unweighted_gpu(const graph_t* graph,
                                    weight_t** centrality_score) {
-/********* STOPWATCH ********/
-stopwatch_start(&stopwatch);
-/********* STOPWATCH ********/
   // Sanity check on input
   bool finished = true;
   error_t rc = check_special_cases(graph, &finished, centrality_score);
@@ -361,10 +351,6 @@ stopwatch_start(&stopwatch);
                                    &stack_d, &stack_count_d, &delta_d,
                                    &finished_d, &betweenness_centrality_d),
               err_free_betweenness);
-/********* STOPWATCH ********/
-time_init += stopwatch_elapsed(&stopwatch);
-stopwatch_start(&stopwatch);
-/********* STOPWATCH ********/
 
   // {} used to limit scope and avoid problems with error handles.
   {
@@ -389,18 +375,9 @@ stopwatch_start(&stopwatch);
     while (!finished) {
       CHK_CU_SUCCESS(cudaMemset(finished_d, true, sizeof(bool)), err_free_all);
       CHK_CU_SUCCESS(cudaDeviceSynchronize(), err_free_all);
-/********* STOPWATCH ********/
-time_mem += stopwatch_elapsed(&stopwatch);
-stopwatch_start(&stopwatch);
-/********* STOPWATCH ********/
       unweighted_sssp_succs_kernel<<<blocks, threads_per_block>>>
         (*graph_d, phase, sigma_d, dist_d, succ_d, succ_count_d, stack_d,
          stack_count_d, finished_d);
-/********* STOPWATCH ********/
-CHK_CU_SUCCESS(cudaDeviceSynchronize(), err_free_all);
-time_exec += stopwatch_elapsed(&stopwatch);
-stopwatch_start(&stopwatch);
-/********* STOPWATCH ********/
       CHK_CU_SUCCESS(cudaMemcpy(&finished, finished_d, sizeof(bool),
                                 cudaMemcpyDeviceToHost), err_free_all);
       phase++;
@@ -412,10 +389,6 @@ stopwatch_start(&stopwatch);
                               graph->vertex_count * sizeof(id_t)),
                    err_free_all);
     KERNEL_CONFIGURE(graph->vertex_count, blocks, threads_per_block);
-/********* STOPWATCH ********/
-time_mem += stopwatch_elapsed(&stopwatch);
-stopwatch_start(&stopwatch);
-/********* STOPWATCH ********/
     while (phase > 0) {
       unweighted_dep_acc_kernel<<<blocks, threads_per_block>>>
         (*graph_d, phase, stack_count_d, sigma_d, stack_d, succ_d, succ_count_d,
@@ -426,19 +399,11 @@ stopwatch_start(&stopwatch);
     }
   }}
 
-/********* STOPWATCH ********/
-time_exec += stopwatch_elapsed(&stopwatch);
-stopwatch_start(&stopwatch);
-/********* STOPWATCH ********/
   // Cleanup phase
   CHK_SUCCESS(finalize_succs_gpu(graph_d, sigma_d, dist_d, succ_d, succ_count_d,
                                  stack_d, stack_count_d, delta_d, finished_d,
                                  betweenness_centrality_d,
                                  betweenness_centrality), err_free_all);
-/********* STOPWATCH ********/
-time_mem += stopwatch_elapsed(&stopwatch);
-stopwatch_start(&stopwatch);
-/********* STOPWATCH ********/
 
   // If the graph is undirected, divide centrality scores by 2
   if (graph->directed == false) {
@@ -474,9 +439,6 @@ stopwatch_start(&stopwatch);
  */
 error_t betweenness_unweighted_shi_gpu(const graph_t* graph,
                                        weight_t** centrality_score) {
-/********* STOPWATCH ********/
-stopwatch_start(&stopwatch);
-/********* STOPWATCH ********/
   // Sanity check on input
   bool finished = true;
   error_t rc = check_special_cases(graph, &finished, centrality_score);
@@ -513,10 +475,6 @@ stopwatch_start(&stopwatch);
                                    &dist_d, & delta_d, &finished_d,
                                    &betweenness_centrality_d),
               err_free_betweenness);
-/********* STOPWATCH ********/
-time_init += stopwatch_elapsed(&stopwatch);
-stopwatch_start(&stopwatch);
-/********* STOPWATCH ********/
 
   // {} used to limit scope and avoid problems with error handles.
   {
@@ -546,27 +504,13 @@ stopwatch_start(&stopwatch);
     bool finished = false;
     while (!finished) {
       CHK_CU_SUCCESS(cudaMemset(finished_d, true, sizeof(bool)), err_free_all);
-/********* STOPWATCH ********/
-cudaDeviceSynchronize();
-time_mem += stopwatch_elapsed(&stopwatch);
-stopwatch_start(&stopwatch);
-/********* STOPWATCH ********/
       unweighted_sssp_preds_kernel<<<blocks, threads_per_block>>>
         (*graph_d, r_edges_d, dist, dist_d, sigma_d, preds_d, finished_d);
       CHK_CU_SUCCESS(cudaDeviceSynchronize(), err_free_all);
-/********* STOPWATCH ********/
-time_exec += stopwatch_elapsed(&stopwatch);
-stopwatch_start(&stopwatch);
-/********* STOPWATCH ********/
       CHK_CU_SUCCESS(cudaMemcpy(&finished, finished_d, sizeof(bool),
                                 cudaMemcpyDeviceToHost), err_free_all);
       dist++;
     }
-/********* STOPWATCH ********/
-cudaDeviceSynchronize();
-time_mem += stopwatch_elapsed(&stopwatch);
-stopwatch_start(&stopwatch);
-/********* STOPWATCH ********/
     // Back Propogation
     while (dist > 1) {
       KERNEL_CONFIGURE(graph->edge_count, blocks, threads_per_block);
@@ -577,19 +521,11 @@ stopwatch_start(&stopwatch);
         (*graph_d, source, dist, dist_d, delta_d, betweenness_centrality_d);
       dist--;
     }
-/********* STOPWATCH ********/
-time_exec += stopwatch_elapsed(&stopwatch);
-stopwatch_start(&stopwatch);
-/********* STOPWATCH ********/
   }}
 
   CHK_SUCCESS(finalize_preds_gpu(graph_d, r_edges_d, preds_d, sigma_d, dist_d,
                                  delta_d, finished_d, betweenness_centrality_d,
                                  betweenness_centrality), err_free_all);
-/********* STOPWATCH ********/
-time_mem += stopwatch_elapsed(&stopwatch);
-stopwatch_start(&stopwatch);
-/********* STOPWATCH ********/
   mem_free(r_edges);
 
   // If the graph is undirected, divide all the centrality scores by two
@@ -626,9 +562,6 @@ stopwatch_start(&stopwatch);
  */
 error_t betweenness_unweighted_cpu(const graph_t* graph,
                                    weight_t** centrality_score) {
-/********* STOPWATCH ********/
-stopwatch_start(&stopwatch);
-/********* STOPWATCH ********/
   // Sanity check on input
   bool finished = true;
   error_t rc = check_special_cases(graph, &finished, centrality_score);
@@ -658,10 +591,6 @@ stopwatch_start(&stopwatch);
     betweenness_centrality[v] = (weight_t)0.0;
   }
 
-/********* STOPWATCH ********/
-time_init += stopwatch_elapsed(&stopwatch);
-stopwatch_start(&stopwatch);
-/********* STOPWATCH ********/
   // Find and count all shortest paths from every source vertex to every other
   // vertex in the graph. These paths and counts are used to determine the
   // betweenness centrality for each vertex
@@ -683,10 +612,6 @@ stopwatch_start(&stopwatch);
     phase = 0;
     stack_count[phase] = 1;
     stack[graph->vertex_count * phase] = source;
-/********* STOPWATCH ********/
-time_mem += stopwatch_elapsed(&stopwatch);
-stopwatch_start(&stopwatch);
-/********* STOPWATCH ********/
 
     // SSSP and path counting
     bool finished = false;
@@ -739,10 +664,6 @@ stopwatch_start(&stopwatch);
       }
       phase--;
     }
-/********* STOPWATCH ********/
-time_exec += stopwatch_elapsed(&stopwatch);
-stopwatch_start(&stopwatch);
-/********* STOPWATCH ********/
   }
 
   // If the graph is undirected, divide centrality scores by 2
