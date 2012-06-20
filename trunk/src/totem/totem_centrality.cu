@@ -97,3 +97,26 @@ void unweighted_back_prop_kernel(graph_t graph, id_t* r_edges, int32_t* dists,
     }
   }
 }
+
+/**
+ * Construct reverse edges so that we can easily find the source vertex for each
+ * edge in the graph.
+ */
+error_t centrality_construct_r_edges(const graph_t* graph, id_t** r_edges_p) {
+  if (graph == NULL || r_edges_p == NULL) return FAILURE;
+
+  // For every edge in the graph, save its source vertex
+  id_t* r_edges = (id_t*)mem_alloc(graph->edge_count * sizeof(id_t));
+  id_t v = 0;
+  for (id_t e = 0; e < graph->edge_count; e++) {
+    while (v <= graph->vertex_count
+           && !((e >= graph->vertices[v]) && (e < graph->vertices[v+1]))) {
+      v++;
+    }
+    r_edges[e] = v;
+  }
+
+  // return the newly allocated reverse edge map
+  *r_edges_p = r_edges;
+  return SUCCESS;
+}

@@ -67,4 +67,14 @@ void unweighted_back_prop_kernel(graph_t graph, id_t* r_edges, int32_t* dists,
                                  id_t* sigma, bool* preds, int32_t dist,
                                  weight_t* delta);
 
+/**
+ * Construct reverse edges so that we can easily find the source vertex for each
+ * edge in the graph.
+ * @param[in] graph the graph
+ * @param[out] r_edges_p the pointer to the list of source vertices, indexed by
+ *                       edge id.
+ * @returns generic success or failure
+ */
+error_t centrality_construct_r_edges(const graph_t* graph, id_t** r_edges_p);
+
 #endif // TOTEM_CENTRALITY_H
