@@ -402,6 +402,13 @@ error_t betweenness_unweighted_gpu(const graph_t* graph,
  */
 error_t betweenness_unweighted_shi_gpu(const graph_t* graph,
                                        weight_t** centrality_score);
+/**
+ * Implements the parallel Brandes closeness centrality algorithm using
+ * predecessor maps as described in "Fast Network Centrality Analysis Using
+ * GPUs" [Shi11]
+ */
+error_t closeness_unweighted_cpu(const graph_t* graph,
+                                 weight_t** centrality_score);
 
 /**
  * De-allocates a component_set_t object
