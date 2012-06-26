@@ -409,6 +409,8 @@ error_t betweenness_unweighted_shi_gpu(const graph_t* graph,
  */
 error_t closeness_unweighted_cpu(const graph_t* graph,
                                  weight_t** centrality_score);
+error_t closeness_unweighted_gpu(const graph_t* graph,
+                                 weight_t** centrality_score);
 
 /**
  * De-allocates a component_set_t object
