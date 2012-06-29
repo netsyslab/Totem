@@ -413,6 +413,18 @@ error_t closeness_unweighted_gpu(const graph_t* graph,
                                  weight_t** centrality_score);
 
 /**
+ * Calculate stress centrality scores for unweighted graphs.
+ * @param[in] graph the graph
+ * @param[out] centrality_score the output list of stress centrality scores  for
+ *                              each vertex
+ * @return generic success or failure
+ */
+error_t stress_unweighted_cpu(const graph_t* graph,
+                              weight_t** centrality_score);
+error_t stress_unweighted_gpu(const graph_t* graph,
+                              weight_t** centrality_score);
+
+/**
  * De-allocates a component_set_t object
  * @param[in] comp_set a reference to component set type to be de-allocated
  * @return generic success or failure
