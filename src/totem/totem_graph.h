@@ -191,6 +191,12 @@ error_t graph_initialize(const char* graph_file, bool weighted,
 error_t graph_finalize(graph_t* graph);
 
 /**
+ * Prints out a graph to standard output in totem format
+ * @param[in] graph the graph data structure to print out
+ */
+void graph_print(graph_t* graph);
+
+/**
  * Creates a subgraph from a graph. the graph is de-allocated via graph_finalize
  * @param[in] graph the graph to extract the subgraph from
  * @param[in] mask identifies the vertices to be included in the subgraph

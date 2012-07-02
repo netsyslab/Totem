@@ -71,27 +71,6 @@ PRIVATE void parse_command_line(int argc, char** argv) {
 }
 
 /**
- * prints out a graph in totem format (written to test the parser)
- * @param[in] graph the graph data structure to print out
- */
-void print_graph(graph_t* graph) {
-
-  printf("#Nodes:%d\n#Edges:%d\n", graph->vertex_count, graph->edge_count);
-  if (graph->directed) {
-    printf("#Directed\n");
-  } else {
-    printf("#Undirected\n");
-  }
-  for (uint32_t vid = 0; vid < graph->vertex_count; vid++) {
-    int neighbors = graph->vertices[vid + 1] - graph->vertices[vid];
-    uint32_t* edges = &(graph->edges[graph->vertices[vid]]);
-    for (int i = 0; i < neighbors; i++) {
-      fprintf(stdout, "%d %d\n", vid, edges[i]);
-    }
-  }
-}
-
-/**
  * main entry of the program
  * @param[in] argc number of arguments
  * @param[in] argv argument array
@@ -109,7 +88,7 @@ int main(int argc, char** argv) {
                              &graph));
 
   // invoke the graph algorithm here instead e.g., bfs(graph, &options);
-  //print_graph(graph);
+  //graph_print(graph);
 
   error_t err;
   stopwatch_t stopwatch;
