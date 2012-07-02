@@ -546,3 +546,24 @@ error_t graph_finalize(graph_t* graph) {
 
   return SUCCESS;
 }
+
+void graph_print(graph_t* graph) {
+  assert(graph);
+
+  printf("#Nodes:%d\n#Edges:%d\n", graph->vertex_count, graph->edge_count);
+  if (graph->directed) {
+    printf("#Directed\n");
+  } else {
+    printf("#Undirected\n");
+  }
+  for (id_t vid = 0; vid < graph->vertex_count; vid++) {
+    for (id_t i = graph->vertices[vid]; i < graph->vertices[vid + 1]; i++) {
+      fprintf(stdout, "%d %d", vid, graph->edges[i]);
+      if (graph->weighted) {
+        fprintf(stdout, " %f\n", graph->weights[i]);
+      } else { 
+        fprintf(stdout, "\n"); 
+      }
+    }
+  }
+}
