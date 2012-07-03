@@ -55,20 +55,17 @@ void init_map_rmt_nbrs(partition_t* par, uint32_t pcount, id_t* nbrs,
 
   // Build the hash table map
   CALL_SAFE(hash_table_initialize_cpu(par->rmt_vertex_count, ht));
-  int cur_pid = GET_PARTITION_ID(nbrs[0]);
-  uint32_t count = 0;
-  // TODO (abdullah): parallelize this loop
-  for (int v = 0; v < par->rmt_vertex_count; v++) {
-    int my_pid = GET_PARTITION_ID(nbrs[v]);
-    if (my_pid != cur_pid) {
-      assert(count == count_per_par[GROOVES_BOX_INDEX(cur_pid, par->id,
-                                                      pcount)]);
-      assert(my_pid > cur_pid);
-      cur_pid = my_pid;
-      count = 0;
+  id_t cur_rmt_v = 0;
+  while (cur_rmt_v < par->rmt_vertex_count) {
+    id_t rmt_pid = GET_PARTITION_ID(nbrs[cur_rmt_v]);
+    id_t count = count_per_par[GROOVES_BOX_INDEX(rmt_pid, par->id, pcount)];
+    #ifdef _OPENMP
+    #pragma omp parallel for
+    #endif
+    for (id_t i = 0; i < count; i++) {
+      CALL_SAFE(hash_table_put_cpu(*ht, nbrs[cur_rmt_v + i], i));
     }
-    CALL_SAFE(hash_table_put_cpu(*ht, nbrs[v], count));
-    count++;
+    cur_rmt_v += count;
   }
 }
 
