@@ -255,6 +255,9 @@ inline error_t graph_initialize_device(const graph_t* graph_h,
   // overwritten next with device pointers
   **graph_d = *graph_h;
 
+  // Nothing to be done if this is an empty graph
+  if (!graph_h->vertex_count) return SUCCESS;
+
   // Vertices will be processed by each warp in batches. To avoid explicitly
   // checking for end of array boundaries, the vertices array is padded with
   // fake vertices so that its length is multiple of batch size. The fake
@@ -269,8 +272,10 @@ inline error_t graph_initialize_device(const graph_t* graph_h,
   CHK_CU_SUCCESS(cudaMalloc((void**)&(*graph_d)->vertices,
                             (vertex_count_batch_padded + 1) *
                             sizeof(id_t)), err);
-  CHK_CU_SUCCESS(cudaMalloc((void**)&(*graph_d)->edges, graph_h->edge_count *
-                            sizeof(id_t)), err_free_vertices);
+  if (graph_h->edge_count) {
+    CHK_CU_SUCCESS(cudaMalloc((void**)&(*graph_d)->edges, graph_h->edge_count *
+                              sizeof(id_t)), err_free_vertices);
+  }
   if (graph_h->weighted) {
     CHK_CU_SUCCESS(cudaMalloc((void**)&(*graph_d)->weights,
                               graph_h->edge_count * sizeof(weight_t)),
@@ -281,9 +286,11 @@ inline error_t graph_initialize_device(const graph_t* graph_h,
   CHK_CU_SUCCESS(cudaMemcpy((*graph_d)->vertices, graph_h->vertices,
                             (graph_h->vertex_count + 1) * sizeof(id_t),
                             cudaMemcpyHostToDevice), err_free_weights);
-  CHK_CU_SUCCESS(cudaMemcpy((*graph_d)->edges, graph_h->edges,
-                            graph_h->edge_count * sizeof(id_t),
-                            cudaMemcpyHostToDevice), err_free_weights);
+  if (graph_h->edge_count){
+    CHK_CU_SUCCESS(cudaMemcpy((*graph_d)->edges, graph_h->edges,
+                              graph_h->edge_count * sizeof(id_t),
+                              cudaMemcpyHostToDevice), err_free_weights);
+  }
   if (graph_h->weighted) {
     CHK_CU_SUCCESS(cudaMemcpy((*graph_d)->weights, graph_h->weights,
                               graph_h->edge_count * sizeof(weight_t),
@@ -308,7 +315,7 @@ inline error_t graph_initialize_device(const graph_t* graph_h,
  err_free_weights:
   if ((*graph_d)->weighted) CALL_CU_SAFE(cudaFree((*graph_d)->weights));
  err_free_edges:
-  CALL_CU_SAFE(cudaFree((*graph_d)->edges));
+  if ((*graph_d)->edge_count) CALL_CU_SAFE(cudaFree((*graph_d)->edges));
  err_free_vertices:
   CALL_CU_SAFE(cudaFree((*graph_d)->vertices));
  err:
@@ -322,8 +329,8 @@ inline error_t graph_initialize_device(const graph_t* graph_h,
  */
 inline void graph_finalize_device(graph_t* graph_d) {
   assert(graph_d);
-  CALL_CU_SAFE(cudaFree(graph_d->edges));
-  CALL_CU_SAFE(cudaFree(graph_d->vertices));
+  if (graph_d->vertex_count) CALL_CU_SAFE(cudaFree(graph_d->vertices));
+  if (graph_d->edge_count) CALL_CU_SAFE(cudaFree(graph_d->edges));
   if (graph_d->weighted) CALL_CU_SAFE(cudaFree(graph_d->weights));
   free(graph_d);
 }
