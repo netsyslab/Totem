@@ -82,29 +82,6 @@ const weight_t DEFAULT_EDGE_WEIGHT =  1;
 const weight_t DEFAULT_VERTEX_VALUE = 0;
 
 /**
- * Execution platform options. The engine will create a partition per processor.
- * Note that if the system has one GPU only, then ENGINE_PLATFORM_GPU and
- * ENGINE_PLATFORM_MULTI_GPU will be the same, as well as ENGINE_PLATFORM_HYBRID
- * and ENGINE_PLATFORM_ALL.
- * TODO(abdullah): this should eventually be moved to the framework's interface
- */
-typedef enum {
-  PLATFORM_CPU,       // execute on the CPU only
-  PLATFORM_GPU,       // execute on one GPU only
-  PLATFORM_MULTI_GPU, // execute on all available GPUs
-  PLATFORM_HYBRID,    // execute on the CPU and one GPU
-  PLATFORM_ALL        // execute on all processors (CPU and all GPUs)
-} platform_t;
-
-/**
- * Partitioning algorithm type
- * TODO(abdullah): this should eventually be moved to the framework's interface
- */
-typedef enum {
-  PAR_RANDOM = 0
-} partition_algorithm_t;
-
-/**
  * A graph type based on adjacency list representation.
  * Modified from [Harish07]:
  * A graph G(V,E) is represented as adjacency list, with adjacency lists packed
@@ -146,30 +123,6 @@ typedef struct component_set_s {
                          /**< (length: graph->vertex_count) */
   id_t     biggest;      /**< the id of the biggest component */
 } component_set_t;
-
-/**
- * Defines attributes used to configure a framework-based algoritm
- */
-typedef struct totem_attr_s {
-  partition_algorithm_t par_algo;      /**< partitioning algorithm */
-  platform_t            platform;      /**< the execution platform */
-  float                 cpu_par_share; /**< the percentage of edges
-                                           assigned to the CPU
-                                           partition. Note that the
-                                           value of this member is
-                                           relevant only in platforms
-                                           that include a CPU with at
-                                           least one GPU. The GPUs
-                                           will be assigned equal
-                                           shares after deducting
-                                           the CPU share. If this
-                                           is assigned to zero, then
-                                           the graph is divided among
-                                           all processors equally. */
-} totem_attr_t;
-
-// default attributes
-#define TOTEM_DEFAULT_ATTR {PAR_RANDOM, PLATFORM_ALL, 0}
 
 /**
  * reads a graph from the given file and builds a graph data type.
@@ -238,7 +191,6 @@ graph_t* graph_create_bidirectional(graph_t* graph, id_t** reverse_indices);
  *
  * @param[in]  graph  the graph to perform BFS on
  * @param[in]  src_id id of the source vertex
- * @param[in]  attr   attributes used to configure a hybrid-based algoritm
  * @param[out] cost   the distance (number of of hops) of each vertex from the
  *                    source
  * @return array where the indexes are the vertices' ids and the values are the
@@ -249,8 +201,7 @@ graph_t* graph_create_bidirectional(graph_t* graph, id_t** reverse_indices);
 error_t bfs_cpu(graph_t* graph, id_t src_id, uint32_t** cost);
 error_t bfs_gpu(graph_t* graph, id_t src_id, uint32_t** cost);
 error_t bfs_vwarp_gpu(graph_t* graph, id_t src_id, uint32_t** cost);
-error_t bfs_hybrid(graph_t* graph, totem_attr_t* attr, id_t src_id,
-                   uint32_t** cost);
+error_t bfs_hybrid(id_t src_id, uint32_t** cost);
 
 /**
  * Given a weighted graph \f$G = (V, E, w)\f$ and a source vertex \f$v\inV\f$,
@@ -288,7 +239,6 @@ error_t apsp_gpu(graph_t* graph, weight_t** path_ret);
  * consideration the incoming edges, while the first two consider the outgoing
  * edges.
  * @param[in]  graph the graph to run PageRank on
- * @param[in]  attr   attributes used to configure a hybrid-based algoritm
  * @param[in]  rank_i the initial rank for each node in the graph (NULL
  *                    indicates uniform initial rankings as default)
  * @param[out] rank the PageRank output array (must be freed via mem_free)
@@ -299,8 +249,7 @@ error_t page_rank_gpu(graph_t* graph, float* rank_i, float** rank);
 error_t page_rank_vwarp_gpu(graph_t* graph, float* rank_i, float** rank);
 error_t page_rank_incoming_cpu(graph_t* graph, float* rank_i, float** rank);
 error_t page_rank_incoming_gpu(graph_t* graph, float* rank_i, float** rank);
-error_t page_rank_hybrid(graph_t* graph, totem_attr_t* attr, float* rank_i,
-                         float** rank);
+error_t page_rank_hybrid(float* rank_i, float** rank);
 
 
 /**

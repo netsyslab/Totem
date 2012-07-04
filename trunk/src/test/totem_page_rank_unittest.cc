@@ -42,7 +42,13 @@ class PageRankTest : public TestWithParam<page_rank_param_t*> {
   error_t TestGraph(graph_t* graph, float* rank_i, float** rank) {
     if (page_rank_param->hybrid) {
       totem_attr_t attr = TOTEM_DEFAULT_ATTR;
-      return page_rank_hybrid(graph, &attr, rank_i, rank);
+      if (totem_init(graph, &attr) == FAILURE) {
+        *rank = NULL;
+        return FAILURE;
+      }
+      error_t err = page_rank_hybrid(rank_i, rank);
+      totem_finalize();
+      return err;
     }
     return page_rank_param->func(graph, rank_i, rank);
   }

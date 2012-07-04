@@ -64,13 +64,11 @@ float* rank_h = NULL;
  * beginning of public interfaces (GPU and CPU)
 */
 PRIVATE
-error_t check_special_cases(graph_t* graph, float** rank, bool* finished) {
+error_t check_special_cases(float** rank, bool* finished) {
   *finished = true;
-  if (graph == NULL) {
+  if (engine_vertex_count() == 0) {
     return FAILURE;
-  } else if (graph->vertex_count == 0) {
-    return FAILURE;
-  } else if (graph->vertex_count == 1) {
+  } else if (engine_vertex_count() == 1) {
     *rank = (float*)mem_alloc(sizeof(float));
     (*rank)[0] = (float)1.0;
     return SUCCESS;
@@ -299,24 +297,17 @@ PRIVATE void page_rank_finalize(partition_t* partition) {
   partition->algo_state = NULL;
 }
 
-// TODO(abdullah): Add partitioning algorithm as an input parameter
-error_t page_rank_hybrid(graph_t* graph, totem_attr_t* attr,
-                         float *rank_i, float** rank) {
+error_t page_rank_hybrid(float *rank_i, float** rank) {
   // check for special cases
   bool finished = false;
-  error_t rc = check_special_cases(graph, rank, &finished);
+  error_t rc = check_special_cases(rank, &finished);
   if (finished) return rc;
 
   // initialize global state
-  rank_g = (float*)mem_alloc(graph->vertex_count * sizeof(float));
+  rank_g = (float*)mem_alloc(engine_vertex_count() * sizeof(float));
 
   // initialize the engine
   engine_config_t config = {
-    graph,
-    attr->platform,
-    attr->par_algo,
-    attr->cpu_par_share,
-    sizeof(float),
     NULL,
     page_rank,
     page_rank_scatter,
@@ -324,7 +315,7 @@ error_t page_rank_hybrid(graph_t* graph, totem_attr_t* attr,
     page_rank_finalize,
     page_rank_aggr
   };
-  engine_init(&config);
+  engine_config(&config);
   if (engine_largest_gpu_partition()) {
     rank_h = (float*)mem_alloc(engine_largest_gpu_partition() * sizeof(float));
   }

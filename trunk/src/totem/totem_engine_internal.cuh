@@ -27,23 +27,31 @@
  */
 typedef struct engine_context_s {
   bool             initialized;
+  graph_t*         graph;
   partition_set_t* pset;
   uint32_t         superstep;
   engine_config_t  config;
+  totem_attr_t     attr;
   bool*            finished;
   uint64_t         largest_gpu_par;
+  int              partition_count;
   double           time_init;
   double           time_par;
   double           time_exec;
   double           time_comm;
   double           time_comp;
   double           time_gpu_comp;
-  int              partition_count;
   uint64_t         vertex_count[MAX_PARTITION_COUNT];
   uint64_t         edge_count[MAX_PARTITION_COUNT];
   uint64_t         rmt_vertex_count[MAX_PARTITION_COUNT];
   uint64_t         rmt_edge_count[MAX_PARTITION_COUNT];
 } engine_context_t;
+
+/**
+ * Default context values
+ */
+#define ENGINE_DEFAULT_CONTEXT {false, NULL, NULL, 0, ENGINE_DEFAULT_CONFIG, \
+      TOTEM_DEFAULT_ATTR, NULL, 0, 0, 0, 0, 0, 0, 0, 0};
 
 extern engine_context_t context;
 
@@ -234,46 +242,5 @@ inline id_t* engine_vertex_id_in_partition() {
 inline id_t engine_vertex_id_in_partition(id_t v) {
   return context.pset->id_in_partition[v];
 }
-
-inline double engine_time_initialization() {
-  return context.time_init;
-}
-
-inline double engine_time_partitioning() {
-  return context.time_par;
-}
-
-inline double engine_time_execution() {
-  return context.time_exec;
-}
-
-inline double engine_time_computation() {
-  return context.time_comp;
-}
-
-inline double engine_time_gpu_computation() {
-  return context.time_gpu_comp;
-}
-
-inline double engine_time_communication() {
-  return context.time_comm;
-}
-
-inline double engine_par_rmt_vertex_count(uint32_t pid) {
-  return context.rmt_vertex_count[pid];
-}
-
-inline double engine_par_rmt_edge_count(uint32_t pid) {
-  return context.rmt_edge_count[pid];
-}
-
-inline double engine_par_vertex_count(uint32_t pid) {
-  return context.vertex_count[pid];
-}
-
-inline double engine_par_edge_count(uint32_t pid) {
-  return context.edge_count[pid];
-}
-
 
 #endif  // TOTEM_ENGINE_INTERNAL_CUH

@@ -3,16 +3,17 @@
  * interface the developer is supposed to use to implement graph algorithms on
  * multi-GPU and CPU platform.
  *
- * In summary, an algorithm must offer a number of callback functions that
- * configure the engine. The following is a pseudocode of an algorithm that
- * uses this interface:
+ * The engine interface splits the algorithm-specific from algorithm-agnostic
+ * initialization code. The idea is to have the ability to initialize the engine
+ * once (i.e., building the state once), and use this setup to run multiple 
+ * algorithms multiple times without the need to build the algorithm-agnostic 
+ * state multiple times.
  *
- *    T* output_g; // allocated and filled by algo_aggr callback function
- *    graph_algo(graph_t* graph, partition_algorithm_t par_algo, T** output) {
+ * An algorithm must offer a number of callback functions that configure the 
+ * engine. The following is a short pseudocode of an algorithm that uses
+ * this interface:
+ *    algo(parameters) {
  *      engine_config_t config = {
- *        graph,
- *        par_algo,
- *        sizeof(T),
  *        algo_ss_kernel,
  *        algo_par_kernel,
  *        algo_par_scatter,
@@ -20,10 +21,17 @@
  *        algo_par_finalize,
  *        algo_par_aggr,
  *      };
- *      engine_init(&config);
+ *      engine_config(config);
  *      engine_execute();
- *      *output = output_g;
- *     }
+ *    }
+ *
+ * The algorithm above can be run multiple times as follows:
+ *    totem_attr_t attrs = {partition_algorithm, platform, cpu_share, msg_size};
+ *    engine_init(attrs);
+ *    algo(par1);
+ *    algo(par2);
+ *    algo(par3);
+ *    engine_finalize();
  *
  *  Created on: 2012-02-02
  *  Author: Abdullah Gharaibeh
@@ -34,6 +42,7 @@
 
 #include "totem_comkernel.cuh"
 #include "totem_partition.h"
+#include "totem.h"
 
 /**
  * Callback function at the beginning of a superstep. Note that this callback
@@ -95,23 +104,6 @@ typedef void(*engine_par_aggr_func_t)(partition_t*);
  * a system with GPUs with different memory capacities).
  */
 typedef struct engine_config_s {
-  graph_t*                     graph;            /**< the input graph */
-  platform_t                   platform;         /**< the execution platform */
-  partition_algorithm_t        par_algo;         /**< partitioning algorithm */
-  float                        cpu_par_share;    /**< the percentage of edges
-                                                      assigned to the CPU
-                                                      partition. Note that the
-                                                      value of this member is
-                                                      relevant only in platforms
-                                                      that include a CPU with at
-                                                      least one GPU. The GPUs
-                                                      will be assigned equal
-                                                      shares after deducting
-                                                      the CPU share. If this
-                                                      is assigned to zero, then
-                                                      the graph is divided among
-                                                      all processors equally. */
-  size_t                       msg_size;         /**< comm. element size */
   engine_ss_kernel_func_t      ss_kernel_func;   /**< per superstep init func */
   engine_par_kernel_func_t     par_kernel_func;  /**< per par. comp. func */
   engine_par_scatter_func_t    par_scatter_func; /**< per par. scatter func */
@@ -124,8 +116,7 @@ typedef struct engine_config_s {
 /**
  * Default configuration
  */
-#define ENGINE_DEFAULT_CONFIG {NULL, PLATFORM_ALL, PAR_RANDOM, 0, \
-      sizeof(int), NULL, NULL, NULL, NULL, NULL, NULL}
+#define ENGINE_DEFAULT_CONFIG {NULL, NULL, NULL, NULL, NULL, NULL}
 
 /**
  * Returns the address of a neighbor's state. If remote, it returns a reference
@@ -145,11 +136,28 @@ typedef struct engine_config_s {
   } while(0)
 
 /**
- * Sets up the state required for hybrid CPU-GPU processing. It creats a set
- * of partitions equal to the number of GPUs plus one on the CPU.
- * @param[in] config   attributes to configure the engine
+ * Initializes the state required for hybrid CPU-GPU processing. It creates a
+ * set of partitions equal to the number of GPUs plus one for the CPU. Note that
+ * this function initializes only algorithm-agnostic state. This function
+ * corresponds to Kernel 1 (the graph construction kernel) of the Graph500 
+ * benchmark specification.
+ * @param[in] graph  the input graph
+ * @param[in] attr   attributes to setup the engine
  */
-error_t engine_init(engine_config_t* config);
+error_t engine_init(graph_t* graph, totem_attr_t* attr);
+
+/**
+ * Configures the engine to execute a specific algorithm. It sets the 
+ * algorithm-specific callback functions to be called while executing the
+ * BSP phases. It can be invoked only after the engine is initialized via
+ * engine_init.
+ */
+error_t engine_config(engine_config_t* config);
+
+/**
+ * Clears the state allocated by the engine via the engine_init function.
+ */
+void engine_finalize();
 
 /**
  * Performs the computation-->communication-->synchronization execution cycle.
@@ -199,33 +207,6 @@ id_t* engine_vertex_id_in_partition();
  * Returns a vertex's new id in the corresponding partition
  */
 id_t engine_vertex_id_in_partition(id_t);
-
-/**
- * Returns the total time spent on initializing the state (includes
- * partitioning and building the state)
- */
-double engine_time_initialization();
-
-/**
- * Returns the time spent on partitioning the graph
- */
-double engine_time_partitioning();
-
-/**
- * Returns the time spent on executing all the supersteps
- */
-double engine_time_execution();
-
-/**
- * Returns the total time spent on the computation phase
- */
-double engine_time_computation();
-double engine_time_gpu_computation();
-
-/**
- * Returns the total time spent on the communication phase
- */
-double engine_time_communication();
 
 /**
  * Scatters the messages in the inbox table to the corresponding vertices. The
