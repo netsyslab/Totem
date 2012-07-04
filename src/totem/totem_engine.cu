@@ -7,30 +7,19 @@
 
 #include "totem_engine.cuh"
 
-engine_context_t context = {false, NULL, 0, ENGINE_DEFAULT_CONFIG,
-                            0, 0, 0, 0};
+engine_context_t context = ENGINE_DEFAULT_CONTEXT;
 
-#define SET_PROCESSOR(_par)                                     \
-  do {                                                          \
-    if ((_par)->processor.type == PROCESSOR_GPU) {              \
-      CALL_CU_SAFE(cudaSetDevice((_par)->processor.id));        \
-    }                                                           \
-  } while(0)
-
-/**
- * Clears allocated state
- */
-PRIVATE void engine_finalize() {
-  assert(context.pset);
-  if (context.config.par_finalize_func) {
-    for (int pid = 0; pid < context.pset->partition_count; pid++) {
-      SET_PROCESSOR(&context.pset->partitions[pid]);
-      context.config.par_finalize_func(&context.pset->partitions[pid]);
-    }
+inline PRIVATE void set_processor(partition_t* par) {
+  if (par->processor.type == PROCESSOR_GPU) {
+      CALL_CU_SAFE(cudaSetDevice(par->processor.id));
   }
-  CALL_SAFE(partition_set_finalize(context.pset));
-  free(context.finished);
-  context.initialized = false;
+}
+
+inline PRIVATE void reset_exec_timers() {
+    context.time_exec = 0;
+    context.time_comm = 0;
+    context.time_comp = 0;
+    context.time_gpu_comp = 0;
 }
 
 /**
@@ -75,7 +64,7 @@ inline PRIVATE void superstep_compute() {
     partition_t* par = &context.pset->partitions[pid];
     if (par->processor.type == PROCESSOR_GPU) {
       CALL_CU_SAFE(cudaEventRecord(par->event_start, par->streams[1]));
-      SET_PROCESSOR(par);
+      set_processor(par);
     }
     context.config.par_kernel_func(par);
     if (par->processor.type == PROCESSOR_GPU) {
@@ -98,7 +87,7 @@ inline PRIVATE void superstep_communicate() {
   // The assumption is that the first partition is the CPU one, and the
   // rest are GPU ones. This is guaranteed by engine_init.
   for (int pid = 0; pid < context.pset->partition_count; pid++) {
-    SET_PROCESSOR(&context.pset->partitions[pid]);
+    set_processor(&context.pset->partitions[pid]);
     context.config.par_scatter_func(&context.pset->partitions[pid]);
   }
   context.time_comm += stopwatch_elapsed(&stopwatch);
@@ -115,7 +104,7 @@ inline PRIVATE void superstep_next() {
 PRIVATE void engine_aggregate() {
   if (context.config.par_aggr_func) {
     for (int pid = 0; pid < context.pset->partition_count; pid++) {
-      SET_PROCESSOR(&context.pset->partitions[pid]);
+      set_processor(&context.pset->partitions[pid]);
       context.config.par_aggr_func(&context.pset->partitions[pid]);
     }
   }
@@ -134,25 +123,25 @@ error_t engine_execute() {
   engine_aggregate();
   context.time_exec = stopwatch_elapsed(&stopwatch);
 
-  engine_finalize();
   return SUCCESS;
 }
 
-error_t engine_init(engine_config_t* config) {
+error_t engine_init(graph_t* graph, totem_attr_t* attr) {
   stopwatch_t stopwatch;
   stopwatch_start(&stopwatch);
-  if (context.initialized || !config->par_kernel_func) return FAILURE;
+  if (context.initialized || !graph->vertex_count) return FAILURE;
   memset(&context, 0, sizeof(engine_context_t));
-  context.config = *config;
+  context.graph = graph;
+  context.attr = *attr;
 
   // identify the execution platform
   int gpu_count;
   bool use_cpu = true;
   CALL_CU_SAFE(cudaGetDeviceCount(&gpu_count));
-  switch(context.config.platform) {
+  switch(context.attr.platform) {
     case PLATFORM_CPU:
       gpu_count = 0;
-      context.config.cpu_par_share = 0;
+      context.attr.cpu_par_share = 0;
       break;
     case PLATFORM_GPU:
       gpu_count = 1;
@@ -178,12 +167,12 @@ error_t engine_init(engine_config_t* config) {
   // with different shares (e.g., a system with GPUs with different
   // memory capacities).
   float* par_share = NULL;
-  if (context.config.cpu_par_share && use_cpu) {
+  if (context.attr.cpu_par_share && use_cpu) {
     par_share = (float*)calloc(pcount, sizeof(float));
-    par_share[pcount - 1] = context.config.cpu_par_share;
+    par_share[pcount - 1] = context.attr.cpu_par_share;
     float gpu_par_share =
-      (1.0 - context.config.cpu_par_share) / (float)gpu_count;
-    float total_share = context.config.cpu_par_share;
+      (1.0 - context.attr.cpu_par_share) / (float)gpu_count;
+    float total_share = context.attr.cpu_par_share;
     for (int gpu_id = 0; gpu_id < gpu_count - 1; gpu_id++) {
       par_share[gpu_id] = gpu_par_share;
       total_share += gpu_par_share;
@@ -204,9 +193,9 @@ error_t engine_init(engine_config_t* config) {
   stopwatch_t stopwatch_par;
   stopwatch_start(&stopwatch_par);
   id_t* par_labels;
-  switch (context.config.par_algo) {
+  switch (context.attr.par_algo) {
     case PAR_RANDOM:
-      CALL_SAFE(partition_random(context.config.graph,
+      CALL_SAFE(partition_random(context.graph,
                                  (uint32_t)pcount, par_share,
                                  13, &par_labels));
       break;
@@ -216,21 +205,13 @@ error_t engine_init(engine_config_t* config) {
       assert(false);
   }
   context.time_par = stopwatch_elapsed(&stopwatch_par);
-  CALL_SAFE(partition_set_initialize(context.config.graph, par_labels,
+  CALL_SAFE(partition_set_initialize(context.graph, par_labels,
                                      processors, pcount,
-                                     context.config.msg_size,
+                                     context.attr.msg_size,
                                      &context.pset));
   free(processors);
   free(par_labels);
   if (par_share) free(par_share);
-
-  // callback the per-partition initialization function
-  if (context.config.par_init_func) {
-    for (int pid = 0; pid < context.pset->partition_count; pid++) {
-      SET_PROCESSOR(&context.pset->partitions[pid]);
-      context.config.par_init_func(&context.pset->partitions[pid]);
-    }
-  }
 
   // get largest gpu partition and initialize the stat information
   // stored in the context
@@ -252,4 +233,32 @@ error_t engine_init(engine_config_t* config) {
   context.initialized = true;
   context.time_init = stopwatch_elapsed(&stopwatch);
   return SUCCESS;
+}
+
+error_t engine_config(engine_config_t* config) {
+  if (!context.initialized || !config->par_kernel_func) return FAILURE;
+
+  context.config = *config;
+  reset_exec_timers();
+  // callback the per-partition initialization function
+  if (context.config.par_init_func) {
+    for (int pid = 0; pid < context.pset->partition_count; pid++) {
+      set_processor(&context.pset->partitions[pid]);
+      context.config.par_init_func(&context.pset->partitions[pid]);
+    }
+  }
+  return SUCCESS;
+}
+
+void engine_finalize() {
+  assert(context.initialized);
+  context.initialized = false;
+  if (context.config.par_finalize_func) {
+    for (int pid = 0; pid < context.pset->partition_count; pid++) {
+      set_processor(&context.pset->partitions[pid]);
+      context.config.par_finalize_func(&context.pset->partitions[pid]);
+    }
+  }
+  CALL_SAFE(partition_set_finalize(context.pset));
+  free(context.finished);
 }

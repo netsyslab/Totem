@@ -12,6 +12,7 @@
 #include "gtest/gtest.h"
 
 // totem includes
+#include "totem.h"
 #include "totem_comdef.h"
 #include "totem_graph.h"
 #include "totem_mem.h"

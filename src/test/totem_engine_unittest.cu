@@ -123,16 +123,12 @@ class EngineTest : public TestWithParam<platform_t> {
  protected:
   graph_t* graph_;
   engine_config_t config_;
+  totem_attr_t attr_;
   virtual void SetUp() {
     // Ensure the minimum CUDA architecture is supported
     CUDA_CHECK_VERSION();
     graph_ = NULL;
     engine_config_t config  = {
-      NULL,
-      GetParam(),
-      PAR_RANDOM,
-      0,
-      sizeof(int),
       NULL,
       degree,
       degree_scatter,
@@ -141,6 +137,13 @@ class EngineTest : public TestWithParam<platform_t> {
       degree_aggr
     };
     config_ = config;
+    totem_attr_t attr = {
+      PAR_RANDOM,
+      GetParam(),
+      0,
+      sizeof(int)
+    };
+    attr_ = attr;
   }
 
   virtual void TearDown() {
@@ -152,13 +155,14 @@ class EngineTest : public TestWithParam<platform_t> {
   void TestGraph(const char* graph_str) {
     graph_initialize(graph_str, false, &graph_);
     EXPECT_FALSE(graph_->directed);
-    config_.graph = graph_;
-    engine_init(&config_);
+    engine_init(graph_, &attr_);
+    engine_config(&config_);
     degree_g = (int*)calloc(graph_->vertex_count, sizeof(int));
     if (engine_largest_gpu_partition()) {
       degree_h = (int*)mem_alloc(engine_largest_gpu_partition() * sizeof(int));
     }
     engine_execute();
+    engine_finalize();
     if (engine_largest_gpu_partition()) mem_free(degree_h);
     for (id_t v = 0; v < graph_->vertex_count; v++) {
       int nbr_count = graph_->vertices[v + 1] - graph_->vertices[v];

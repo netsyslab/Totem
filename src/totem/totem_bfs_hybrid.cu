@@ -50,13 +50,12 @@ id_t src_g;
  * Checks for input parameters and special cases. This is invoked at the
  * beginning of public interfaces (GPU and CPU)
 */
-PRIVATE error_t check_special_cases(graph_t* graph, id_t src, uint32_t** cost,
-                                    bool* finished) {
+PRIVATE error_t check_special_cases(id_t src, uint32_t** cost, bool* finished) {
   *finished = true;
-  if((graph == NULL) || (src >= graph->vertex_count)) {
+  if(src >= engine_vertex_count()) {
     *cost = NULL;
     return FAILURE;
-  } else if(graph->vertex_count == 1) {
+  } else if(engine_vertex_count() == 1) {
     *cost = (uint32_t*)mem_alloc(sizeof(uint32_t));
     *cost[0] = 0;
     return SUCCESS;
@@ -284,15 +283,13 @@ PRIVATE void bfs_finalize(partition_t* par) {
   par->algo_state = NULL;
 }
 
-// TODO(abdullah): Add partitioning algorithm as an input parameter
-error_t bfs_hybrid(graph_t* graph, totem_attr_t* attr,
-                   id_t src, uint32_t** cost) {
+error_t bfs_hybrid(id_t src, uint32_t** cost) {
   // check for special cases
   bool finished = false;
-  error_t rc = check_special_cases(graph, src, cost, &finished);
+  error_t rc = check_special_cases(src, cost, &finished);
   if (finished) return rc;
 
-  cost_g = (uint32_t*)mem_alloc(graph->vertex_count * sizeof(uint32_t));
+  cost_g = (uint32_t*)mem_alloc(engine_vertex_count() * sizeof(uint32_t));
   // The global finish flag is allocated on the host using the
   // cudaHostAllocMapped option which allows GPU kernels to access it directly
   // from within the GPU. This flag is initialized to true in the algo_ss_kernel
@@ -304,11 +301,6 @@ error_t bfs_hybrid(graph_t* graph, totem_attr_t* attr,
 
   // initialize the engine
   engine_config_t config = {
-    graph,
-    attr->platform,
-    attr->par_algo,
-    attr->cpu_par_share,
-    sizeof(uint32_t),
     bfs_ss,
     bfs,
     bfs_scatter,
@@ -317,7 +309,7 @@ error_t bfs_hybrid(graph_t* graph, totem_attr_t* attr,
     bfs_aggregate
   };
   src_g = src;
-  engine_init(&config);
+  engine_config(&config);
   if (engine_largest_gpu_partition()) {
     cost_h = (uint32_t*)mem_alloc(engine_largest_gpu_partition() *
                                   sizeof(uint32_t));
