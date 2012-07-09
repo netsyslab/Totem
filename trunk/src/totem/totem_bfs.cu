@@ -1,19 +1,22 @@
 /* TODO(lauro,abdullah,elizeu): Add license.
  *
  * This file contains an implementation of the breadth-first search (BFS) graph
- * search algorithm based on description in [Harish07].
- * [Harish07] P. Harish and P. Narayanan, "Accelerating large graph algorithms
- *   on the GPU using CUDA," in High Performance Computing - HiPC 2007,
- *   LNCS v. 4873, ch. 21, doi: http://dx.doi.org/10.1007/978-3-540-77220-0_21
+ * search algorithm based on the algorithms in [Hong2011PPoPP, Hong2011PACT].
+ * [Hong2011PPoPP] S. Hong,  S.K. Kim, T. Oguntebi and K. Olukotun, 
+ *   "Accelerating CUDA graph algorithms at maximum warp" in PPoPP 2011.
+ * [Hong2011PACT] S. Hong, T. Oguntebi and K. Olukotun, "Efficient parallel 
+ *   graph exploration on multi-core cpu and gpu" in PACT 2011.
  *
  *  Created on: 2011-02-28
  *      Author: Lauro Beltrão Costa
+ *              Abdullah Gharaibeh
  */
 
 // system includes
 #include <cuda.h>
 
 // totem includes
+#include "totem_bitmap.h"
 #include "totem_comdef.h"
 #include "totem_comkernel.cuh"
 #include "totem_graph.h"
@@ -326,9 +329,12 @@ error_t bfs_cpu(graph_t* graph, id_t source_id, uint32_t** cost_ret) {
   uint32_t* cost = (uint32_t*) mem_alloc(graph->vertex_count *
                                          sizeof(uint32_t));
   memset(cost, 0xFF, graph->vertex_count * sizeof(uint32_t));
+  // Initialize the visited bitmap
+  bitmap_t visited = bitmap_init(graph->vertex_count);
 
   // Initialize the cost of the source vertex
   cost[source_id] = 0;
+  bitmap_set(visited, source_id);
 
   bool finished = false;
   #ifdef _OPENMP
@@ -371,15 +377,18 @@ error_t bfs_cpu(graph_t* graph, id_t source_id, uint32_t** cost_ret) {
         for (id_t i = graph->vertices[vertex_id];
              i < graph->vertices[vertex_id + 1]; i++) {
           const id_t neighbor_id = graph->edges[i];
-          if (cost[neighbor_id] == INFINITE) {
-            finished = false;
-            cost[neighbor_id] = level + 1;            
+          if (!bitmap_is_set(visited, neighbor_id)) {
+            if (bitmap_set(visited, neighbor_id)) {
+              finished = false;
+              cost[neighbor_id] = level + 1;            
+            }
           }
         }
       }
       level++;
     }
   } // omp parallel
+  bitmap_finalize(visited);
   *cost_ret = cost;
   return SUCCESS;
 }
