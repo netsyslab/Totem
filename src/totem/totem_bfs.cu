@@ -322,32 +322,64 @@ error_t bfs_cpu(graph_t* graph, id_t source_id, uint32_t** cost_ret) {
     return FAILURE;
   }
 
+  // Initialize cost to INFINITE.
   uint32_t* cost = (uint32_t*) mem_alloc(graph->vertex_count *
                                          sizeof(uint32_t));
-  // Initialize cost to INFINITE.
   memset(cost, 0xFF, graph->vertex_count * sizeof(uint32_t));
-  // For the source vertex, initialize cost.
+
+  // Initialize the cost of the source vertex
   cost[source_id] = 0;
 
-  // while the current level has vertices to be processed.
   bool finished = false;
-  for (uint32_t level = 0; !finished; level++) {
-    finished = true;
-    #ifdef _OPENMP
-    #pragma omp parallel for
-    #endif // _OPENMP
-    for (id_t vertex_id = 0; vertex_id < graph->vertex_count; vertex_id++) {
-      if (cost[vertex_id] != level) continue;
-      for (id_t i = graph->vertices[vertex_id];
-           i < graph->vertices[vertex_id + 1]; i++) {
-        const id_t neighbor_id = graph->edges[i];
-        if (cost[neighbor_id] == INFINITE) {
-          finished = false;
-          cost[neighbor_id] = level + 1;
+  #ifdef _OPENMP
+  // Within the following code segment, all threads execute in parallel the 
+  // same code (similar to a cuda kernel)
+  #pragma omp parallel
+  #endif
+  {
+    // level is a local variable to each thread, having a separate copy per
+    // thread reduces the overhead of cache coherency protocol compared to
+    // the case where level is shared
+    uint32_t level = 0;
+    // while the current level has vertices to be processed.
+    while (!finished) {
+      // The following barrier is necessary to ensure that all threads have
+      // checked the while condition above using the same "finished" value
+      // that resulted from the previous iteration before it is initialized
+      // again for the next one.
+      #ifdef _OPENMP
+      #pragma omp barrier
+
+      // This "single" clause ensures that only one thread sets the variable. 
+      // Note that this close has an implicit barrier (i.e., all threads will
+      // block until the variable is set by the responsible thread)
+      #pragma omp single
+      #endif // _OPENMP
+      finished = true;
+
+      // The "for" clause instructs openmp to run the loop in parallel. Each
+      // thread will be statically assigned a contiguous chunk of work. The
+      // reduction clause tells openmp to define a private temporary variable
+      // for each thread, and reduce them in the end using an "and" operator and
+      // store the value in "finished". Similar to the argument above, this 
+      // improves performance by reducing cache coherency overhead
+      #ifdef _OPENMP
+      #pragma omp for schedule(static) reduction(& : finished)
+      #endif
+      for (id_t vertex_id = 0; vertex_id < graph->vertex_count; vertex_id++) {
+        if (cost[vertex_id] != level) continue;
+        for (id_t i = graph->vertices[vertex_id];
+             i < graph->vertices[vertex_id + 1]; i++) {
+          const id_t neighbor_id = graph->edges[i];
+          if (cost[neighbor_id] == INFINITE) {
+            finished = false;
+            cost[neighbor_id] = level + 1;            
+          }
         }
       }
+      level++;
     }
-  }
+  } // omp parallel
   *cost_ret = cost;
   return SUCCESS;
 }
