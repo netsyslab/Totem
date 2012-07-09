@@ -7,6 +7,7 @@
  */
 
 // totem includes
+#include "totem_bitmap.h"
 #include "totem_common_unittest.h"
 
 class GraphHelper : public ::testing::Test {
@@ -278,4 +279,65 @@ TEST_F(GraphHelper, AtomicOperations) {
   free(buf);
   free(buf_f);
   free(buf_d);
+}
+
+
+TEST_F(GraphHelper, Bitmap) {
+  // Initialize the bitmap
+  const id_t bitmap_len = 10006;
+  bitmap_t bitmap = bitmap_init(bitmap_len);
+  
+  const id_t bits_set_count = bitmap_len/2;
+  id_t bits_set[bits_set_count];
+  // Initialize the bits to be set. The first two are initialized statically to
+  // the first and last bits, the rest is initialized randomly.
+  bits_set[0] = 0;
+  bits_set[1] = bits_set_count - 1;
+  srand (time(NULL));
+  for (id_t i = 2; i < bits_set_count; i++) {
+    bits_set[i] = rand() % bitmap_len;
+  }
+
+  // Get the bits that are not set
+  id_t bits_not_set[bitmap_len];
+  id_t bits_not_set_count = 0;
+  for (id_t i = 0; i < bitmap_len; i++) {
+    // Search for the bit in the bits_set array
+    id_t j = 0;
+    for (; j < bits_set_count; j++) {
+      if (bits_set[j] == i) {
+        break;
+      }
+    }
+    if (j == bits_set_count) {
+      // This bit is not set, add it to the bits_not_set array
+      bits_not_set[bits_not_set_count++] = i;
+    }
+  }
+
+  // First set the bits in the bits_set array
+  #ifdef _OPENMP
+  #pragma omp parallel for
+  #endif // _OPENMP
+  for (id_t i = 0; i < bits_set_count; i++) {
+    bitmap_set(bitmap, bits_set[i]);
+  }
+
+  // Try to set again
+  #ifdef _OPENMP
+  #pragma omp parallel for
+  #endif // _OPENMP
+  for (id_t i = 0; i < bits_set_count; i++) {
+    EXPECT_FALSE(bitmap_set(bitmap, bits_set[i]));
+  }
+
+  // Second check if the bits are set correctly
+  for (id_t i = 0; i < bits_set_count; i++) {
+    EXPECT_TRUE(bitmap_is_set(bitmap, bits_set[i]));
+  }
+  for (id_t i = 0; i < bits_not_set_count; i++) {
+    EXPECT_FALSE(bitmap_is_set(bitmap, bits_not_set[i]));
+  }
+
+  bitmap_finalize(bitmap);
 }
