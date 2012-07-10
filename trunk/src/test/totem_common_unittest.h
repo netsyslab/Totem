@@ -22,6 +22,7 @@
  *  Defines a relative path of a graph file
  */
 #define DATA_FOLDER(graph_file) "../../data/"graph_file
+#define TEMP_FOLDER(graph_file) "/tmp/"graph_file
 
 #define CUDA_CHECK_VERSION()               \
   do {                                     \
