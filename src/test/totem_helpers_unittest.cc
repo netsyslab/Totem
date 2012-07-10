@@ -4,6 +4,7 @@
  *
  *  Created on: 2011-03-09
  *      Author: Lauro Beltrão Costa
+ *              Abdullah Gharaibeh
  */
 
 // totem includes
@@ -16,6 +17,26 @@ class GraphHelper : public ::testing::Test {
     // Ensure the minimum CUDA architecture is supported
     CUDA_CHECK_VERSION();
   }
+  void CompareBinary(graph_t* graph, const char* filename) {
+    graph_t* graph_bin;
+    EXPECT_EQ(SUCCESS, graph_store_binary(graph, filename));
+    EXPECT_EQ(SUCCESS, graph_initialize(filename,
+                                        graph->weighted, &graph_bin));
+    EXPECT_EQ(graph->vertex_count, graph_bin->vertex_count);
+    EXPECT_EQ(graph->edge_count, graph_bin->edge_count);
+    EXPECT_EQ(graph->directed, graph_bin->directed);
+    EXPECT_EQ(graph->weighted, graph_bin->weighted);
+    EXPECT_EQ(graph->valued, graph_bin->valued);
+    for (id_t vid = 0; vid < graph->vertex_count; vid++) {
+      for (id_t i = graph->vertices[vid]; i < graph->vertices[vid + 1]; i++) {
+        EXPECT_EQ(graph->edges[i], graph_bin->edges[i]);
+        if (graph->weighted) {
+          EXPECT_EQ(graph->weights[i], graph_bin->weights[i]);
+        }
+      }
+    }
+    EXPECT_EQ(SUCCESS, graph_finalize(graph_bin));
+  }
 };
 
 // Tests for initialize helper function.
@@ -25,6 +46,10 @@ TEST_F(GraphHelper, Initialize) {
                                       false, &graph));
   EXPECT_EQ((uint32_t)1, graph->vertex_count);
   EXPECT_EQ((uint32_t)0, graph->edge_count);
+  EXPECT_TRUE(graph->directed);
+  EXPECT_FALSE(graph->weighted);
+  EXPECT_FALSE(graph->valued);
+  CompareBinary(graph, TEMP_FOLDER("single_node.tbin"));
   EXPECT_EQ(SUCCESS, graph_finalize(graph));
 
   EXPECT_EQ(SUCCESS,
@@ -32,19 +57,31 @@ TEST_F(GraphHelper, Initialize) {
                              false, &graph));
   EXPECT_EQ((uint32_t)1, graph->vertex_count);
   EXPECT_EQ((uint32_t)1, graph->edge_count);
+  EXPECT_TRUE(graph->directed);
+  EXPECT_FALSE(graph->weighted);
+  EXPECT_FALSE(graph->valued);
+  CompareBinary(graph, TEMP_FOLDER("single_node_loop.tbin"));
   EXPECT_EQ(SUCCESS, graph_finalize(graph));
 
   EXPECT_EQ(SUCCESS, graph_initialize(DATA_FOLDER("chain_1000_nodes.totem"),
                                       false, &graph));
   EXPECT_EQ((uint32_t)1000, graph->vertex_count);
   EXPECT_EQ((uint32_t)1998, graph->edge_count);
+  EXPECT_FALSE(graph->directed);
+  EXPECT_FALSE(graph->weighted);
+  EXPECT_FALSE(graph->valued);
+  CompareBinary(graph, TEMP_FOLDER("chain_1000_nodes.tbin"));
   EXPECT_EQ(SUCCESS, graph_finalize(graph));
 
   EXPECT_EQ(SUCCESS,
-            graph_initialize(DATA_FOLDER("complete_graph_300_nodes.totem"),
-                             false, &graph));
+            graph_initialize(DATA_FOLDER("complete_graph_300_nodes_weight.totem"),
+                             true, &graph));
   EXPECT_EQ((uint32_t)300, graph->vertex_count);
   EXPECT_EQ((uint32_t)89700, graph->edge_count);
+  EXPECT_FALSE(graph->directed);
+  EXPECT_TRUE(graph->weighted);
+  EXPECT_FALSE(graph->valued);
+  CompareBinary(graph, TEMP_FOLDER("complete_graph_300_nodes_weight.tbin"));
   EXPECT_EQ(SUCCESS, graph_finalize(graph));
 
   EXPECT_EQ(SUCCESS,
@@ -52,24 +89,28 @@ TEST_F(GraphHelper, Initialize) {
                              false, &graph));
   EXPECT_EQ((uint32_t)1000, graph->vertex_count);
   EXPECT_EQ((uint32_t)0, graph->edge_count);
+  EXPECT_FALSE(graph->directed);
+  EXPECT_FALSE(graph->weighted);
+  EXPECT_FALSE(graph->valued);
+  CompareBinary(graph, TEMP_FOLDER("disconnected_1000_nodes.tbin"));
   EXPECT_EQ(SUCCESS, graph_finalize(graph));
-
 
   EXPECT_EQ(SUCCESS,
             graph_initialize(DATA_FOLDER("star_1000_nodes.totem"),
                              false, &graph));
   EXPECT_EQ((uint32_t)1000, graph->vertex_count);
   EXPECT_EQ((uint32_t)1998, graph->edge_count);
+  EXPECT_FALSE(graph->directed);
+  EXPECT_FALSE(graph->weighted);
+  EXPECT_FALSE(graph->valued);
+  CompareBinary(graph, TEMP_FOLDER("star_1000_nodes.tbin"));
   EXPECT_EQ(SUCCESS, graph_finalize(graph));
-
-  // TODO(lauro, abdullah): Add more cases and test other fields.
 }
 
 TEST_F(GraphHelper, SubGraph) {
   graph_t* graph;
   graph_t* subgraph;
   bool* mask;
-
 
   // single node graph
   subgraph = NULL;
@@ -91,7 +132,6 @@ TEST_F(GraphHelper, SubGraph) {
   free(mask);
   graph_finalize(graph);
 
-
   // single node loop graph
   subgraph = NULL;
   graph_initialize(DATA_FOLDER("single_node_loop.totem"), false, &graph);
@@ -111,7 +151,6 @@ TEST_F(GraphHelper, SubGraph) {
   // cleanup
   free(mask);
   graph_finalize(graph);
-
 
   // chain graph
   subgraph = NULL;
@@ -135,7 +174,6 @@ TEST_F(GraphHelper, SubGraph) {
   free(mask);
   graph_finalize(graph);
 
-
   // complete graph
   subgraph = NULL;
   graph_initialize(DATA_FOLDER("complete_graph_300_nodes.totem"),
@@ -152,7 +190,6 @@ TEST_F(GraphHelper, SubGraph) {
   free(mask);
   graph_finalize(graph);
 
-
   // diconnected graph
   subgraph = NULL;
   graph_initialize(DATA_FOLDER("disconnected_1000_nodes.totem"), false, &graph);
@@ -167,7 +204,6 @@ TEST_F(GraphHelper, SubGraph) {
   // cleaup
   free(mask);
   graph_finalize(graph);
-
 
   // star graph
   subgraph = NULL;
@@ -189,8 +225,6 @@ TEST_F(GraphHelper, SubGraph) {
   // cleanup
   free(mask);
   graph_finalize(graph);
-
-  // TODO(lauro, abdullah): Add more cases and test other fields.
 }
 
 
@@ -237,7 +271,6 @@ TEST_F(GraphHelper, AtomicOperations) {
     __sync_fetch_and_add_double(&p_sum_double, buf_d[i]);
   }
   EXPECT_DOUBLE_EQ(p_sum_double, sum_double);
-
 
   // Atomic integer and floating point min
   // integer

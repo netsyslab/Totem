@@ -10,10 +10,13 @@
 #include "totem_mem.h"
 
 // common logistics for parsing
-#define MAX_LINE_LENGTH      100
+const uint32_t MAX_LINE_LENGTH = 100;
 PRIVATE const char delimiters[] = " \t\n:";
 PRIVATE uint64_t line_number = 0;
 PRIVATE char line[MAX_LINE_LENGTH];
+
+// common binary parameters
+const uint32_t BINARY_MAGIC_WORD = 0x10102048;
 
 /**
  * parses the metadata at the very beginning of the graph file
@@ -303,13 +306,56 @@ PRIVATE void allocate_graph(uint64_t vertex_count, uint64_t edge_count,
   graph->directed = directed;
   graph->weighted = weighted;
   graph->valued = valued;
-
   *graph_ret = graph;
 }
 
-error_t graph_initialize(const char* graph_file, bool weighted,
-                         graph_t** graph_ret) {
+PRIVATE error_t graph_initialize_binary(FILE* fh, bool load_weights,
+                                        graph_t** graph) {
+  // Assuming the magic word has already been read, read the graph parameters
+  uint64_t vertex_count;
+  CHK(fread(&vertex_count, sizeof(uint64_t), 1, fh) == 1, err);
+  uint64_t edge_count;
+  CHK(fread(&edge_count, sizeof(uint64_t), 1, fh) == 1, err);
+  bool valued;
+  CHK(fread(&valued, sizeof(bool), 1, fh) == 1, err);
+  bool weighted;
+  CHK(fread(&weighted, sizeof(bool), 1, fh) == 1, err);
+  bool directed;
+  CHK(fread(&directed, sizeof(bool), 1, fh) == 1, err);  
+  allocate_graph(vertex_count, edge_count, directed, weighted, valued, graph);
+  
+  // Load the vertices and their values if any
+  for(id_t vid = 0; vid < vertex_count; vid++) {
+    CHK(fread(&((*graph)->vertices[vid]), sizeof(id_t), 1, fh) == 1, err_free);
+    if (valued) {
+      CHK(fread(&((*graph)->values[vid]), sizeof(weight_t), 1, fh) == 1, 
+          err_free);
+    }
+  }
+  CHK(fread(&((*graph)->vertices[vertex_count]), sizeof(id_t), 1, fh) == 1, 
+      err_free);
+  
+  // Load the edges and their weights if any
+  for(id_t eid = 0; eid < edge_count; eid++) {
+    CHK(fread(&((*graph)->edges[eid]), sizeof(id_t), 1, fh) == 1, err_free);
+    if (load_weights && weighted) {
+      CHK(fread(&((*graph)->weights[eid]), sizeof(weight_t), 1, fh) == 1, 
+          err_free);
+    }
+  }
+  fclose(fh);
+  return SUCCESS;
 
+ err_free:
+  graph_finalize(*graph);
+ err:
+  printf("Error invalid binary file format\n");
+  fclose(fh);
+  return FAILURE;
+}
+
+PRIVATE error_t graph_initialize_text(FILE* file_handler, bool weighted,
+                                      graph_t** graph_ret) {
   /* we had to define those variables here, not within the code, to overcome a
      compilation problem with using "goto" (used to emulate exceptions). */
   graph_t* graph        = NULL;
@@ -317,10 +363,6 @@ error_t graph_initialize(const char* graph_file, bool weighted,
   uint64_t edge_count   = 0;
   bool     directed     = true;
   bool     valued       = false;
-
-  assert(graph_file);
-  FILE* file_handler = fopen(graph_file, "r");
-  CHK(file_handler != NULL, err_openfile);
 
   // get graph characteristics
   CHK(parse_metadata(file_handler, &vertex_count, &edge_count,
@@ -341,10 +383,6 @@ error_t graph_initialize(const char* graph_file, bool weighted,
   return SUCCESS;
 
   // error handling
-  err_openfile:
-    fprintf(stderr, "Can't open file %s\n", graph_file);
-    graph_finalize(graph);
-    goto err;
   err_format_clean:
     fclose(file_handler);
     graph_finalize(graph);
@@ -353,6 +391,29 @@ error_t graph_initialize(const char* graph_file, bool weighted,
             line_number);
   err:
     return FAILURE;
+}
+
+error_t graph_initialize(const char* graph_file, bool weighted,
+                         graph_t** graph) {
+  assert(graph_file);
+  FILE* file_handler = fopen(graph_file, "r");
+  CHK(file_handler != NULL, err);
+
+  uint32_t magic_word;
+  CHK(fread(&magic_word, sizeof(uint32_t), 1, file_handler) == 1, err_close);
+
+  if (magic_word == BINARY_MAGIC_WORD) {
+    return graph_initialize_binary(file_handler, weighted, graph);
+  }
+   
+  fseek(file_handler, 0, 0);
+  return graph_initialize_text(file_handler, weighted, graph);
+ 
+ err_close:
+  fclose(file_handler);
+ err:
+  fprintf(stderr, "Can't open file %s\n", graph_file);
+  return FAILURE;
 }
 
 error_t get_subgraph(const graph_t* graph, bool* mask, graph_t** subgraph_ret) {
@@ -566,4 +627,40 @@ void graph_print(graph_t* graph) {
       }
     }
   }
+}
+
+error_t graph_store_binary(graph_t* graph, const char* filename) {
+  FILE* fh = fopen(filename, "wb");
+  if (fh == NULL) return FAILURE;
+  
+  uint32_t magic_word = BINARY_MAGIC_WORD;
+  CHK(fwrite(&magic_word, sizeof(uint32_t), 1, fh) == 1, err);
+  
+  // Write the graph's parameters
+  CHK(fwrite(&(graph->vertex_count), sizeof(uint64_t), 1, fh) == 1, err);
+  CHK(fwrite(&(graph->edge_count), sizeof(uint64_t), 1, fh) == 1, err);
+  CHK(fwrite(&(graph->valued), sizeof(bool), 1, fh) == 1, err);
+  CHK(fwrite(&(graph->weighted), sizeof(bool), 1, fh) == 1, err);
+  CHK(fwrite(&(graph->directed), sizeof(bool), 1, fh) == 1, err);
+  
+  for (id_t vid = 0; vid < graph->vertex_count; vid++) {
+    CHK(fwrite(&(graph->vertices[vid]), sizeof(id_t), 1, fh) == 1, err);
+    if (graph->valued) {
+      CHK(fwrite(&(graph->values[vid]), sizeof(weight_t), 1, fh) == 1, err);
+    }
+  }
+  CHK(fwrite(&(graph->vertices[graph->vertex_count]), 
+             sizeof(id_t), 1, fh) == 1, err);
+
+  for (id_t vid = 0; vid < graph->edge_count; vid++) {
+    CHK(fwrite(&(graph->edges[vid]), sizeof(id_t), 1, fh) == 1, err);
+    if (graph->weighted) {
+      CHK(fwrite(&(graph->weights[vid]), sizeof(weight_t), 1, fh) == 1, err);
+    }
+  }  
+  fclose(fh);
+  return SUCCESS;
+
+ err:
+  return FAILURE;
 }

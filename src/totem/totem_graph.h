@@ -150,6 +150,14 @@ error_t graph_finalize(graph_t* graph);
 void graph_print(graph_t* graph);
 
 /**
+ * Stores a graph in binary format in the specified file path
+ * @param[in] graph the graph data structure to be stored
+ * @param[in] graph_file path to the binary graph file.
+ * @return generic success or failure
+ */
+error_t graph_store_binary(graph_t* graph, const char* filename);
+
+/**
  * Creates a subgraph from a graph. the graph is de-allocated via graph_finalize
  * @param[in] graph the graph to extract the subgraph from
  * @param[in] mask identifies the vertices to be included in the subgraph
