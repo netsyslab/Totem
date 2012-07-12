@@ -18,14 +18,6 @@
 typedef struct partition_set_s partition_set_t;
 
 /**
- * Defines the index of a remote partition's box table in the list of box tables
- * of a local partition.
- */
-#define GROOVES_BOX_INDEX(_remote_pid, _host_pid, _count)       \
-  (((_remote_pid) - (_host_pid) - 1 + (_count)) % (_count))
-
-
-/**
  * Defines the basic data type that is used as communication stubs between
  * partitions. In particular, it maintains the state of remote neighbors to a
  * partition. Vertex ids (including the partition id) of the remote neighbors

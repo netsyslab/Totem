@@ -166,13 +166,13 @@ error_t engine_init(graph_t* graph, totem_attr_t* attr) {
   // TODO(abdullah): ideally, we would like to split the graph among processors
   // with different shares (e.g., a system with GPUs with different
   // memory capacities).
-  float* par_share = NULL;
+  double* par_share = NULL;
   if (context.attr.cpu_par_share && use_cpu) {
-    par_share = (float*)calloc(pcount, sizeof(float));
+    par_share = (double*)calloc(pcount, sizeof(double));
     par_share[pcount - 1] = context.attr.cpu_par_share;
-    float gpu_par_share =
-      (1.0 - context.attr.cpu_par_share) / (float)gpu_count;
-    float total_share = context.attr.cpu_par_share;
+    double gpu_par_share =
+      (1.0 - context.attr.cpu_par_share) / (double)gpu_count;
+    double total_share = context.attr.cpu_par_share;
     for (int gpu_id = 0; gpu_id < gpu_count - 1; gpu_id++) {
       par_share[gpu_id] = gpu_par_share;
       total_share += gpu_par_share;

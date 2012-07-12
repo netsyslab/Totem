@@ -97,7 +97,7 @@ typedef struct {
  * the temporary rank (rank_s) of the destination neighbor vertex.
  */
 __global__
-void vwarp_sum_neighbors_rank_kernel(partition_t par, int pc, float* rank,
+void vwarp_sum_neighbors_rank_kernel(partition_t par, float* rank, 
                                      float* rank_s, int thread_count) {
   if (THREAD_GLOBAL_INDEX >= thread_count) return;
   int warp_offset = THREAD_GLOBAL_INDEX % VWARP_WARP_SIZE;
@@ -121,7 +121,7 @@ void vwarp_sum_neighbors_rank_kernel(partition_t par, int pc, float* rank,
     id_t* nbrs = &(par.subgraph.edges[my_space->vertices[v]]);
     for(int i = warp_offset; i < nbr_count; i += VWARP_WARP_SIZE) {
       float* dst; const id_t nbr = nbrs[i];
-      ENGINE_FETCH_DST(par.id, nbr, par.outbox_d, rank_s, pc, dst, float);
+      ENGINE_FETCH_DST(par.id, nbr, par.outbox_d, rank_s, dst, float);
       atomicAdd(dst, my_space->rank[v]);
     }
   }
@@ -162,7 +162,7 @@ PRIVATE void page_rank_gpu(partition_t* par) {
   // communicate the ranks
   engine_set_outbox(par->id, 0);
   vwarp_sum_neighbors_rank_kernel<<<ps->blocks_sum, ps->threads_sum, 0,
-    par->streams[1]>>>(*par, engine_partition_count(), ps->rank, ps->rank_s,
+    par->streams[1]>>>(*par, ps->rank, ps->rank_s, 
                        VWARP_BATCH_COUNT(par->subgraph.vertex_count) *
                        VWARP_WARP_SIZE);
   CALL_CU_SAFE(cudaGetLastError());
@@ -172,7 +172,6 @@ PRIVATE void page_rank_cpu(partition_t* par) {
   page_rank_state_t* ps = (page_rank_state_t*)par->algo_state;
   graph_t* subgraph = &par->subgraph;
   uint32_t vcount = engine_vertex_count();
-  int pc = engine_partition_count();
   int round = engine_superstep();
 
   if (round > 1) {
@@ -198,7 +197,7 @@ PRIVATE void page_rank_cpu(partition_t* par) {
     float my_rank = ps->rank[v];
     for (id_t i = subgraph->vertices[v]; i < subgraph->vertices[v + 1]; i++) {
       float* dst; id_t nbr = subgraph->edges[i];
-      ENGINE_FETCH_DST(par->id, nbr, par->outbox, ps->rank_s, pc, dst, float);
+      ENGINE_FETCH_DST(par->id, nbr, par->outbox, ps->rank_s, dst, float);
       __sync_fetch_and_add_float(dst, my_rank);
     }
   }

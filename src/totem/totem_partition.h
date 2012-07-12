@@ -170,7 +170,7 @@ error_t partition_modularity(graph_t* graph, partition_set_t* partition_set,
  * @return SUCCESS if the partitions are assigned, FAILURE otherwise.
  */
 error_t partition_random(graph_t* graph, int partition_count,
-                         float* partition_fraction, uint32_t seed,
+                         double* partition_fraction, uint32_t seed,
                          id_t** partition_labels);
 
 /**

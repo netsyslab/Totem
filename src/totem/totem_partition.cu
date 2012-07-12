@@ -78,7 +78,7 @@ PRIVATE error_t partition_random(graph_t* graph, int number_of_partitions,
 }
 
 error_t partition_random(graph_t* graph, int partition_count,
-                         float* partition_fraction, uint32_t seed,
+                         double* partition_fraction, uint32_t seed,
                          id_t** partition_labels) {
   // Check pre-conditions
   *partition_labels = NULL;
@@ -92,14 +92,16 @@ error_t partition_random(graph_t* graph, int partition_count,
   }
 
   // Ensure the partition fractions are >= 0.0 and add up to 1.0
-  float sum = 0.0;
+  double sum = 0.0;
   for (int par_id = 0; par_id < partition_count; par_id++) {
     sum += partition_fraction[par_id];
     if (partition_fraction[par_id] < 0.0) {
       return FAILURE;
     }
   }
-  if (sum < 1.0) {
+  // The following trick is to avoid getting stuck in precision errors
+  sum = (int)(sum * 100.0);
+  if (sum > 101 || sum < 99) {
     return FAILURE;
   }
 
