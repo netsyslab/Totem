@@ -198,8 +198,8 @@ void print_stat(graph_t* graph, totem_attr_t* attr, double time_total) {
          "time_par:%0.2f\t"
          "time_exec:%0.2f\t"
          "time_comp:%0.2f\t"
-         "time_comm:%0.2f\t"
-         "time_gpu_comp:%0.2f\n",
+         "time_gpu_comp:%0.2f\t"
+         "time_comm:%0.2f\n",
          time_total,
          totem_time_initialization(),
          totem_time_partitioning(),
