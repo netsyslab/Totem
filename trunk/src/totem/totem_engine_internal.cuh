@@ -115,8 +115,9 @@ template<typename T>
 void engine_scatter_inbox_add(uint32_t pid, T* dst) {
   assert(pid < context.pset->partition_count);
   partition_t* par = &context.pset->partitions[pid];
-  for (int bid = 0; bid < context.pset->partition_count - 1; bid++) {
-    grooves_box_table_t* inbox = &par->inbox[bid];
+  for (int rmt_pid = 0; rmt_pid < context.pset->partition_count; rmt_pid++) {
+    if (rmt_pid == pid) continue;
+    grooves_box_table_t* inbox = &par->inbox[rmt_pid];
     if (!inbox->count) continue;
     if (par->processor.type == PROCESSOR_GPU) {
       dim3 blocks, threads;
@@ -139,8 +140,9 @@ template<typename T>
 void engine_scatter_inbox_min(uint32_t pid, T* dst) {
   assert(pid < context.pset->partition_count);
   partition_t* par = &context.pset->partitions[pid];
-  for (int bid = 0; bid < context.pset->partition_count - 1; bid++) {
-    grooves_box_table_t* inbox = &par->inbox[bid];
+  for (int rmt_pid = 0; rmt_pid < context.pset->partition_count; rmt_pid++) {
+    if (rmt_pid == pid) continue;
+    grooves_box_table_t* inbox = &par->inbox[rmt_pid];
     if (!inbox->count) continue;
     if (par->processor.type == PROCESSOR_GPU) {
       dim3 blocks, threads;
@@ -163,8 +165,9 @@ template<typename T>
 void engine_scatter_inbox_max(uint32_t pid, T* dst) {
   assert(pid < context.pset->partition_count);
   partition_t* par = &context.pset->partitions[pid];
-  for (int bid = 0; bid < context.pset->partition_count - 1; bid++) {
-    grooves_box_table_t* inbox = &par->inbox[bid];
+  for (int rmt_pid = 0; rmt_pid < context.pset->partition_count; rmt_pid++) {
+    if (rmt_pid == pid) continue;
+    grooves_box_table_t* inbox = &par->inbox[rmt_pid];
     if (!inbox->count) continue;
     if (par->processor.type == PROCESSOR_GPU) {
       dim3 blocks, threads;
@@ -187,8 +190,9 @@ template<typename T>
 void engine_set_outbox(uint32_t pid, T value) {
   assert(pid < context.pset->partition_count);
   partition_t* par = &context.pset->partitions[pid];
-  for (int bid = 0; bid < context.pset->partition_count - 1; bid++) {
-    grooves_box_table_t* outbox =  &par->outbox[bid];
+  for (int rmt_pid = 0; rmt_pid < context.pset->partition_count; rmt_pid++) {
+    if (rmt_pid == pid) continue;
+    grooves_box_table_t* outbox =  &par->outbox[rmt_pid];
     if (!outbox->count) continue;
     T* values = (T*)outbox->values;
     if (par->processor.type == PROCESSOR_GPU) {

@@ -17,29 +17,26 @@ using ::testing::Values;
 int* degree_g;
 int* degree_h;
 
-__global__ void degree_kernel(partition_t par, int pcount) {
+__global__ void degree_kernel(partition_t par) {
   id_t v = THREAD_GLOBAL_INDEX;
   if (v >= par.subgraph.vertex_count) return;
   for (id_t i = par.subgraph.vertices[v];
        i < par.subgraph.vertices[v + 1]; i++) {
     int* dst;
     id_t nbr = par.subgraph.edges[i];
-    ENGINE_FETCH_DST(par.id, nbr, par.outbox_d, (int*)par.algo_state,
-                     pcount, dst, int);
+    ENGINE_FETCH_DST(par.id, nbr, par.outbox_d, (int*)par.algo_state, dst, int);
     atomicAdd(dst, 1);
   }
 }
 
 void degree_gpu(partition_t* par) {
-  int pcount = engine_partition_count();
   dim3 blocks, threads;
   KERNEL_CONFIGURE(par->subgraph.vertex_count, blocks, threads);
-  degree_kernel<<<blocks, threads, 1, par->streams[1]>>>(*par, pcount);
+  degree_kernel<<<blocks, threads, 1, par->streams[1]>>>(*par);
   CALL_CU_SAFE(cudaGetLastError());
 }
 
 void degree_cpu(partition_t* par) {
-  int pcount = engine_partition_count();
   #ifdef _OPENMP
   #pragma omp parallel for
   #endif
@@ -48,8 +45,8 @@ void degree_cpu(partition_t* par) {
          i < par->subgraph.vertices[v + 1]; i++) {
       int* dst;
       id_t nbr = par->subgraph.edges[i];
-      ENGINE_FETCH_DST(par->id, nbr, par->outbox, (int*)par->algo_state,
-                       pcount, dst, int);
+      ENGINE_FETCH_DST(par->id, nbr, par->outbox, (int*)par->algo_state, dst, 
+                       int);
       __sync_fetch_and_add(dst, 1);
     }
   }

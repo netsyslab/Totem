@@ -24,7 +24,7 @@ __global__ void VerifyPartitionGPUKernel(partition_t partition, uint32_t pid,
     KERNEL_EXPECT_TRUE(nbr_pid < pcount);
     if (nbr_pid != pid) {
       grooves_box_table_t* outbox =
-        &partition.outbox_d[GROOVES_BOX_INDEX(nbr_pid, pid, pcount)];
+        &partition.outbox_d[nbr_pid];
       KERNEL_EXPECT_TRUE(outbox->count > 0);
     }
   }
@@ -33,7 +33,7 @@ __global__ void VerifyPartitionGPUKernel(partition_t partition, uint32_t pid,
 __global__ void VerifyPartitionInboxGPUKernel(partition_t partition,
                                               uint32_t pid, uint32_t pcount) {
   const int index = THREAD_GLOBAL_INDEX;
-  for (int r = 0; r < pcount - 1; r++) {
+  for (int r = 0; r < pcount; r++) {
     grooves_box_table_t* inbox = &partition.inbox_d[r];
     if (index >= inbox->count) continue;
     KERNEL_EXPECT_TRUE(inbox->rmt_nbrs[index] <
@@ -120,14 +120,14 @@ class GraphPartitionTest : public ::testing::Test {
         EXPECT_TRUE((nbr_id < nbr_partition->subgraph.vertex_count));
         if (nbr_pid != pid) {
           grooves_box_table_t* outbox =
-            &partition->outbox[GROOVES_BOX_INDEX(nbr_pid, pid, pcount)];
+            &partition->outbox[nbr_pid];
           EXPECT_GT(outbox->count, (uint32_t)0);
         }
       }
     }
     // verify inbox tables, all the vertices in the table must belong to this
     // partition
-    for (int r = 0; r < pcount - 1; r++) {
+    for (int r = 0; r < pcount; r++) {
       grooves_box_table_t* inbox = &partition->inbox[r];
       for (int index = 0; index < inbox->count; index++) {
         KERNEL_EXPECT_TRUE(inbox->rmt_nbrs[index] <
@@ -155,7 +155,7 @@ class GraphPartitionTest : public ::testing::Test {
       for (uint32_t remote_pid = (pid + 1) % pcount; remote_pid != pid;
            remote_pid = (remote_pid + 1) % pcount) {
         grooves_box_table_t* remote_outbox =
-          &partition->outbox[GROOVES_BOX_INDEX(remote_pid, pid, pcount)];
+          &partition->outbox[remote_pid];
         if (remote_outbox->count == 0) continue;
         if (partition->processor.type == PROCESSOR_GPU) {
           dim3 blocks, threads_per_block;
@@ -180,7 +180,7 @@ class GraphPartitionTest : public ::testing::Test {
     for (uint32_t pid = 0; pid < partition_set_->partition_count; pid++) {
       partition_t* partition = &partition_set_->partitions[pid];
       grooves_box_table_t* inbox = partition->inbox;
-      uint32_t bcount = partition_set_->partition_count - 1;
+      uint32_t bcount = partition_set_->partition_count;
       for (uint32_t bindex = 0; bindex < bcount; bindex++) {
         if (inbox[bindex].count == 0) continue;
         if (partition->processor.type == PROCESSOR_GPU) {
@@ -232,7 +232,7 @@ TEST_F(GraphPartitionTest , RandomPartitionInvalidPartitionNumber) {
 TEST_F(GraphPartitionTest , RandomPartitionFractionInvalidFraction) {
   EXPECT_EQ(SUCCESS, graph_initialize(DATA_FOLDER("single_node.totem"),
                                       false, &graph_));
-  float* partition_fraction = (float *) calloc(2, sizeof(float));
+  double* partition_fraction = (double *) calloc(2, sizeof(double));
   partition_fraction[0] = 2.0;
   partition_fraction[1] = -1.0; // Invalid fraction
   EXPECT_EQ(FAILURE, partition_random(graph_, 2, partition_fraction, 13,
@@ -254,7 +254,7 @@ TEST_F(GraphPartitionTest , RandomPartitionSingleNodeGraph) {
 TEST_F(GraphPartitionTest , RandomPartitionFractionSingleNodeGraph) {
   EXPECT_EQ(SUCCESS, graph_initialize(DATA_FOLDER("single_node.totem"),
                                       false, &graph_));
-  float* partition_fraction = (float *) calloc(10, sizeof(float));
+  double* partition_fraction = (double *) calloc(10, sizeof(double));
   for (int i = 0; i < 10; i++) {
     partition_fraction[i] = (1.0 / 10);
   }
@@ -277,7 +277,7 @@ TEST_F(GraphPartitionTest , RandomPartitionChainGraph) {
 TEST_F(GraphPartitionTest , RandomPartitionFractionChainGraph) {
   EXPECT_EQ(SUCCESS, graph_initialize(DATA_FOLDER("chain_1000_nodes.totem"),
                                       false, &graph_));
-  float* partition_fraction = (float *) calloc(10, sizeof(float));
+  double* partition_fraction = (double *) calloc(10, sizeof(double));
   for (int i = 0; i < 10; i++) {
     partition_fraction[i] = (1.0 / 10);
   }

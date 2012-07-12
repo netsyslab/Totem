@@ -84,7 +84,7 @@ typedef struct {
  * bfs_kernel for details on the BFS implementation.
  */
 __global__
-void vwarp_bfs_kernel(partition_t par, int pc, uint32_t level, bool* finished,
+void vwarp_bfs_kernel(partition_t par, uint32_t level, bool* finished, 
                       uint32_t* cost, int thread_count) {
   if (THREAD_GLOBAL_INDEX >= thread_count) return;
   int warp_offset = THREAD_GLOBAL_INDEX % VWARP_WARP_SIZE;
@@ -115,7 +115,7 @@ void vwarp_bfs_kernel(partition_t par, int pc, uint32_t level, bool* finished,
       id_t* nbrs = &(par.subgraph.edges[my_space->vertices[v]]);
       for(int i = warp_offset; i < nbr_count; i += VWARP_WARP_SIZE) {
         uint32_t* dst; const id_t nbr = nbrs[i];
-        ENGINE_FETCH_DST(par.id, nbr, par.outbox_d, cost, pc, dst, uint32_t);
+        ENGINE_FETCH_DST(par.id, nbr, par.outbox_d, cost, dst, uint32_t);
         if (*dst == INFINITE) {
           *dst = level + 1;
           finished_block = false;
@@ -128,8 +128,8 @@ void vwarp_bfs_kernel(partition_t par, int pc, uint32_t level, bool* finished,
 }
 
 __global__
-void bfs_kernel(partition_t par, int pc, uint32_t level,
-                bool* finished, uint32_t* cost) {
+void bfs_kernel(partition_t par, uint32_t level, bool* finished, 
+                uint32_t* cost) {
   const int v = THREAD_GLOBAL_INDEX;
   if (v >= par.subgraph.vertex_count || cost[v] != level) return;
 
@@ -137,8 +137,7 @@ void bfs_kernel(partition_t par, int pc, uint32_t level,
        i < par.subgraph.vertices[v + 1]; i++) {
     uint32_t* dst; id_t nbr = par.subgraph.edges[i];
 
-    ENGINE_FETCH_DST(par.id, nbr, par.outbox_d, cost,
-                     pc, dst, uint32_t);
+    ENGINE_FETCH_DST(par.id, nbr, par.outbox_d, cost, dst, uint32_t);
     if (*dst == INFINITE) {
       // Threads may update finished and the same position in the cost array
       // concurrently. It does not affect correctness since all
@@ -152,8 +151,7 @@ void bfs_kernel(partition_t par, int pc, uint32_t level,
 PRIVATE void bfs_gpu(partition_t* par) {
   bfs_state_t* state = (bfs_state_t*)par->algo_state;
   vwarp_bfs_kernel<<<state->blocks, state->threads, 0,
-    par->streams[1]>>>(*par, engine_partition_count(), state->level,
-                       state->finished, state->cost,
+    par->streams[1]>>>(*par, state->level, state->finished, state->cost,
                        VWARP_BATCH_COUNT(par->subgraph.vertex_count) *
                        VWARP_WARP_SIZE);
   CALL_CU_SAFE(cudaGetLastError());
@@ -162,7 +160,6 @@ PRIVATE void bfs_gpu(partition_t* par) {
 PRIVATE void bfs_cpu(partition_t* par) {
   bfs_state_t* state = (bfs_state_t*)par->algo_state;
   graph_t* subgraph = &par->subgraph;
-  int pc = engine_partition_count();
 
   #ifdef _OPENMP
   #pragma omp parallel for
@@ -171,8 +168,7 @@ PRIVATE void bfs_cpu(partition_t* par) {
     if (state->cost[v] != state->level) continue;
     for (id_t i = subgraph->vertices[v]; i < subgraph->vertices[v + 1]; i++) {
       uint32_t* dst; id_t nbr = subgraph->edges[i];
-      ENGINE_FETCH_DST(par->id, nbr, par->outbox, state->cost, pc,
-                       dst, uint32_t);
+      ENGINE_FETCH_DST(par->id, nbr, par->outbox, state->cost, dst, uint32_t);
       if (*dst == INFINITE) {
         *dst = state->level + 1;
         *(state->finished) = false;

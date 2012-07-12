@@ -13,17 +13,19 @@
 #include "totem_util.h"
 
 PRIVATE
-void init_get_rmt_nbrs(partition_t* par, uint32_t vcount, uint32_t pcount,
-                       id_t** nbrs, int** count_per_par) {
-  graph_t* subg = &(par->subgraph);
+void init_get_rmt_nbrs1(partition_t* par, uint32_t vcount, uint32_t pcount,
+                        id_t** nbrs, int* count_per_par) {
+
+  // Initialize the counters to zero
+  memset(count_per_par, 0, MAX_PARTITION_COUNT * sizeof(int));
 
   // This is a temporary hash table to identify the remote neighbors.
   // It is initialized with conservative space such that it can accommodate
   // the extreme case where all vertices in other partitions are remote to
   // this partition
+  graph_t* subg = &(par->subgraph);
   hash_table_t* ht;
   CALL_SAFE(hash_table_initialize_cpu(vcount - subg->vertex_count, &ht));
-  *count_per_par = (int*)calloc(pcount - 1, sizeof(int));
   // TODO (abdullah): parallelize this loop
   for (id_t vid = 0; vid < subg->vertex_count; vid++) {
     for (id_t i = subg->vertices[vid]; i < subg->vertices[vid + 1]; i++) {
@@ -34,8 +36,7 @@ void init_get_rmt_nbrs(partition_t* par, uint32_t vcount, uint32_t pcount,
         bool found; HT_CHECK(ht, nbr, found);
         if (!found) {
           // new remote neighbour
-          int bindex = GROOVES_BOX_INDEX(nbr_pid, par->id, pcount);
-          __sync_fetch_and_add(&(*count_per_par)[bindex], 1);
+          __sync_fetch_and_add(&count_per_par[nbr_pid], 1);
           CALL_SAFE(hash_table_put_cpu(ht, nbr, 1));
         }
       }
@@ -57,8 +58,7 @@ void init_map_rmt_nbrs(partition_t* par, uint32_t pcount, id_t* nbrs,
   CALL_SAFE(hash_table_initialize_cpu(par->rmt_vertex_count, ht));
   id_t cur_rmt_v = 0;
   while (cur_rmt_v < par->rmt_vertex_count) {
-    id_t rmt_pid = GET_PARTITION_ID(nbrs[cur_rmt_v]);
-    id_t count = count_per_par[GROOVES_BOX_INDEX(rmt_pid, par->id, pcount)];
+    id_t count = count_per_par[GET_PARTITION_ID(nbrs[cur_rmt_v])];
     #ifdef _OPENMP
     #pragma omp parallel for
     #endif
@@ -72,13 +72,13 @@ void init_map_rmt_nbrs(partition_t* par, uint32_t pcount, id_t* nbrs,
 PRIVATE
 void init_map_rmt_nbrs(partition_t* par, uint32_t pcount, id_t* nbrs,
                        int* count_per_par, hash_table_t* ht,
-                       id_t***rmt_nbrs) {
+                       id_t** rmt_nbrs) {
   // allocate the state, it is per remote partition
-  *rmt_nbrs = (id_t**)calloc(pcount - 1, sizeof(id_t*));
-  for (int i = 0; i < pcount - 1; i++) {
+  memset(rmt_nbrs, 0, MAX_PARTITION_COUNT * sizeof(id_t*));
+  for (int i = 0; i < MAX_PARTITION_COUNT; i++) {
     if (count_per_par[i]) {
-      (*rmt_nbrs)[i] = (id_t*)calloc(count_per_par[i], sizeof(id_t));
-      assert((*rmt_nbrs)[i]);
+      rmt_nbrs[i] = (id_t*)calloc(count_per_par[i], sizeof(id_t));
+      assert(rmt_nbrs[i]);
     }
   }
   // create the final mapping
@@ -87,8 +87,7 @@ void init_map_rmt_nbrs(partition_t* par, uint32_t pcount, id_t* nbrs,
   #endif
   for (int v = 0; v < par->rmt_vertex_count; v++) {
     int index; HT_LOOKUP(ht, nbrs[v], index);
-    id_t* pnbrs = (*rmt_nbrs)[GROOVES_BOX_INDEX(GET_PARTITION_ID(nbrs[v]),
-                                                par->id, pcount)];
+    id_t* pnbrs = rmt_nbrs[GET_PARTITION_ID(nbrs[v])];
     pnbrs[index] = GET_VERTEX_ID(nbrs[v]);
   }
 }
@@ -115,13 +114,13 @@ void init_update_subgraph(partition_t* par, hash_table_t* ht) {
 
 PRIVATE
 void init_get_rmt_nbrs(partition_t* par, uint32_t vcount, uint32_t pcount,
-                       id_t*** rmt_nbrs, int** count_per_par) {
+                       id_t** rmt_nbrs, int* count_per_par) {
   // First, identify the remote neighbors to this partition. "nbrs" is a flat
   // array that stores the list of all remote neighbors, irrespective of which
   // remote partition they belong to. "count_per_par" array is the number of
   // remote neighbors per remote partition (hence, its length is pcount - 1)
   id_t* nbrs;
-  init_get_rmt_nbrs(par, vcount, pcount, &nbrs, count_per_par);
+  init_get_rmt_nbrs1(par, vcount, pcount, &nbrs, count_per_par);
 
   // Second, map the remote neighbors ids in this partition to a new contiguous
   // id space. This new id space is relevant to this partition only. Having
@@ -146,14 +145,14 @@ void init_get_rmt_nbrs(partition_t* par, uint32_t vcount, uint32_t pcount,
     // original remote vertex id (including the partition id), while the values
     // are the new id of the vertex.
     hash_table_t* ht;
-    init_map_rmt_nbrs(par, pcount, nbrs, *count_per_par, &ht);
+    init_map_rmt_nbrs(par, pcount, nbrs, count_per_par, &ht);
 
     // Create a two dimensional map (the first dimension is the partition id,
     // while the second is the remote vertex id) from the previously created
     // hash table. The values stored in "rmt_nbrs" are the original remote
     // vertex ids, while the index that is used to access a value represents
     // the corresponding new id.
-    init_map_rmt_nbrs(par, pcount, nbrs, *count_per_par, ht, rmt_nbrs);
+    init_map_rmt_nbrs(par, pcount, nbrs, count_per_par, ht, rmt_nbrs);
 
     // Finally, reflect the new mapping on the partition's graph data structure.
     init_update_subgraph(par, ht);
@@ -162,30 +161,30 @@ void init_get_rmt_nbrs(partition_t* par, uint32_t vcount, uint32_t pcount,
   }
 }
 
-PRIVATE void init_table_gpu(grooves_box_table_t* btable, uint32_t bcount,
+PRIVATE void init_table_gpu(grooves_box_table_t* btable, uint32_t pcount,
                             size_t msg_size, grooves_box_table_t** btable_d,
                             grooves_box_table_t** btable_h) {
-  *btable_h = (grooves_box_table_t*)calloc(bcount, sizeof(grooves_box_table_t));
-  memcpy(*btable_h, btable, bcount * sizeof(grooves_box_table_t));
+  *btable_h = (grooves_box_table_t*)calloc(pcount, sizeof(grooves_box_table_t));
+  memcpy(*btable_h, btable, pcount * sizeof(grooves_box_table_t));
   // initialize the tables on the gpu
-  for (uint32_t bindex = 0; bindex < bcount; bindex++) {
-    int count = (*btable_h)[bindex].count;
+  for (uint32_t pid = 0; pid < pcount; pid++) {
+    int count = (*btable_h)[pid].count;
     if (count) {
-      CALL_CU_SAFE(cudaMalloc((void**)&((*btable_h)[bindex].rmt_nbrs),
+      CALL_CU_SAFE(cudaMalloc((void**)&((*btable_h)[pid].rmt_nbrs),
                               count * sizeof(id_t)));
-      CALL_CU_SAFE(cudaMemcpy((*btable_h)[bindex].rmt_nbrs,
-                              btable[bindex].rmt_nbrs, count * sizeof(id_t),
+      CALL_CU_SAFE(cudaMemcpy((*btable_h)[pid].rmt_nbrs,
+                              btable[pid].rmt_nbrs, count * sizeof(id_t),
                               cudaMemcpyHostToDevice));
-      CALL_CU_SAFE(cudaMalloc((void**)&((*btable_h)[bindex].values),
+      CALL_CU_SAFE(cudaMalloc((void**)&((*btable_h)[pid].values),
                               count * msg_size));
     }
   }
 
   // transfer the table array
-  CALL_CU_SAFE(cudaMalloc((void**)(btable_d), bcount *
+  CALL_CU_SAFE(cudaMalloc((void**)(btable_d), pcount *
                           sizeof(grooves_box_table_t)));
   CALL_CU_SAFE(cudaMemcpy(*btable_d, (*btable_h),
-                          bcount * sizeof(grooves_box_table_t),
+                          pcount * sizeof(grooves_box_table_t),
                           cudaMemcpyHostToDevice));
 }
 
@@ -196,16 +195,15 @@ PRIVATE void init_outbox_table(partition_t* partition, uint32_t pcount,
   uint32_t pid = partition->id;
   for (int rmt_pid = (pid + 1) % pcount; rmt_pid != pid;
        rmt_pid = (rmt_pid + 1) % pcount) {
-    int bindex = GROOVES_BOX_INDEX(rmt_pid, pid, pcount);
-    outbox[bindex].count = count_per_par[bindex];
-    if (outbox[bindex].count) {
-      assert(rmt_nbrs[bindex]);
-      outbox[bindex].rmt_nbrs = rmt_nbrs[bindex];
+    outbox[rmt_pid].count = count_per_par[rmt_pid];
+    if (outbox[rmt_pid].count) {
+      assert(rmt_nbrs[rmt_pid]);
+      outbox[rmt_pid].rmt_nbrs = rmt_nbrs[rmt_pid];
       if (partition->processor.type == PROCESSOR_CPU) {
         // Allocate the values array for the cpu-based partitions. The gpu-based
         // partitions will have their values array allocated later when their
         // state is initialized on the gpu
-        outbox[bindex].values = mem_alloc(outbox[bindex].count * msg_size);
+        outbox[rmt_pid].values = mem_alloc(outbox[rmt_pid].count * msg_size);
       }
     }
   }
@@ -218,25 +216,22 @@ PRIVATE void init_outbox(partition_set_t* pset) {
 
     // each remote partition has a slot in the outbox array
     partition->outbox =
-      (grooves_box_table_t*)calloc(pcount - 1, sizeof(grooves_box_table_t));
+      (grooves_box_table_t*)calloc(pcount, sizeof(grooves_box_table_t));
 
     if (!partition->subgraph.vertex_count ||
         !partition->subgraph.edge_count) continue;
 
     // identify the remote nbrs and their count per remote partition
-    id_t** rmt_nbrs      = NULL;
-    int*   count_per_par = NULL;
-    init_get_rmt_nbrs(partition, pset->graph->vertex_count, pcount, &rmt_nbrs,
-                      &count_per_par);
+    id_t* rmt_nbrs[MAX_PARTITION_COUNT];
+    int count_per_par[MAX_PARTITION_COUNT];
+    init_get_rmt_nbrs(partition, pset->graph->vertex_count, pcount, rmt_nbrs,
+                      count_per_par);
     // build the outbox
     if (partition->rmt_vertex_count) {
-      assert(rmt_nbrs && count_per_par);
       // build the outbox tables for this partition
       init_outbox_table(partition, pcount, rmt_nbrs, count_per_par,
                         pset->msg_size);
-      free(rmt_nbrs);
     }
-    free(count_per_par);
   }
 }
 
@@ -246,8 +241,8 @@ PRIVATE void init_inbox(partition_set_t* pset) {
     partition_t* partition = &pset->partitions[pid];
 
     // each remote partition has a slot in the inbox array
-    partition->inbox =
-      (grooves_box_table_t*)calloc(pcount - 1, sizeof(grooves_box_table_t));
+    partition->inbox = 
+      (grooves_box_table_t*)calloc(pcount, sizeof(grooves_box_table_t));
 
     if (!partition->subgraph.vertex_count ||
         !partition->subgraph.edge_count) continue;
@@ -262,14 +257,12 @@ PRIVATE void init_inbox(partition_set_t* pset) {
       // the set of boundary vertices (vertices that belong to this partition,
       // and are the destination of a remote edge that originates in another
       // partition, and are maintained in the outbox of that other partition).
-      int src_bindex = GROOVES_BOX_INDEX(pid, src_pid, pcount);
-      int dst_bindex = GROOVES_BOX_INDEX(src_pid, pid, pcount);
-      partition->inbox[dst_bindex] = remote_par->outbox[src_bindex];
+      partition->inbox[src_pid] = remote_par->outbox[pid];
       if (remote_par->processor.type == PROCESSOR_GPU) {
         // if the remote processor is GPU, then a values array for this inbox
         // needs to be allocated on the host
-        partition->inbox[dst_bindex].values =
-          mem_alloc(partition->inbox[dst_bindex].count * pset->msg_size);
+        partition->inbox[src_pid].values =
+          mem_alloc(partition->inbox[src_pid].count * pset->msg_size);
       }
     }
   }
@@ -301,22 +294,20 @@ PRIVATE void init_gpu_state(partition_set_t* pset) {
   // partitions will be freed right after they are copied to the gpu (they will
   // be copied once as an outbox in the source partitions and as an inbox to the
   // destination).
-  grooves_box_table_t** host_outboxes =
-    (grooves_box_table_t**)calloc(pcount, sizeof(grooves_box_table_t*));
-
+  grooves_box_table_t* host_outboxes[MAX_PARTITION_COUNT];
   for (int pid = 0; pid < pcount; pid++) {
     partition_t* partition = &pset->partitions[pid];
     if (partition->processor.type == PROCESSOR_GPU) {
       // set device context, create the tables for this gpu
       CALL_CU_SAFE(cudaSetDevice(partition->processor.id));
       grooves_box_table_t* outbox_h = NULL;
-      init_table_gpu(partition->outbox, pcount - 1, pset->msg_size,
+      init_table_gpu(partition->outbox, pcount, pset->msg_size,
                      &partition->outbox_d, &outbox_h);
       host_outboxes[pid] = partition->outbox;
       partition->outbox = outbox_h;
 
       grooves_box_table_t* inbox_h = NULL;
-      init_table_gpu(partition->inbox, pcount - 1, pset->msg_size,
+      init_table_gpu(partition->inbox, pcount, pset->msg_size,
                      &partition->inbox_d, &inbox_h);
       free(partition->inbox);
       partition->inbox = inbox_h;
@@ -330,17 +321,17 @@ PRIVATE void init_gpu_state(partition_set_t* pset) {
     partition_t* partition = &pset->partitions[pid];
     grooves_box_table_t* outbox = host_outboxes[pid];
     if (partition->processor.type == PROCESSOR_GPU) {
-      for (int bindex = 0; bindex < pcount - 1; bindex++) {
-        partition_t* remote_par = &pset->partitions[(pid + 1 + bindex)%pcount];
+      for (int rmt_pid = 0; rmt_pid < pcount; rmt_pid++) {
+        if (rmt_pid == pid) continue;
+        partition_t* remote_par = &pset->partitions[rmt_pid];
         if (remote_par->processor.type == PROCESSOR_GPU &&
-            outbox[bindex].count) {
-          free(outbox[bindex].rmt_nbrs);
+            outbox[rmt_pid].count) {
+          free(outbox[rmt_pid].rmt_nbrs);
         }
       }
       free(host_outboxes[pid]);
     }
   }
-  free(host_outboxes);
 }
 
 error_t grooves_initialize(partition_set_t* pset) {
@@ -354,13 +345,13 @@ error_t grooves_initialize(partition_set_t* pset) {
 
 PRIVATE void finalize_table_gpu(grooves_box_table_t* btable_d,
                                 grooves_box_table_t* btable_h,
-                                uint32_t bcount) {
+                                uint32_t pcount) {
   CALL_CU_SAFE(cudaFree(btable_d));
   // finalize the tables on the gpu
-  for (uint32_t bindex = 0; bindex < bcount; bindex++) {
-    if (btable_h[bindex].count) {
-      CALL_CU_SAFE(cudaFree(btable_h[bindex].rmt_nbrs));
-      CALL_CU_SAFE(cudaFree(btable_h[bindex].values));
+  for (uint32_t pid = 0; pid < pcount; pid++) {
+    if (btable_h[pid].count) {
+      CALL_CU_SAFE(cudaFree(btable_h[pid].rmt_nbrs));
+      CALL_CU_SAFE(cudaFree(btable_h[pid].values));
     }
   }
   free(btable_h);
@@ -388,13 +379,13 @@ PRIVATE void finalize_outbox(partition_set_t* pset) {
     if (partition->processor.type == PROCESSOR_GPU) {
       CALL_CU_SAFE(cudaSetDevice(partition->processor.id));
       finalize_gpu_disable_peer_access(pid, pset);
-      finalize_table_gpu(partition->outbox_d, partition->outbox, pcount - 1);
+      finalize_table_gpu(partition->outbox_d, partition->outbox, pcount);
     } else {
       assert(partition->processor.type == PROCESSOR_CPU);
-      for (uint32_t bindex = 0; bindex < pcount - 1; bindex++) {
-        if (partition->outbox[bindex].count) {
-          free(partition->outbox[bindex].rmt_nbrs);
-          mem_free(partition->outbox[bindex].values);
+      for (uint32_t rmt_pid = 0; rmt_pid < pcount; rmt_pid++) {
+        if (partition->outbox[rmt_pid].count) {
+          free(partition->outbox[rmt_pid].rmt_nbrs);
+          mem_free(partition->outbox[rmt_pid].values);
         }
       }
       free(partition->outbox);
@@ -409,18 +400,18 @@ PRIVATE void finalize_inbox(partition_set_t* pset) {
     assert(partition->inbox);
     if (partition->processor.type == PROCESSOR_GPU) {
       CALL_CU_SAFE(cudaSetDevice(partition->processor.id));
-      finalize_table_gpu(partition->inbox_d, partition->inbox, pcount - 1);
+      finalize_table_gpu(partition->inbox_d, partition->inbox, pcount);
     } else {
       assert(partition->processor.type == PROCESSOR_CPU);
-      for (int bindex = 0; bindex < pcount - 1; bindex++) {
-        partition_t* remote_par = &pset->partitions[(pid + 1 + bindex)%pcount];
+      for (int rmt_pid = 0; rmt_pid < pcount; rmt_pid++) {
+        partition_t* remote_par = &pset->partitions[rmt_pid];
         // free only the inboxes that are the destination of an outbox of a gpu-
         // partition. Others that are destinations to a cpu-partition will be
         // freed as an outbox in the source partition.
         if (remote_par->processor.type == PROCESSOR_GPU &&
-            partition->inbox[bindex].count) {
-          free(partition->inbox[bindex].rmt_nbrs);
-          mem_free(partition->inbox[bindex].values);
+            partition->inbox[rmt_pid].count) {
+          free(partition->inbox[rmt_pid].rmt_nbrs);
+          mem_free(partition->inbox[rmt_pid].values);
         }
       }
       free(partition->inbox);
@@ -449,8 +440,7 @@ error_t grooves_launch_communications(partition_set_t* pset) {
 
       cudaStream_t* stream = &pset->partitions[src_pid].streams[0];
       grooves_box_table_t* src_box =
-        &pset->partitions[src_pid].outbox[GROOVES_BOX_INDEX(dst_pid, src_pid,
-                                                           pcount)];
+        &pset->partitions[src_pid].outbox[dst_pid];
       // if the two partitions share nothing, then we have nothing to do
       if (!src_box->count) continue;
 
@@ -458,8 +448,7 @@ error_t grooves_launch_communications(partition_set_t* pset) {
         stream = &pset->partitions[dst_pid].streams[0];
       }
       grooves_box_table_t* dst_box =
-        &pset->partitions[dst_pid].inbox[GROOVES_BOX_INDEX(src_pid, dst_pid,
-                                                           pcount)];
+        &pset->partitions[dst_pid].inbox[src_pid];
       assert(src_box->count == dst_box->count);
       CALL_CU_SAFE(cudaMemcpyAsync(dst_box->values, src_box->values,
                                    dst_box->count * pset->msg_size,

@@ -123,12 +123,11 @@ typedef struct engine_config_s {
  * to its state in the outbox table. If local, it returns a reference to its
  * state in the array pstate
  */
-#define ENGINE_FETCH_DST(_pid, _nbr, _outbox, _pstate, _pcount, _dst, _type) \
+#define ENGINE_FETCH_DST(_pid, _nbr, _outbox, _pstate, _dst, _type) \
   do {                                                                  \
     int nbr_pid = GET_PARTITION_ID((_nbr));                             \
     if (nbr_pid != (_pid)) {                                            \
-      int box_id = GROOVES_BOX_INDEX(nbr_pid, (_pid), (_pcount));       \
-      _type * values = (_type *)(_outbox)[box_id].values;               \
+      _type * values = (_type *)(_outbox)[nbr_pid].values;              \
       (_dst) = &values[GET_VERTEX_ID((_nbr))];                          \
     } else {                                                            \
       (_dst) = &(_pstate)[GET_VERTEX_ID((_nbr))];                       \
