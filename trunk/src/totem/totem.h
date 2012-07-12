@@ -25,7 +25,8 @@ typedef enum {
   PLATFORM_GPU,       // execute on one GPU only
   PLATFORM_MULTI_GPU, // execute on all available GPUs
   PLATFORM_HYBRID,    // execute on the CPU and one GPU
-  PLATFORM_ALL        // execute on all processors (CPU and all GPUs)
+  PLATFORM_ALL,       // execute on all processors (CPU and all GPUs)
+  PLATFORM_MAX        // indicates number of platform options
 } platform_t;
 
 /**
@@ -58,7 +59,7 @@ typedef struct totem_attr_s {
 } totem_attr_t;
 
 // default attributes
-#define TOTEM_DEFAULT_ATTR {PAR_RANDOM, PLATFORM_ALL, 0, sizeof(int)}
+#define TOTEM_DEFAULT_ATTR {PAR_RANDOM, PLATFORM_ALL, 0.5, sizeof(int)}
 
 /**
  * Initializes the state required for hybrid CPU-GPU processing. It creates a
