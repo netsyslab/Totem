@@ -45,18 +45,6 @@ typedef struct processor_s {
 } processor_t;
 
 /**
- * Command line options
- */
-typedef struct options_s {
-  char* graph_file;
-  bool  weighted;
-  id_t  source;
-  id_t  begin_id;
-  id_t  end_id;
-  char* initial_rank_file;
-} options_t;
-
-/**
  * Stopwatch (timer) type
  */
 typedef double stopwatch_t;
