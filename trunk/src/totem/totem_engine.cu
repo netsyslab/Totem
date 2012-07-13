@@ -121,8 +121,13 @@ error_t engine_execute() {
     if (superstep_check_finished()) break; // check for termination
   }
   engine_aggregate();
+  if (context.config.par_finalize_func) {
+    for (int pid = 0; pid < context.pset->partition_count; pid++) {
+      set_processor(&context.pset->partitions[pid]);
+      context.config.par_finalize_func(&context.pset->partitions[pid]);
+    }
+  }
   context.time_exec = stopwatch_elapsed(&stopwatch);
-
   return SUCCESS;
 }
 
@@ -253,12 +258,6 @@ error_t engine_config(engine_config_t* config) {
 void engine_finalize() {
   assert(context.initialized);
   context.initialized = false;
-  if (context.config.par_finalize_func) {
-    for (int pid = 0; pid < context.pset->partition_count; pid++) {
-      set_processor(&context.pset->partitions[pid]);
-      context.config.par_finalize_func(&context.pset->partitions[pid]);
-    }
-  }
   CALL_SAFE(partition_set_finalize(context.pset));
   free(context.finished);
 }

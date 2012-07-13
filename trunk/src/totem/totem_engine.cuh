@@ -155,6 +155,8 @@ error_t engine_config(engine_config_t* config);
 
 /**
  * Clears the state allocated by the engine via the engine_init function.
+ * This function is called once per global state initialization and NOT per
+ * algorithm invocation.
  */
 void engine_finalize();
 
