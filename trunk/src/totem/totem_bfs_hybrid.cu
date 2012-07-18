@@ -6,6 +6,7 @@
  *  Author: Abdullah Gharaibeh
  */
 
+#include "totem_bitmap.h"
 #include "totem_engine.cuh"
 #include "totem_comkernel.cuh"
 #include "totem_graph.h"
@@ -16,6 +17,8 @@
  */
 typedef struct bfs_state_s {
   uint32_t* cost;     // one slot per vertex in the partition
+  bitmap_t  visited[MAX_PARTITION_COUNT]; // a bitmap for each remote partition
+                                          // used by the CPU partition only
   bool*     finished; // points to the global finish flag
   int       level;    // current level being processed by the partition
   dim3      blocks;   // kernel configuration parameters
@@ -168,11 +171,19 @@ PRIVATE void bfs_cpu(partition_t* par) {
   for (id_t v = 0; v < subgraph->vertex_count; v++) {
     if (state->cost[v] != state->level) continue;
     for (id_t i = subgraph->vertices[v]; i < subgraph->vertices[v + 1]; i++) {
-      uint32_t* dst; id_t nbr = subgraph->edges[i];
-      ENGINE_FETCH_DST(par->id, nbr, par->outbox, state->cost, dst, uint32_t);
-      if (*dst == INFINITE) {
-        *dst = state->level + 1;
-        *(state->finished) = false;
+      int nbr_pid = GET_PARTITION_ID(subgraph->edges[i]);
+      id_t nbr = GET_VERTEX_ID(subgraph->edges[i]);
+      bitmap_t visited = state->visited[nbr_pid];
+      if (!bitmap_is_set(visited, nbr)) {
+        if (bitmap_set(visited, nbr)) {
+          if (nbr_pid == par->id) {
+            state->cost[nbr] = state->level + 1;
+          } else {
+            uint32_t* values = (uint32_t*)(par->outbox[nbr_pid].values);
+            values[nbr] = state->level + 1;
+          }
+          finished = false;
+        }
       }
     }
   }
@@ -195,6 +206,28 @@ PRIVATE void bfs_ss() {
   *finished_g = true;
 }
 
+PRIVATE void bfs_scatter_cpu(partition_t* par) {
+  bfs_state_t* state = (bfs_state_t*)par->algo_state;
+  bitmap_t visited = state->visited[par->id];
+  for (int rmt_pid = 0; rmt_pid < engine_partition_count(); rmt_pid++) {
+    if (rmt_pid == par->id) continue;
+    grooves_box_table_t* inbox = &par->inbox[rmt_pid];
+    #ifdef _OPENMP
+    #pragma omp parallel for
+    #endif
+    for (int index = 0; index < inbox->count; index++) {
+      id_t vid = inbox->rmt_nbrs[index];
+      if (!bitmap_is_set(visited, vid)) {
+        uint32_t value = ((uint32_t*)(inbox->values))[index];
+        if (value != INFINITE) {
+          bitmap_set(visited, vid);
+          state->cost[vid] = value;
+        }
+      }
+    }
+  }
+}
+
 PRIVATE void bfs_scatter(partition_t* par) {
   // this callback function is invoked at the end of a superstep. i.e., it is
   // guaranteed at this point that all kernels has finished execution (remember
@@ -207,8 +240,15 @@ PRIVATE void bfs_scatter(partition_t* par) {
     engine_report_finished(par->id);
     return;
   }
-  bfs_state_t* state = (bfs_state_t*)par->algo_state;
-  engine_scatter_inbox_min(par->id, state->cost);
+
+  if (par->processor.type == PROCESSOR_CPU) {
+    // for the CPU, we do the update manually so that we update the bitmap
+    // accordingly
+    bfs_scatter_cpu(par);
+  } else {
+    bfs_state_t* state = (bfs_state_t*)par->algo_state;
+    engine_scatter_inbox_min(par->id, state->cost);
+  }
 }
 
 PRIVATE void bfs_aggregate(partition_t* par) {
@@ -257,11 +297,18 @@ PRIVATE void bfs_init(partition_t* par) {
   } else {
     assert(par->processor.type == PROCESSOR_CPU);
     state->cost = (uint32_t*)calloc(vcount, sizeof(uint32_t));
+    state->visited[par->id] = bitmap_init(vcount);
+    for (int pid = 0; pid < engine_partition_count(); pid++) {
+      if (pid != par->id && par->outbox[pid].count != 0) {
+        state->visited[pid] = bitmap_init(par->outbox[pid].count);
+      }
+    }
     state->finished = finished_g;
     assert(state->cost);
     for (id_t v = 0; v < vcount; v++) state->cost[v] = INFINITE;
     if (src_pid == par->id) {
       state->cost[src_vid] = 0;
+      bitmap_set(state->visited[par->id], src_vid);
     }
   }
   engine_set_outbox(par->id, (uint32_t)INFINITE);
@@ -276,6 +323,11 @@ PRIVATE void bfs_finalize(partition_t* par) {
   } else {
     assert(par->processor.type == PROCESSOR_CPU);
     free(state->cost);
+    bitmap_finalize(state->visited[par->id]);
+    for (int pid = 0; pid < engine_partition_count(); pid++) {
+      if (pid != par->id && par->outbox[pid].count != 0)
+        bitmap_finalize(state->visited[pid]);
+    }
   }
   free(state);
   par->algo_state = NULL;
