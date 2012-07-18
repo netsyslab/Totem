@@ -160,9 +160,10 @@ PRIVATE void bfs_gpu(partition_t* par) {
 PRIVATE void bfs_cpu(partition_t* par) {
   bfs_state_t* state = (bfs_state_t*)par->algo_state;
   graph_t* subgraph = &par->subgraph;
+  bool finished = true;
 
   #ifdef _OPENMP
-  #pragma omp parallel for
+  #pragma omp parallel for reduction(& : finished)
   #endif
   for (id_t v = 0; v < subgraph->vertex_count; v++) {
     if (state->cost[v] != state->level) continue;
@@ -175,6 +176,7 @@ PRIVATE void bfs_cpu(partition_t* par) {
       }
     }
   }
+  *(state->finished) &= finished;
 }
 
 PRIVATE void bfs(partition_t* par) {
