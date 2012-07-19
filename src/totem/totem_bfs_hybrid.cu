@@ -266,6 +266,9 @@ PRIVATE void bfs_aggregate(partition_t* par) {
     src_cost = state->cost;
   }
   // aggregate the results
+  #ifdef _OPENMP
+  #pragma omp parallel for
+  #endif
   for (id_t v = 0; v < subgraph->vertex_count; v++) {
     cost_g[par->map[v]] = src_cost[v];
   }
