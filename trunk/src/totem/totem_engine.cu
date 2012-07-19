@@ -121,13 +121,13 @@ error_t engine_execute() {
     if (superstep_check_finished()) break; // check for termination
   }
   engine_aggregate();
+  context.time_exec = stopwatch_elapsed(&stopwatch); 
   if (context.config.par_finalize_func) {
     for (int pid = 0; pid < context.pset->partition_count; pid++) {
       set_processor(&context.pset->partitions[pid]);
       context.config.par_finalize_func(&context.pset->partitions[pid]);
     }
   }
-  context.time_exec = stopwatch_elapsed(&stopwatch);
   return SUCCESS;
 }
 
