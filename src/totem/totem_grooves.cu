@@ -13,8 +13,8 @@
 #include "totem_util.h"
 
 PRIVATE
-void init_get_rmt_nbrs1(partition_t* par, uint32_t vcount, uint32_t pcount,
-                        id_t** nbrs, int* count_per_par) {
+void init_get_rmt_nbrs_list(partition_t* par, uint32_t vcount, uint32_t pcount,
+                            id_t** nbrs, int* count_per_par) {
 
   // Initialize the counters to zero
   memset(count_per_par, 0, MAX_PARTITION_COUNT * sizeof(int));
@@ -118,9 +118,9 @@ void init_get_rmt_nbrs(partition_t* par, uint32_t vcount, uint32_t pcount,
   // First, identify the remote neighbors to this partition. "nbrs" is a flat
   // array that stores the list of all remote neighbors, irrespective of which
   // remote partition they belong to. "count_per_par" array is the number of
-  // remote neighbors per remote partition (hence, its length is pcount - 1)
+  // remote neighbors per remote partition
   id_t* nbrs;
-  init_get_rmt_nbrs1(par, vcount, pcount, &nbrs, count_per_par);
+  init_get_rmt_nbrs_list(par, vcount, pcount, &nbrs, count_per_par);
 
   // Second, map the remote neighbors ids in this partition to a new contiguous
   // id space. This new id space is relevant to this partition only. Having
@@ -439,16 +439,14 @@ error_t grooves_launch_communications(partition_set_t* pset) {
           (pset->partitions[dst_pid].processor.type == PROCESSOR_CPU)) continue;
 
       cudaStream_t* stream = &pset->partitions[src_pid].streams[0];
-      grooves_box_table_t* src_box =
-        &pset->partitions[src_pid].outbox[dst_pid];
+      grooves_box_table_t* src_box = &pset->partitions[src_pid].outbox[dst_pid];
       // if the two partitions share nothing, then we have nothing to do
       if (!src_box->count) continue;
 
       if (pset->partitions[dst_pid].processor.type == PROCESSOR_GPU) {
         stream = &pset->partitions[dst_pid].streams[0];
       }
-      grooves_box_table_t* dst_box =
-        &pset->partitions[dst_pid].inbox[src_pid];
+      grooves_box_table_t* dst_box = &pset->partitions[dst_pid].inbox[src_pid];
       assert(src_box->count == dst_box->count);
       CALL_CU_SAFE(cudaMemcpyAsync(dst_box->values, src_box->values,
                                    dst_box->count * pset->msg_size,

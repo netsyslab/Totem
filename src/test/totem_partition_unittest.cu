@@ -23,9 +23,7 @@ __global__ void VerifyPartitionGPUKernel(partition_t partition, uint32_t pid,
     uint32_t nbr_pid = GET_PARTITION_ID(nbr);
     KERNEL_EXPECT_TRUE(nbr_pid < pcount);
     if (nbr_pid != pid) {
-      grooves_box_table_t* outbox =
-        &partition.outbox_d[nbr_pid];
-      KERNEL_EXPECT_TRUE(outbox->count > 0);
+      KERNEL_EXPECT_TRUE(partition.outbox_d[nbr_pid].count > 0);
     }
   }
 }

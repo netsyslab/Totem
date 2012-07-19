@@ -111,6 +111,10 @@ __global__ void scatter_max(grooves_box_table_t inbox, T* dst) {
   _REDUCE_ENTRY_MAX(&inbox, index, dst);
 }
 
+// TODO (abdullah): There is a lot of repeated control code in the following 
+// template functions. We could have a single private template function that 
+// receives the operation as parameter and the other functions min, max, add, 
+// etc would invoke it.
 template<typename T>
 void engine_scatter_inbox_add(uint32_t pid, T* dst) {
   assert(pid < context.pset->partition_count);
