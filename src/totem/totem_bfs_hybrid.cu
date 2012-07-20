@@ -187,7 +187,7 @@ PRIVATE void bfs_cpu(partition_t* par) {
       }
     }
   }
-  *(state->finished) &= finished;
+  if (!finished) *(state->finished) = false;
 }
 
 PRIVATE void bfs(partition_t* par) {
