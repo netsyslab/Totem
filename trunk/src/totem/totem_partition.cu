@@ -44,24 +44,45 @@ error_t partition_modularity(graph_t* graph, partition_set_t* partition_set,
   return SUCCESS;
 }
 
-PRIVATE error_t partition_random(graph_t* graph, int number_of_partitions,
-                                 unsigned int seed, id_t** partition_labels) {
-  // Check pre-conditions
+PRIVATE error_t partition_check(graph_t* graph, int partition_count, 
+                                double* partition_fraction,
+                                id_t** partition_labels) {
+  *partition_labels = NULL;
+  if (graph == NULL || (partition_count <= 0) || (graph->vertex_count == 0)) {
+    return FAILURE;
+  }
   if (graph == NULL) {
     // TODO(elizeu): Use Lauro's beautiful logging library.
     printf("ERROR: Graph object is NULL, cannot proceed with partitioning.\n");
-    *partition_labels = NULL;
     return FAILURE;
   }
   // The requested number of partitions should be positive
-  if ((number_of_partitions <= 0) || (graph->vertex_count == 0)) {
-    printf("ERROR: Invalid number of partitions or empty graph: %d (|V|),",
-           graph->vertex_count);
-    printf(" %d (partitions).\n", number_of_partitions);
-    *partition_labels = NULL;
+  if ((partition_count <= 0) || (graph->vertex_count == 0)) {
+    printf("ERROR: Invalid number of partitions or empty graph: %d (|V|),"
+           " %d (partitions).\n", graph->vertex_count, partition_count);
     return FAILURE;
   }
 
+  if (partition_fraction != NULL) {
+    // Ensure the partition fractions are >= 0.0 and add up to 1.0
+    double sum = 0.0;
+    for (int par_id = 0; par_id < partition_count; par_id++) {
+      sum += partition_fraction[par_id];
+      if (partition_fraction[par_id] < 0.0) {
+        return FAILURE;
+      }
+    }
+    // The following trick is to avoid getting stuck in precision errors
+    sum = (int)(sum * 100.0);
+    if (sum > 101 || sum < 99) {
+      return FAILURE;
+    }
+  }
+  return SUCCESS;
+}
+
+PRIVATE error_t partition_random(graph_t* graph, int partition_count,
+                                 uint32_t seed, id_t** partition_labels) {
   // Allocate the partition vector
   id_t* partitions = (id_t*)malloc((graph->vertex_count) * sizeof(id_t));
 
@@ -70,39 +91,25 @@ PRIVATE error_t partition_random(graph_t* graph, int number_of_partitions,
 
   for (uint64_t vertex_id = 0; vertex_id < graph->vertex_count; vertex_id++) {
     // Assign each vertex to a random partition within the range
-    // (0, NUMBER_OF_PARTITIONS - 1)
-    partitions[vertex_id] = rand() % number_of_partitions;
+    // (0, PARTITION_COUNT - 1)
+    partitions[vertex_id] = rand() % partition_count;
   }
   *partition_labels = partitions;
   return SUCCESS;
 }
 
 error_t partition_random(graph_t* graph, int partition_count,
-                         double* partition_fraction, uint32_t seed,
+                         double* partition_fraction, uint32_t seed, 
                          id_t** partition_labels) {
   // Check pre-conditions
-  *partition_labels = NULL;
-  if (graph == NULL || (partition_count <= 0) || (graph->vertex_count == 0)) {
+  if (partition_check(graph, partition_count, partition_fraction,
+                      partition_labels) == FAILURE) {
     return FAILURE;
   }
 
-  // check if the client is asking for equal divide among partitions
+  // Check if the client is asking for equal divide among partitions
   if (partition_fraction == NULL) {
     return partition_random(graph, partition_count, seed, partition_labels);
-  }
-
-  // Ensure the partition fractions are >= 0.0 and add up to 1.0
-  double sum = 0.0;
-  for (int par_id = 0; par_id < partition_count; par_id++) {
-    sum += partition_fraction[par_id];
-    if (partition_fraction[par_id] < 0.0) {
-      return FAILURE;
-    }
-  }
-  // The following trick is to avoid getting stuck in precision errors
-  sum = (int)(sum * 100.0);
-  if (sum > 101 || sum < 99) {
-    return FAILURE;
   }
 
   // Allocate the partition vector
