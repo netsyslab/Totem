@@ -137,7 +137,7 @@ class EngineTest : public TestWithParam<platform_t> {
     totem_attr_t attr = {
       PAR_RANDOM,
       GetParam(),
-      0,
+      0.3,
       sizeof(int)
     };
     attr_ = attr;

@@ -4,6 +4,7 @@
  *
  *  Created on: 2011-12-30
  *      Author: Elizeu Santos-Neto
+ *              Abdullah Gharaibeh
  */
 
 // totem includes
@@ -11,6 +12,11 @@
 #include "totem_comkernel.cuh"
 #include "totem_grooves.h"
 #include "totem_partition.h"
+
+#if GTEST_HAS_PARAM_TEST
+
+using ::testing::TestWithParam;
+using ::testing::Values;
 
 __global__ void VerifyPartitionGPUKernel(partition_t partition, uint32_t pid,
                                          uint32_t pcount) {
@@ -46,17 +52,13 @@ __global__ void CheckInboxValuesGPUKernel(uint32_t pid, int* values,
   KERNEL_EXPECT_TRUE(values[index] == pid);
 }
 
-class GraphPartitionTest : public ::testing::Test {
- protected:
-  graph_t* graph_;
-  id_t* partitions_;
-  uint32_t partition_count_;
-  processor_t* partition_processor_;
-  partition_set_t* partition_set_;
-
+typedef error_t(*PartitionFunction)(graph_t*, int, double*, id_t**);
+class GraphPartitionTest : public TestWithParam<PartitionFunction> {
+ public:
   virtual void SetUp() {
     // Ensure the minimum CUDA architecture is supported
     CUDA_CHECK_VERSION();
+    partition_func_ = GetParam();
     int gpu_count = 0;
     CALL_CU_SAFE(cudaGetDeviceCount(&gpu_count));
     graph_ = NULL;
@@ -138,6 +140,7 @@ class GraphPartitionTest : public ::testing::Test {
     uint32_t pcount = partition_set_->partition_count;
     for (uint32_t pid = 0; pid < pcount; pid++) {
       partition_t* partition = &partition_set_->partitions[pid];
+      if (!partition->subgraph.vertex_count) return;
       EXPECT_EQ(partition_processor_[pid].type, partition->processor.type);
       EXPECT_EQ(partition_processor_[pid].id, partition->processor.id);
       if (partition->processor.type == PROCESSOR_CPU) VerifyPartitionCPU(pid);
@@ -148,6 +151,7 @@ class GraphPartitionTest : public ::testing::Test {
   void InitOutboxValues() {
     for (uint32_t pid = 0; pid < partition_set_->partition_count; pid++) {
       partition_t* partition = &partition_set_->partitions[pid];
+      if (!partition->subgraph.vertex_count) return;
       EXPECT_EQ(pid, partition->id);
       uint32_t pcount = partition_set_->partition_count;
       for (uint32_t remote_pid = (pid + 1) % pcount; remote_pid != pid;
@@ -177,6 +181,7 @@ class GraphPartitionTest : public ::testing::Test {
   void CheckInboxValues() {
     for (uint32_t pid = 0; pid < partition_set_->partition_count; pid++) {
       partition_t* partition = &partition_set_->partitions[pid];
+      if (!partition->subgraph.vertex_count) return;
       grooves_box_table_t* inbox = partition->inbox;
       uint32_t bcount = partition_set_->partition_count;
       for (uint32_t bindex = 0; bindex < bcount; bindex++) {
@@ -208,91 +213,99 @@ class GraphPartitionTest : public ::testing::Test {
     CheckInboxValues();
   }
 
-  void TestGraph() {
-    EXPECT_EQ(SUCCESS, partition_random(graph_, partition_count_, NULL, 13,
-                                        &partitions_));
-    EXPECT_EQ(SUCCESS, partition_set_initialize(graph_, partitions_,
+  void TestPartitionedGraphDataStructure() {
+    EXPECT_EQ(SUCCESS, partition_func_(graph_, partition_count_, NULL, 
+                                       &partitions_));
+    EXPECT_TRUE(partition_count_ <= MAX_PARTITION_COUNT);
+    EXPECT_EQ(SUCCESS, partition_set_initialize(graph_, partitions_, 
                                                 partition_processor_,
-                                                partition_count_,
-                                                sizeof(int),
+                                                partition_count_, sizeof(int), 
                                                 &partition_set_));
     TestState();
     TestCommunication();
   }
+
+ protected:
+  PartitionFunction  partition_func_;
+  graph_t*           graph_;
+  id_t*              partitions_;
+  uint32_t           partition_count_;
+  processor_t*       partition_processor_;
+  partition_set_t*   partition_set_;
 };
 
-TEST_F(GraphPartitionTest , RandomPartitionInvalidPartitionNumber) {
+TEST_P(GraphPartitionTest , PartitionInvalidPartitionNumber) {
   EXPECT_EQ(SUCCESS, graph_initialize(DATA_FOLDER("single_node.totem"),
                                       false, &graph_));
-  EXPECT_EQ(FAILURE, partition_random(graph_, -1, NULL, 13, &partitions_));
+  EXPECT_EQ(FAILURE, partition_func_(graph_, -1, NULL, &partitions_));
 }
 
-TEST_F(GraphPartitionTest , RandomPartitionFractionInvalidFraction) {
+TEST_P(GraphPartitionTest , PartitionFractionInvalidFraction) {
   EXPECT_EQ(SUCCESS, graph_initialize(DATA_FOLDER("single_node.totem"),
                                       false, &graph_));
   double* partition_fraction = (double *) calloc(2, sizeof(double));
   partition_fraction[0] = 2.0;
   partition_fraction[1] = -1.0; // Invalid fraction
-  EXPECT_EQ(FAILURE, partition_random(graph_, 2, partition_fraction, 13,
-                                      &partitions_));
+  EXPECT_EQ(FAILURE, partition_func_(graph_, 2, partition_fraction, 
+                                     &partitions_));
   partition_fraction[0] = 0.8;
   partition_fraction[1] = 0.1; // Invalid fraction sum
-  EXPECT_EQ(FAILURE, partition_random(graph_, 2, partition_fraction, 13,
-                                      &partitions_));
+  EXPECT_EQ(FAILURE, partition_func_(graph_, 2, partition_fraction,
+                                     &partitions_));
   free(partition_fraction);
 }
 
-TEST_F(GraphPartitionTest , RandomPartitionSingleNodeGraph) {
+TEST_P(GraphPartitionTest , PartitionSingleNodeGraph) {
   EXPECT_EQ(SUCCESS, graph_initialize(DATA_FOLDER("single_node.totem"),
                                       false, &graph_));
-  EXPECT_EQ(SUCCESS, partition_random(graph_, 10, NULL, 13, &partitions_));
+  EXPECT_EQ(SUCCESS, partition_func_(graph_, 10, NULL, &partitions_));
   EXPECT_TRUE(partitions_[0] < 10);
 }
 
-TEST_F(GraphPartitionTest , RandomPartitionFractionSingleNodeGraph) {
+TEST_P(GraphPartitionTest , PartitionFractionSingleNodeGraph) {
   EXPECT_EQ(SUCCESS, graph_initialize(DATA_FOLDER("single_node.totem"),
                                       false, &graph_));
   double* partition_fraction = (double *) calloc(10, sizeof(double));
   for (int i = 0; i < 10; i++) {
     partition_fraction[i] = (1.0 / 10);
   }
-  EXPECT_EQ(SUCCESS, partition_random(graph_, 10, partition_fraction, 13,
-                                      &partitions_));
+  EXPECT_EQ(SUCCESS, partition_func_(graph_, 10, partition_fraction,
+                                     &partitions_));
   EXPECT_TRUE(partitions_[0] < 10);
   EXPECT_EQ(9, partitions_[0]);
   free(partition_fraction);
 }
 
-TEST_F(GraphPartitionTest , RandomPartitionChainGraph) {
+TEST_P(GraphPartitionTest , PartitionChainGraph) {
   EXPECT_EQ(SUCCESS, graph_initialize(DATA_FOLDER("chain_1000_nodes.totem"),
                                       false, &graph_));
-  EXPECT_EQ(SUCCESS, partition_random(graph_, 10, NULL, 13, &partitions_));
+  EXPECT_EQ(SUCCESS, partition_func_(graph_, 10, NULL, &partitions_));
   for (id_t i = 0; i < graph_->vertex_count; i++) {
     EXPECT_TRUE(partitions_[i] < 10);
   }
 }
 
-TEST_F(GraphPartitionTest , RandomPartitionFractionChainGraph) {
+TEST_P(GraphPartitionTest , PartitionFractionChainGraph) {
   EXPECT_EQ(SUCCESS, graph_initialize(DATA_FOLDER("chain_1000_nodes.totem"),
                                       false, &graph_));
   double* partition_fraction = (double *) calloc(10, sizeof(double));
   for (int i = 0; i < 10; i++) {
     partition_fraction[i] = (1.0 / 10);
   }
-  EXPECT_EQ(SUCCESS, partition_random(graph_, 10, partition_fraction, 13,
-                                      &partitions_));
+  EXPECT_EQ(SUCCESS, partition_func_(graph_, 10, partition_fraction,
+                                     &partitions_));
   for (id_t i = 0; i < graph_->vertex_count; i++) {
     EXPECT_TRUE(partitions_[i] < 10);
   }
   free(partition_fraction);
 }
 
-TEST_F(GraphPartitionTest , GetPartitionsSingleNodeGraph) {
+TEST_P(GraphPartitionTest , GetPartitionsSingleNodeGraph) {
   EXPECT_EQ(SUCCESS, graph_initialize(DATA_FOLDER("single_node.totem"),
                                       false, &graph_));
   partition_count_ = 1;
-  EXPECT_EQ(SUCCESS, partition_random(graph_, partition_count_, NULL,
-                                      13, &partitions_));
+  EXPECT_EQ(SUCCESS, partition_func_(graph_, partition_count_, NULL,
+                                      &partitions_));
   EXPECT_EQ(SUCCESS, partition_set_initialize(graph_, partitions_,
                                               partition_processor_,
                                               partition_count_,
@@ -304,23 +317,23 @@ TEST_F(GraphPartitionTest , GetPartitionsSingleNodeGraph) {
   EXPECT_EQ(partition->subgraph.edge_count, (uint32_t)0);
 }
 
-TEST_F(GraphPartitionTest, GetPartitionsChainGraph) {
+TEST_P(GraphPartitionTest, GetPartitionsChainGraph) {
   graph_initialize(DATA_FOLDER("chain_1000_nodes.totem"), false, &graph_);
-  TestGraph();
+  TestPartitionedGraphDataStructure();
 }
 
-TEST_F(GraphPartitionTest, GetPartitionsStarGraph) {
+TEST_P(GraphPartitionTest, GetPartitionsStarGraph) {
   graph_initialize(DATA_FOLDER("star_1000_nodes.totem"), false, &graph_);
-  TestGraph();
+  TestPartitionedGraphDataStructure();
 }
 
-TEST_F(GraphPartitionTest, GetPartitionsCompleteGraph) {
+TEST_P(GraphPartitionTest, GetPartitionsCompleteGraph) {
   graph_initialize(DATA_FOLDER("complete_graph_300_nodes.totem"),
                    false, &graph_);
-  TestGraph();
+  TestPartitionedGraphDataStructure();
 }
 
-TEST_F(GraphPartitionTest, GetPartitionsImbalancedChainGraph) {
+TEST_P(GraphPartitionTest, GetPartitionsImbalancedChainGraph) {
   EXPECT_EQ(SUCCESS, graph_initialize(DATA_FOLDER("chain_1000_nodes.totem"),
                                       false, &graph_));
   // set the processor of all partitions to CPU
@@ -350,3 +363,23 @@ TEST_F(GraphPartitionTest, GetPartitionsImbalancedChainGraph) {
     }
   }
 }
+
+// From Google documentation:
+// In order to run value-parameterized tests, we need to instantiate them,
+// or bind them to a list of values which will be used as test parameters.
+//
+// Values() receives a list of parameters and the framework will execute the
+// whole set of tests PCoreTest for each element of Values()
+INSTANTIATE_TEST_CASE_P(GRAPHPARTITIONTEST, GraphPartitionTest,
+                        Values(&partition_random, 
+                               &partition_by_asc_sorted_degree, 
+                               &partition_by_dsc_sorted_degree));
+
+#else
+
+// From Google documentation:
+// Google Test may not support value-parameterized tests with some
+// compilers. This dummy test keeps gtest_main linked in.
+TEST_P(DummyTest, ValueParameterizedTestsAreNotSupportedOnThisPlatform) {}
+
+#endif  // GTEST_HAS_PARAM_TEST

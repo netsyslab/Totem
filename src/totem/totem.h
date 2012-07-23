@@ -33,7 +33,10 @@ typedef enum {
  * Partitioning algorithm type
  */
 typedef enum {
-  PAR_RANDOM = 0
+  PAR_RANDOM = 0,
+  PAR_SORTED_ASC,
+  PAR_SORTED_DSC,
+  PAR_MAX
 } partition_algorithm_t;
 
 /**
