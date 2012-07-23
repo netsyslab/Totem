@@ -84,8 +84,6 @@ inline PRIVATE void superstep_communicate() {
   grooves_launch_communications(context.pset);
   grooves_synchronize(context.pset);
   if (!context.config.par_scatter_func) return;
-  // The assumption is that the first partition is the CPU one, and the
-  // rest are GPU ones. This is guaranteed by engine_init.
   for (int pid = 0; pid < context.pset->partition_count; pid++) {
     set_processor(&context.pset->partitions[pid]);
     context.config.par_scatter_func(&context.pset->partitions[pid]);
@@ -198,17 +196,9 @@ error_t engine_init(graph_t* graph, totem_attr_t* attr) {
   stopwatch_t stopwatch_par;
   stopwatch_start(&stopwatch_par);
   id_t* par_labels;
-  switch (context.attr.par_algo) {
-    case PAR_RANDOM:
-      CALL_SAFE(partition_random(context.graph,
-                                 (uint32_t)pcount, par_share,
-                                 13, &par_labels));
-      break;
-    default:
-      // TODO(abdullah): Use Lauro's logging library.
-      printf("ERROR: Undefined partition algorithm.\n"); fflush(stdout);
-      assert(false);
-  }
+  assert(context.attr.par_algo < PAR_MAX);
+  CALL_SAFE(PARTITION_FUNC[context.attr.par_algo](context.graph, pcount, 
+                                                  par_share, &par_labels));
   context.time_par = stopwatch_elapsed(&stopwatch_par);
   CALL_SAFE(partition_set_initialize(context.graph, par_labels,
                                      processors, pcount,
@@ -245,6 +235,8 @@ error_t engine_config(engine_config_t* config) {
 
   context.config = *config;
   reset_exec_timers();
+  context.superstep = 0;
+  memset(context.finished, 0, context.pset->partition_count * sizeof(bool));
   // callback the per-partition initialization function
   if (context.config.par_init_func) {
     for (int pid = 0; pid < context.pset->partition_count; pid++) {

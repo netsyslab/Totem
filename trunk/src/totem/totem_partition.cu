@@ -11,6 +11,16 @@
 #include "totem_partition.h"
 #include "totem_util.h"
 
+/*
+ * A vertex-degree data type used in the partitioning algorithms that depend 
+ * on sorting the vertices by edge degree.
+ */
+typedef struct vdegree_s {
+  id_t     id;     // vertex id
+  uint32_t degree; // vertex degree
+} vdegree_t;
+
+
 error_t partition_modularity(graph_t* graph, partition_set_t* partition_set,
                              double* modularity) {
   assert(graph && partition_set);
@@ -82,12 +92,15 @@ PRIVATE error_t partition_check(graph_t* graph, int partition_count,
 }
 
 PRIVATE error_t partition_random(graph_t* graph, int partition_count,
-                                 uint32_t seed, id_t** partition_labels) {
+                                 id_t** partition_labels) {
   // Allocate the partition vector
   id_t* partitions = (id_t*)malloc((graph->vertex_count) * sizeof(id_t));
 
   // Initialize the random number generator
-  srand(seed);
+  // TODO(abdullah): pass the seed as an argument to control the randomness
+  //                 of the algorithm if the experiments show variability in 
+  //                 performance or the characteristics of the partitions.
+  srand(time(NULL));
 
   for (uint64_t vertex_id = 0; vertex_id < graph->vertex_count; vertex_id++) {
     // Assign each vertex to a random partition within the range
@@ -99,8 +112,7 @@ PRIVATE error_t partition_random(graph_t* graph, int partition_count,
 }
 
 error_t partition_random(graph_t* graph, int partition_count,
-                         double* partition_fraction, uint32_t seed, 
-                         id_t** partition_labels) {
+                         double* partition_fraction, id_t** partition_labels) {
   // Check pre-conditions
   if (partition_check(graph, partition_count, partition_fraction,
                       partition_labels) == FAILURE) {
@@ -109,7 +121,7 @@ error_t partition_random(graph_t* graph, int partition_count,
 
   // Check if the client is asking for equal divide among partitions
   if (partition_fraction == NULL) {
-    return partition_random(graph, partition_count, seed, partition_labels);
+    return partition_random(graph, partition_count, partition_labels);
   }
 
   // Allocate the partition vector
@@ -117,7 +129,7 @@ error_t partition_random(graph_t* graph, int partition_count,
   assert(partitions != NULL);
 
   // Initialize the random number generator
-  srand(seed);
+  srand(time(NULL));
 
   // Allocate all the partition ids to the id vector
   id_t v = 0;
@@ -140,6 +152,96 @@ error_t partition_random(graph_t* graph, int partition_count,
 
   *partition_labels = partitions;
   return SUCCESS;
+}
+
+PRIVATE int compare_degrees_asc(const void *a, const void *b) {
+  vdegree_t* d1 = (vdegree_t*)a;
+  vdegree_t* d2 = (vdegree_t*)b;
+  if (d1->degree < d2->degree) return -1;
+  if (d1->degree == d2->degree) return 0;
+  return 1;
+}
+
+PRIVATE int compare_degrees_dsc(const void *a, const void *b) {
+  vdegree_t* d1 = (vdegree_t*)a;
+  vdegree_t* d2 = (vdegree_t*)b;
+  if (d1->degree > d2->degree) return -1;
+  if (d1->degree == d2->degree) return 0;
+  return 1;
+}
+
+PRIVATE 
+error_t partition_by_sorted_degree(graph_t* graph, int partition_count, 
+                                   bool asc, double* partition_fraction, 
+                                   id_t** partition_labels) {
+  // Check pre-conditions
+  if (partition_check(graph, partition_count, partition_fraction,
+                      partition_labels) == FAILURE) {
+    return FAILURE;
+  }
+
+  bool even_fractions = false;
+  if (partition_fraction == NULL) {
+    even_fractions = true;
+    partition_fraction = (double*)calloc(partition_count, sizeof(double));
+    for (int pid = 0; pid < partition_count; pid++) {
+      partition_fraction[pid] = 1.0/(double)partition_count;
+    }
+  }
+
+  // Prepare the degree-sorted list of vertices 
+  vdegree_t* vd = (vdegree_t*)calloc(graph->vertex_count, sizeof(vdegree_t));
+  assert(vd);
+  for (id_t v = 0; v < graph->vertex_count; v++) {
+    vd[v].id = v;
+    vd[v].degree = graph->vertices[v + 1] - graph->vertices[v];
+  }
+  if (asc) {
+    qsort(vd, graph->vertex_count, sizeof(vdegree_t), compare_degrees_asc);
+  } else {
+    qsort(vd, graph->vertex_count, sizeof(vdegree_t), compare_degrees_dsc);
+  }
+
+  // Allocate the labels array
+  *partition_labels = (id_t*)calloc(graph->vertex_count, sizeof(id_t));
+  assert(*partition_labels);
+
+  // Assign vertices to partitions
+  id_t index = 0;
+  for (int pid = 0; pid < partition_count - 1; pid++) {
+    double assigned = 0;
+    while (((assigned / (double)graph->edge_count) < partition_fraction[pid]) &&
+           (index < graph->vertex_count)) {
+      assigned += vd[index].degree;
+      (*partition_labels)[vd[index].id] = pid;
+      index++;
+    }
+  }
+  // Assign the rest to the last partition
+  for (; index < graph->vertex_count; index++) {
+    (*partition_labels)[vd[index].id] = partition_count - 1;
+  }
+
+  // Clean up
+  if (even_fractions) {
+    free(partition_fraction);
+  }
+  free(vd);
+  return SUCCESS;
+}
+
+error_t partition_by_asc_sorted_degree(graph_t* graph, int partition_count,
+                                       double* partition_fraction, 
+                                       id_t** partition_labels) {
+  return partition_by_sorted_degree(graph, partition_count, true, 
+                                    partition_fraction, partition_labels);
+}
+
+error_t partition_by_dsc_sorted_degree(graph_t* graph, int partition_count,
+                                       double* partition_fraction, 
+                                       id_t** partition_labels) {
+  return partition_by_sorted_degree(graph, partition_count, false, 
+                                    partition_fraction, partition_labels);
 }
 
 PRIVATE error_t init_allocate_struct_space(graph_t* graph, int pcount,

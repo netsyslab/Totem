@@ -163,15 +163,52 @@ error_t partition_modularity(graph_t* graph, partition_set_t* partition_set,
  *                               the sum of this array should be exactly 1. if
  *                               NULL, the partitions will be assigned equal
  *                               fractions.
- * @param[in] seed a number to seed the pseudorandom number generator
  * @param[out] partition_labels an array with a partition id for each vertex as
  *                              identified by the array position. It is set to
  *                              NULL in case of failure.
  * @return SUCCESS if the partitions are assigned, FAILURE otherwise.
  */
-error_t partition_random(graph_t* graph, int partition_count,
-                         double* partition_fraction, uint32_t seed,
-                         id_t** partition_labels);
+error_t partition_random(graph_t* graph, int partition_count, 
+                         double* partition_fraction, id_t** partition_labels);
+
+/**
+ * Split the graph after sorting the vertices by edge degree into the specified 
+ * number of partitions with the specified fractional distribution for each 
+ * partition.
+ *
+ * @param[in] graph the input graph
+ * @param[in] partition_count the number of partitions the vertices should be
+ *                            assigned to
+ * @param[in] partition_fraction an array with the fraction of the graph to be
+ *                               assigned for each of the partitions. If set,
+ *                               the sum of this array should be exactly 1. if
+ *                               NULL, the partitions will be assigned equal
+ *                               fractions.
+ * @param[out] partition_labels an array with a partition id for each vertex as
+ *                              identified by the array position. It is set to
+ *                              NULL in case of failure.
+ * @return SUCCESS if the partitions are assigned, FAILURE otherwise.
+ */
+error_t partition_by_asc_sorted_degree(graph_t* graph, int partition_count,
+                                       double* partition_fraction, 
+                                       id_t** partition_labels);
+error_t partition_by_dsc_sorted_degree(graph_t* graph, int partition_count,
+                                       double* partition_fraction,
+                                       id_t** partition_labels);
+
+/**
+ * The following defines the signature of a partitioning algorithm function. The
+ * PARTITION_FUNC array offers a simple way to invoke a partitioning algorithm
+ * given a partition_algorithm_t (enumeration defined in totem.h) variable. Note
+ * that the order of the functions here must be the same as their corresponding 
+ * entry in the enumeration.
+ */
+typedef error_t(*partition_func_t)(graph_t*, int, double*, id_t**);
+PRIVATE const partition_func_t PARTITION_FUNC[] = {
+  partition_random,
+  partition_by_asc_sorted_degree,
+  partition_by_dsc_sorted_degree
+};
 
 /**
  * Creates the a partition set based on the vertex to partition assignment
