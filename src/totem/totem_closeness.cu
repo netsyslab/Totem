@@ -230,9 +230,7 @@ error_t closeness_unweighted_cpu(const graph_t* graph,
     bool finished = false;
     while (!finished) {
       finished = true;
-      #ifdef _OPENMP
-      #pragma omp parallel for
-      #endif // _OPENMP
+      OMP(omp parallel for)
       for (id_t vertex_id = 0; vertex_id < graph->vertex_count; vertex_id++) {
         if (dists[vertex_id] != dist) continue;
         for (id_t i = graph->vertices[vertex_id];

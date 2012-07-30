@@ -441,9 +441,7 @@ error_t page_rank_cpu(graph_t* graph, float* rank_i, float** rank_ret) {
 
   for (int round = 0; round < PAGE_RANK_ROUNDS; round++) {
     // iterate over all vertices to calculate the ranks for this round
-#ifdef _OPENMP // this is defined if -fopenmp flag is passed to the compiler
-#pragma omp parallel for
-#endif // _OPENMP
+    OMP(omp parallel for)
     for(id_t vertex_id = 0; vertex_id < graph->vertex_count; vertex_id++) {
       // calculate the sum of all neighbors' rank
       float my_rank = rank[vertex_id];
@@ -454,9 +452,7 @@ error_t page_rank_cpu(graph_t* graph, float* rank_i, float** rank_ret) {
       }
     }
 
-#ifdef _OPENMP // this is defined if -fopenmp flag is passed to the compiler
-#pragma omp parallel for
-#endif // _OPENMP
+    OMP(omp parallel for)
     for(id_t vertex_id = 0; vertex_id < graph->vertex_count; vertex_id++) {
       // get sum of neighbors' ranks
       float sum = mailbox[vertex_id];

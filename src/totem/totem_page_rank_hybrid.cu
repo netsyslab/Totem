@@ -176,9 +176,7 @@ PRIVATE void page_rank_cpu(partition_t* par) {
 
   if (round > 1) {
     // compute my rank
-    #ifdef _OPENMP
-    #pragma omp parallel for
-    #endif
+    OMP(omp parallel for)
     for(id_t v = 0; v < subgraph->vertex_count; v++) {
       uint32_t nbrs = subgraph->vertices[v + 1] - subgraph->vertices[v];
       float rank = ((1 - DAMPING_FACTOR) / vcount) +
@@ -190,9 +188,7 @@ PRIVATE void page_rank_cpu(partition_t* par) {
 
   // communicate the ranks
   engine_set_outbox(par->id, 0);
-  #ifdef _OPENMP
-  #pragma omp parallel for
-  #endif
+  OMP(omp parallel for)
   for(id_t v = 0; v < subgraph->vertex_count; v++) {
     float my_rank = ps->rank[v];
     for (id_t i = subgraph->vertices[v]; i < subgraph->vertices[v + 1]; i++) {

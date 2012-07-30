@@ -454,9 +454,7 @@ error_t dijkstra_cpu(const graph_t* graph, id_t source_id,
   while (changed) {
     changed = false;
 
-    #ifdef _OPENMP
-    #pragma omp parallel for
-    #endif // _OPENMP
+    OMP(omp parallel for)
     for (id_t vertex_id = 0; vertex_id < vertex_count; vertex_id++) {
       if (!to_update[vertex_id]) {
         continue;

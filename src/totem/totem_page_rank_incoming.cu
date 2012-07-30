@@ -235,9 +235,7 @@ error_t page_rank_incoming_cpu(graph_t* graph, float *rank_i, float** rank) {
     outbox     = tmp;
 
     // iterate over all vertices to calculate the ranks for this round
-#ifdef _OPENMP // this is defined if -fopenmp flag is passed to the compiler
-#pragma omp parallel for
-#endif // _OPENMP
+    OMP(omp parallel for)
     for(id_t vertex_id = 0; vertex_id < graph->vertex_count; vertex_id++) {
       // calculate the sum of all neighbors' rank
       double sum = 0;
