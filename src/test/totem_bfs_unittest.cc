@@ -41,6 +41,7 @@ class BFSTest : public TestWithParam<bfs_param_t*> {
   error_t TestGraph(graph_t* graph, id_t src, uint32_t** cost) {
     if (bfs_param->hybrid) {
       totem_attr_t attr = TOTEM_DEFAULT_ATTR;
+      attr.msg_size = 1;
       if (totem_init(graph, &attr) == FAILURE) { 
         *cost = NULL;
         return FAILURE;

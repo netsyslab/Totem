@@ -58,11 +58,12 @@ typedef struct totem_attr_s {
                                             is assigned to zero, then
                                             the graph is divided among
                                             all processors equally. */
-  size_t                msg_size;      /**< comm. element size in bytes*/
+  size_t                msg_size;      /**< comm. element size in bits*/
 } totem_attr_t;
 
 // default attributes
-#define TOTEM_DEFAULT_ATTR {PAR_RANDOM, PLATFORM_ALL, 0.5, sizeof(int)}
+#define TOTEM_DEFAULT_ATTR {PAR_RANDOM, PLATFORM_ALL, 0.5, \
+      (sizeof(int) * BITS_PER_BYTE)}
 
 /**
  * Initializes the state required for hybrid CPU-GPU processing. It creates a

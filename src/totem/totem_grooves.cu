@@ -170,7 +170,7 @@ PRIVATE void init_table_gpu(grooves_box_table_t* btable, uint32_t pcount,
                               btable[pid].rmt_nbrs, count * sizeof(id_t),
                               cudaMemcpyHostToDevice));
       CALL_CU_SAFE(cudaMalloc((void**)&((*btable_h)[pid].values),
-                              count * msg_size));
+                              bits_to_bytes(count * msg_size)));
     }
   }
 
@@ -197,7 +197,8 @@ PRIVATE void init_outbox_table(partition_t* partition, uint32_t pcount,
         // Allocate the values array for the cpu-based partitions. The gpu-based
         // partitions will have their values array allocated later when their
         // state is initialized on the gpu
-        outbox[rmt_pid].values = mem_alloc(outbox[rmt_pid].count * msg_size);
+        outbox[rmt_pid].values = 
+          mem_alloc(bits_to_bytes(outbox[rmt_pid].count * msg_size));
       }
     }
   }
@@ -256,7 +257,8 @@ PRIVATE void init_inbox(partition_set_t* pset) {
         // if the remote processor is GPU, then a values array for this inbox
         // needs to be allocated on the host
         partition->inbox[src_pid].values =
-          mem_alloc(partition->inbox[src_pid].count * pset->msg_size);
+          mem_alloc(bits_to_bytes(partition->inbox[src_pid].count * 
+                                  pset->msg_size));
       }
     }
   }
@@ -443,7 +445,8 @@ error_t grooves_launch_communications(partition_set_t* pset) {
       grooves_box_table_t* dst_box = &pset->partitions[dst_pid].inbox[src_pid];
       assert(src_box->count == dst_box->count);
       CALL_CU_SAFE(cudaMemcpyAsync(dst_box->values, src_box->values,
-                                   dst_box->count * pset->msg_size,
+                                   bits_to_bytes(dst_box->count * 
+                                                 pset->msg_size),
                                    cudaMemcpyDefault, *stream));
     }
   }

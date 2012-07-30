@@ -44,7 +44,7 @@
 /**
  * Determines the maximum number of threads per block.
  */
-#define MAX_THREADS_PER_BLOCK 192
+#define MAX_THREADS_PER_BLOCK 256
 
 /**
  * Determines the maximum number of dimensions of a grid block.
