@@ -6,7 +6,7 @@
  *  Author: Abdullah Gharaibeh
  */
 
-#include "totem_bitmap.h"
+#include "totem_bitmap.cuh"
 #include "totem_engine.cuh"
 #include "totem_comkernel.cuh"
 #include "totem_graph.h"
@@ -175,7 +175,7 @@ PRIVATE void bfs_cpu(partition_t* par) {
       id_t nbr = GET_VERTEX_ID(subgraph->edges[i]);
       bitmap_t visited = state->visited[nbr_pid];
       if (!bitmap_is_set(visited, nbr)) {
-        if (bitmap_set(visited, nbr)) {
+        if (bitmap_set_cpu(visited, nbr)) {
           if (nbr_pid == par->id) {
             state->cost[nbr] = state->level + 1;
           } else {
@@ -220,7 +220,7 @@ PRIVATE void bfs_scatter_cpu(partition_t* par) {
       if (!bitmap_is_set(visited, vid)) {
         uint32_t value = ((uint32_t*)(inbox->values))[index];
         if (value != INFINITE) {
-          bitmap_set(visited, vid);
+          bitmap_set_cpu(visited, vid);
           state->cost[vid] = value;
         }
       }
@@ -300,10 +300,10 @@ PRIVATE void bfs_init(partition_t* par) {
   } else {
     assert(par->processor.type == PROCESSOR_CPU);
     state->cost = (uint32_t*)calloc(vcount, sizeof(uint32_t));
-    state->visited[par->id] = bitmap_init(vcount);
+    state->visited[par->id] = bitmap_init_cpu(vcount);
     for (int pid = 0; pid < engine_partition_count(); pid++) {
       if (pid != par->id && par->outbox[pid].count != 0) {
-        state->visited[pid] = bitmap_init(par->outbox[pid].count);
+        state->visited[pid] = bitmap_init_cpu(par->outbox[pid].count);
       }
     }
     state->finished = finished_g;
@@ -311,7 +311,7 @@ PRIVATE void bfs_init(partition_t* par) {
     for (id_t v = 0; v < vcount; v++) state->cost[v] = INFINITE;
     if (src_pid == par->id) {
       state->cost[src_vid] = 0;
-      bitmap_set(state->visited[par->id], src_vid);
+      bitmap_set_cpu(state->visited[par->id], src_vid);
     }
   }
   engine_set_outbox(par->id, (uint32_t)INFINITE);
@@ -326,10 +326,10 @@ PRIVATE void bfs_finalize(partition_t* par) {
   } else {
     assert(par->processor.type == PROCESSOR_CPU);
     free(state->cost);
-    bitmap_finalize(state->visited[par->id]);
+    bitmap_finalize_cpu(state->visited[par->id]);
     for (int pid = 0; pid < engine_partition_count(); pid++) {
       if (pid != par->id && par->outbox[pid].count != 0)
-        bitmap_finalize(state->visited[pid]);
+        bitmap_finalize_cpu(state->visited[pid]);
     }
   }
   free(state);

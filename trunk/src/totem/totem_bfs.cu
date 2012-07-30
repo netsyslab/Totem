@@ -12,11 +12,8 @@
  *              Abdullah Gharaibeh
  */
 
-// system includes
-#include <cuda.h>
-
 // totem includes
-#include "totem_bitmap.h"
+#include "totem_bitmap.cuh"
 #include "totem_comdef.h"
 #include "totem_comkernel.cuh"
 #include "totem_graph.h"
@@ -330,11 +327,11 @@ error_t bfs_cpu(graph_t* graph, id_t source_id, uint32_t** cost_ret) {
                                          sizeof(uint32_t));
   memset(cost, 0xFF, graph->vertex_count * sizeof(uint32_t));
   // Initialize the visited bitmap
-  bitmap_t visited = bitmap_init(graph->vertex_count);
+  bitmap_t visited = bitmap_init_cpu(graph->vertex_count);
 
   // Initialize the cost of the source vertex
   cost[source_id] = 0;
-  bitmap_set(visited, source_id);
+  bitmap_set_cpu(visited, source_id);
 
   bool finished = false;
   #ifdef _OPENMP
@@ -378,7 +375,7 @@ error_t bfs_cpu(graph_t* graph, id_t source_id, uint32_t** cost_ret) {
              i < graph->vertices[vertex_id + 1]; i++) {
           const id_t neighbor_id = graph->edges[i];
           if (!bitmap_is_set(visited, neighbor_id)) {
-            if (bitmap_set(visited, neighbor_id)) {
+            if (bitmap_set_cpu(visited, neighbor_id)) {
               finished = false;
               cost[neighbor_id] = level + 1;            
             }
@@ -388,7 +385,7 @@ error_t bfs_cpu(graph_t* graph, id_t source_id, uint32_t** cost_ret) {
       level++;
     }
   } // omp parallel
-  bitmap_finalize(visited);
+  bitmap_finalize_cpu(visited);
   *cost_ret = cost;
   return SUCCESS;
 }
