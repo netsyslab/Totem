@@ -134,7 +134,7 @@ class EngineTest : public TestWithParam<platform_t> {
       PAR_RANDOM,
       GetParam(),
       0.3,
-      sizeof(int)
+      sizeof(int) * BITS_PER_BYTE
     };
     attr_ = attr;
   }
