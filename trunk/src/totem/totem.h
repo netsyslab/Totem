@@ -83,6 +83,9 @@ void totem_finalize();
 /**
  * Returns the total time spent on initializing the state (includes
  * partitioning and building the state)
+ * TODO(abdullah): instead of having many function to query the internal
+ * timers, we can have just one function that returns a copy of an instance
+ * of timer logs data type (e.g., totem_timers_t)
  */
 double totem_time_initialization();
 
@@ -92,7 +95,7 @@ double totem_time_initialization();
 double totem_time_partitioning();
 
 /**
- * Returns the time spent on executing all the supersteps
+ * Returns the overall time spent on executing all the supersteps
  */
 double totem_time_execution();
 
@@ -110,6 +113,17 @@ double totem_time_gpu_computation();
  * Returns the total time spent on the communication phase
  */
 double totem_time_communication();
+
+/**
+ * Returns the time spent on scattering the data received in the inbox buffers
+ * to the local state of the destination vertices during the communication phase
+ */
+double totem_time_scatter();
+
+/**
+ * Returns the time spent on aggregating the final result
+ */
+double totem_time_aggregation();
 
 /**
  * Returns the number of partitions
