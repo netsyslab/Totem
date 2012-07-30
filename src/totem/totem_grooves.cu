@@ -59,9 +59,7 @@ void init_map_rmt_nbrs(partition_t* par, uint32_t pcount, id_t* nbrs,
   id_t cur_rmt_v = 0;
   while (cur_rmt_v < par->rmt_vertex_count) {
     id_t count = count_per_par[GET_PARTITION_ID(nbrs[cur_rmt_v])];
-    #ifdef _OPENMP
-    #pragma omp parallel for
-    #endif
+    OMP(omp parallel for)
     for (id_t i = 0; i < count; i++) {
       CALL_SAFE(hash_table_put_cpu(*ht, nbrs[cur_rmt_v + i], i));
     }
@@ -82,9 +80,7 @@ void init_map_rmt_nbrs(partition_t* par, uint32_t pcount, id_t* nbrs,
     }
   }
   // create the final mapping
-  #ifdef _OPENMP
-  #pragma omp parallel for
-  #endif
+  OMP(omp parallel for)
   for (int v = 0; v < par->rmt_vertex_count; v++) {
     int index; HT_LOOKUP(ht, nbrs[v], index);
     id_t* pnbrs = rmt_nbrs[GET_PARTITION_ID(nbrs[v])];
@@ -95,9 +91,7 @@ void init_map_rmt_nbrs(partition_t* par, uint32_t pcount, id_t* nbrs,
 PRIVATE
 void init_update_subgraph(partition_t* par, hash_table_t* ht) {
   graph_t* subg = &(par->subgraph);
-  #ifdef _OPENMP
-  #pragma omp parallel for
-  #endif
+  OMP(omp parallel for)
   for (id_t vid = 0; vid < subg->vertex_count; vid++) {
     for (id_t i = subg->vertices[vid]; i < subg->vertices[vid + 1]; i++) {
       id_t nbr = subg->edges[i];

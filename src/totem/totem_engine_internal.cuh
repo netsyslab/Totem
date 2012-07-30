@@ -39,8 +39,10 @@ typedef struct engine_context_s {
   double           time_par;
   double           time_exec;
   double           time_comm;
+  double           time_scatter;
   double           time_comp;
   double           time_gpu_comp;
+  double           time_aggr;
   uint64_t         vertex_count[MAX_PARTITION_COUNT];
   uint64_t         edge_count[MAX_PARTITION_COUNT];
   uint64_t         rmt_vertex_count[MAX_PARTITION_COUNT];
@@ -130,9 +132,7 @@ void engine_scatter_inbox_add(uint32_t pid, T* dst) {
       CALL_CU_SAFE(cudaGetLastError());
     } else {
       assert(par->processor.type == PROCESSOR_CPU);
-      #ifdef _OPENMP
-      #pragma omp parallel for
-      #endif
+      OMP(omp parallel for)
       for (int index = 0; index < inbox->count; index++) {
         _REDUCE_ENTRY_ADD(inbox, index, dst);
       }
@@ -155,9 +155,7 @@ void engine_scatter_inbox_min(uint32_t pid, T* dst) {
       CALL_CU_SAFE(cudaGetLastError());
     } else {
       assert(par->processor.type == PROCESSOR_CPU);
-      #ifdef _OPENMP
-      #pragma omp parallel for
-      #endif
+      OMP(omp parallel for)
       for (int index = 0; index < inbox->count; index++) {
         _REDUCE_ENTRY_MIN(inbox, index, dst);
       }
@@ -180,9 +178,7 @@ void engine_scatter_inbox_max(uint32_t pid, T* dst) {
       CALL_CU_SAFE(cudaGetLastError());
     } else {
       assert(par->processor.type == PROCESSOR_CPU);
-      #ifdef _OPENMP
-      #pragma omp parallel for
-      #endif
+      OMP(omp parallel for)
       for (int index = 0; index < inbox->count; index++) {
         _REDUCE_ENTRY_MAX(inbox, index, dst);
       }
@@ -207,9 +203,7 @@ void engine_set_outbox(uint32_t pid, T value) {
       CALL_CU_SAFE(cudaGetLastError());
     } else {
       assert(par->processor.type == PROCESSOR_CPU);
-      #ifdef _OPENMP
-      #pragma omp parallel for
-      #endif
+      OMP(omp parallel for)
       for (int i = 0; i < outbox->count; i++) values[i] = value;
     }
   }

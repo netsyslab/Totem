@@ -16,10 +16,12 @@ inline PRIVATE void set_processor(partition_t* par) {
 }
 
 inline PRIVATE void reset_exec_timers() {
-    context.time_exec = 0;
-    context.time_comm = 0;
-    context.time_comp = 0;
+    context.time_exec     = 0;
+    context.time_comm     = 0;
+    context.time_scatter  = 0;
+    context.time_comp     = 0;
     context.time_gpu_comp = 0;
+    context.time_aggr     = 0;
 }
 
 /**
@@ -83,11 +85,14 @@ inline PRIVATE void superstep_communicate() {
   stopwatch_start(&stopwatch);
   grooves_launch_communications(context.pset);
   grooves_synchronize(context.pset);
+  stopwatch_t stopwatch_aggr;
+  stopwatch_start(&stopwatch_aggr);
   if (!context.config.par_scatter_func) return;
   for (int pid = 0; pid < context.pset->partition_count; pid++) {
     set_processor(&context.pset->partitions[pid]);
     context.config.par_scatter_func(&context.pset->partitions[pid]);
   }
+  context.time_scatter += stopwatch_elapsed(&stopwatch_aggr);
   context.time_comm += stopwatch_elapsed(&stopwatch);
 }
 
@@ -100,12 +105,15 @@ inline PRIVATE void superstep_next() {
 }
 
 PRIVATE void engine_aggregate() {
+  stopwatch_t stopwatch;
+  stopwatch_start(&stopwatch);
   if (context.config.par_aggr_func) {
     for (int pid = 0; pid < context.pset->partition_count; pid++) {
       set_processor(&context.pset->partitions[pid]);
       context.config.par_aggr_func(&context.pset->partitions[pid]);
     }
   }
+  context.time_aggr = stopwatch_elapsed(&stopwatch); 
 }
 
 error_t engine_execute() {

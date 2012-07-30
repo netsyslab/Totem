@@ -34,6 +34,14 @@ double totem_time_communication() {
   return context.time_comm;
 }
 
+double totem_time_scatter() {
+  return context.time_scatter;
+}
+
+double totem_time_aggregation() {
+  return context.time_aggr;
+}
+
 uint32_t totem_partition_count() {
   return engine_partition_count();
 }
