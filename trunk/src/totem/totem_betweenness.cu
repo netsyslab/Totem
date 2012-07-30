@@ -584,9 +584,7 @@ error_t betweenness_unweighted_cpu(const graph_t* graph,
   int64_t phase = 0;
 
   // Initialization stage
-  #ifdef _OPENMP
-  #pragma omp parallel for
-  #endif // _OPENMP
+  OMP(omp parallel for)
   for (id_t v = 0; v < graph->vertex_count; v++) {
     betweenness_centrality[v] = (weight_t)0.0;
   }
@@ -600,9 +598,7 @@ error_t betweenness_unweighted_cpu(const graph_t* graph,
     memset(succ_count, 0, graph->vertex_count * sizeof(uint32_t));
     memset(stack, 0, graph->vertex_count * graph->vertex_count * sizeof(id_t));
     memset(stack_count, 0,  graph->vertex_count * sizeof(uint32_t));
-    #ifdef _OPENMP
-    #pragma omp parallel for
-    #endif // _OPENMP
+    OMP(omp parallel for)
     for (id_t t = 0; t < graph->vertex_count; t++) {
       sigma[t] = 0;
       dist[t] = -1;
@@ -619,9 +615,7 @@ error_t betweenness_unweighted_cpu(const graph_t* graph,
       finished = true;
       for (id_t v_index = 0; v_index < stack_count[phase]; v_index++) {
         id_t v = stack[graph->vertex_count * phase + v_index];
-        #ifdef _OPENMP
-        #pragma omp parallel for
-        #endif // _OPENMP
+        OMP(omp parallel for)
         // For all neighbors of v in parallel, iterate over paths
         for (id_t e = graph->vertices[v]; e < graph->vertices[v + 1]; e++) {
           id_t w = graph->edges[e];
@@ -648,9 +642,7 @@ error_t betweenness_unweighted_cpu(const graph_t* graph,
     memset(delta, (weight_t)0.0, graph->vertex_count * sizeof(id_t));
     phase--;
     while (phase > 0) {
-      #ifdef _OPENMP
-      #pragma omp parallel for
-      #endif // _OPENMP
+      OMP(omp parallel for)
       for (id_t p = 0; p < stack_count[phase]; p++) {
         id_t w = stack[graph->vertex_count * phase + p];
         weight_t dsw = 0.0;
@@ -668,9 +660,7 @@ error_t betweenness_unweighted_cpu(const graph_t* graph,
 
   // If the graph is undirected, divide centrality scores by 2
   if (graph->directed == false) {
-    #ifdef _OPENMP
-    #pragma omp parallel for
-    #endif // _OPENMP
+    OMP(omp parallel for)
     for (id_t v = 0; v < graph->vertex_count; v++) {
       betweenness_centrality[v] /= 2.0;
     }

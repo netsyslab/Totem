@@ -361,9 +361,7 @@ TEST_F(GraphHelper, Bitmap) {
                    &bits_not_set_count);
 
   // First set the bits in the bits_set array
-  #ifdef _OPENMP
-  #pragma omp parallel for
-  #endif // _OPENMP
+  OMP(omp parallel for)
   for (id_t i = 0; i < bits_set_count; i++) {
     bitmap_set_cpu(bitmap, bits_set[i]);
     // Try to set again

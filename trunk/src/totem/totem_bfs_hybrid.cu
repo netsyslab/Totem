@@ -165,9 +165,7 @@ PRIVATE void bfs_cpu(partition_t* par) {
   graph_t* subgraph = &par->subgraph;
   bool finished = true;
 
-  #ifdef _OPENMP
-  #pragma omp parallel for reduction(& : finished)
-  #endif
+  OMP(omp parallel for reduction(& : finished))
   for (id_t v = 0; v < subgraph->vertex_count; v++) {
     if (state->cost[v] != state->level) continue;
     for (id_t i = subgraph->vertices[v]; i < subgraph->vertices[v + 1]; i++) {
@@ -212,9 +210,7 @@ PRIVATE void bfs_scatter_cpu(partition_t* par) {
   for (int rmt_pid = 0; rmt_pid < engine_partition_count(); rmt_pid++) {
     if (rmt_pid == par->id) continue;
     grooves_box_table_t* inbox = &par->inbox[rmt_pid];
-    #ifdef _OPENMP
-    #pragma omp parallel for
-    #endif
+    OMP(omp parallel for)
     for (int index = 0; index < inbox->count; index++) {
       id_t vid = inbox->rmt_nbrs[index];
       if (!bitmap_is_set(visited, vid)) {
@@ -266,9 +262,7 @@ PRIVATE void bfs_aggregate(partition_t* par) {
     src_cost = state->cost;
   }
   // aggregate the results
-  #ifdef _OPENMP
-  #pragma omp parallel for
-  #endif
+  OMP(omp parallel for)
   for (id_t v = 0; v < subgraph->vertex_count; v++) {
     cost_g[par->map[v]] = src_cost[v];
   }

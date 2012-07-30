@@ -131,9 +131,7 @@ error_t node_degree_cpu(const graph_t* graph, id_t** node_degree) {
   *node_degree = (id_t*)mem_alloc(graph->vertex_count * sizeof(id_t));
   memset(*node_degree, 0, graph->vertex_count * sizeof(id_t));
 
-  #ifdef _OPENMP
-  #pragma omp parallel for
-  #endif // _OPENMP
+  OMP(omp parallel for)
   for (id_t vid = 0; vid < graph->vertex_count; vid++) {
     // Count the node degree at the given node
     (*node_degree)[vid] = graph->vertices[vid + 1] - graph->vertices[vid];

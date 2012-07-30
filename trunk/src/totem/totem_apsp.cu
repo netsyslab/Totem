@@ -10,9 +10,6 @@
  *      Author: Greg Redekop
  */
 
-// system includes
-#include <cuda.h>
-
 // totem includes
 #include "totem_comdef.h"
 #include "totem_comkernel.cuh"
@@ -274,9 +271,7 @@ error_t apsp_cpu(graph_t* graph, weight_t** path_ret) {
 
   // Run the main loop |V| times to converge.
   for (id_t mid = 0; mid < v_count; mid++) {
-    #ifdef _OPENMP
-    #pragma omp parallel for
-    #endif // _OPENMP
+    OMP(omp parallel for)
     for (id_t src = 0; src < v_count; src++) {
       weight_t* base = &distances[src * v_count];
       weight_t* mid_base = &distances[mid * v_count];

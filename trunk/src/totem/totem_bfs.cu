@@ -334,11 +334,9 @@ error_t bfs_cpu(graph_t* graph, id_t source_id, uint32_t** cost_ret) {
   bitmap_set_cpu(visited, source_id);
 
   bool finished = false;
-  #ifdef _OPENMP
   // Within the following code segment, all threads execute in parallel the 
   // same code (similar to a cuda kernel)
-  #pragma omp parallel
-  #endif
+  OMP(omp parallel)
   {
     // level is a local variable to each thread, having a separate copy per
     // thread reduces the overhead of cache coherency protocol compared to
@@ -350,14 +348,12 @@ error_t bfs_cpu(graph_t* graph, id_t source_id, uint32_t** cost_ret) {
       // checked the while condition above using the same "finished" value
       // that resulted from the previous iteration before it is initialized
       // again for the next one.
-      #ifdef _OPENMP
-      #pragma omp barrier
+      OMP(omp barrier)
 
       // This "single" clause ensures that only one thread sets the variable. 
       // Note that this close has an implicit barrier (i.e., all threads will
       // block until the variable is set by the responsible thread)
-      #pragma omp single
-      #endif // _OPENMP
+      OMP(omp single)
       finished = true;
 
       // The "for" clause instructs openmp to run the loop in parallel. Each
@@ -366,9 +362,7 @@ error_t bfs_cpu(graph_t* graph, id_t source_id, uint32_t** cost_ret) {
       // for each thread, and reduce them in the end using an "and" operator and
       // store the value in "finished". Similar to the argument above, this 
       // improves performance by reducing cache coherency overhead
-      #ifdef _OPENMP
-      #pragma omp for schedule(static) reduction(& : finished)
-      #endif
+      OMP(omp for schedule(static) reduction(& : finished))
       for (id_t vertex_id = 0; vertex_id < graph->vertex_count; vertex_id++) {
         if (cost[vertex_id] != level) continue;
         for (id_t i = graph->vertices[vertex_id];

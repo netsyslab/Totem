@@ -13,6 +13,7 @@
 #include <ctype.h>
 #include <float.h>
 #include <limits.h>
+#include <math.h>
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
@@ -54,6 +55,29 @@ typedef double stopwatch_t;
  * Used to define private functions and variables
  */
 #define PRIVATE static
+
+/**
+ * This is defined if -fopenmp flag is passed to the compiler
+ */
+#if defined(_OPENMP)
+#define OMP(x) _Pragma(#x)
+#include <omp.h>
+#else
+#define OMP(x)
+static int omp_get_thread_num (void)  {return 0;}
+static int omp_get_num_threads (void) {return 1;}
+static int omp_get_max_threads (void) {return 1;}
+#endif
+
+/**
+ * Used for bit-based space calculations
+ */
+const size_t BITS_PER_BYTE  = 8;
+const size_t BYTES_PER_WORD = (sizeof(uint64_t));
+const size_t BITS_PER_WORD  = (BYTES_PER_WORD * BITS_PER_BYTE);
+inline size_t bits_to_bytes(size_t bits) { 
+  return (((bits / BITS_PER_WORD) + 1) * BYTES_PER_WORD);
+}
 
 /**
  * A wrapper that asserts the success of totem function calls
