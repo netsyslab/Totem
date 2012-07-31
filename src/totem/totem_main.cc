@@ -62,7 +62,8 @@ PRIVATE options_t options = {
 };
 
 // Misc global constants
-PRIVATE const int REPEAT_MAX = 20;
+PRIVATE const int REPEAT_MAX = 100;
+PRIVATE const int SEED = 1985;
 PRIVATE const char* PLATFORM_STR[] = {
   "CPU",
   "GPU",
@@ -257,7 +258,7 @@ PRIVATE id_t get_random_src(graph_t* graph) {
  * Runs BFS benchmark according to Graph500 specification
  */
 PRIVATE void benchmark_bfs(graph_t* graph, totem_attr_t* attr) {
-  srand(1987);
+  srand(SEED);
   for (int s = 0; s < options.repeat; s++) {
     id_t src = get_random_src(graph);
     stopwatch_t stopwatch;
@@ -309,9 +310,7 @@ PRIVATE void run_benchmark() {
                              &graph));
   if (options.platform == PLATFORM_CPU) {
     print_header(graph, false);
-    for (int round = 0; round < options.repeat; round++) {
-      BENCHMARK_FUNC[options.benchmark](graph, NULL);
-    }
+    BENCHMARK_FUNC[options.benchmark](graph, NULL);    
   } else {
     totem_attr_t attr = TOTEM_DEFAULT_ATTR;
     attr.par_algo = options.par_algo;
