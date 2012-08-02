@@ -178,7 +178,7 @@ PRIVATE void parse_command_line(int argc, char** argv) {
   options.graph_file = argv[optind++];
 }
 
-void print_timing(graph_t* graph, double time_total) {
+void print_timing(graph_t* graph, double time_total, bool totem_based) {
   printf("time_total:%0.2f\t"
          "time_exec:%0.2f\t"
          "time_comp:%0.2f\t"
@@ -187,12 +187,12 @@ void print_timing(graph_t* graph, double time_total) {
          "time_scatter:%0.2f\t"
          "time_aggr:%0.2f\n",
          time_total,
-         totem_time_execution(),
-         totem_time_computation(),
-         totem_time_gpu_computation(),
-         totem_time_communication(),
-         totem_time_scatter(),
-         totem_time_aggregation());
+         totem_based ? totem_time_execution() : time_total,
+         totem_based ? totem_time_computation() : time_total,
+         totem_based ? totem_time_gpu_computation() : 0,
+         totem_based ? totem_time_communication() : 0,
+         totem_based ? totem_time_scatter() : 0,
+         totem_based ? totem_time_aggregation() : 0);
   fflush(stdout);
 }
 
@@ -266,13 +266,12 @@ PRIVATE void benchmark_bfs(graph_t* graph, totem_attr_t* attr) {
     uint32_t* cost = NULL;
     if (options.platform == PLATFORM_CPU) {
       bfs_cpu(graph, get_random_src(graph), &cost);
-      printf("time_exec:%f\n", stopwatch_elapsed(&stopwatch)); 
-      fflush(stdout);
     } else {
       CALL_SAFE(bfs_hybrid(src, &cost));
-      print_timing(graph, stopwatch_elapsed(&stopwatch));
-      if (options.verify) verify_bfs(graph, src, cost);
     }
+    print_timing(graph, stopwatch_elapsed(&stopwatch), 
+                 options.platform != PLATFORM_CPU);
+    if (options.verify) verify_bfs(graph, src, cost);
     mem_free(cost);
   }
 }
@@ -285,8 +284,13 @@ PRIVATE void benchmark_pagerank(graph_t* graph, totem_attr_t* attr) {
     stopwatch_t stopwatch;
     stopwatch_start(&stopwatch);
     float* rank = NULL;
-    CALL_SAFE(page_rank_hybrid(NULL, &rank));
-    print_timing(graph, stopwatch_elapsed(&stopwatch));
+    if (options.platform == PLATFORM_CPU) {
+      page_rank_cpu(graph, NULL, &rank);
+    } else {
+      CALL_SAFE(page_rank_hybrid(NULL, &rank));
+    }
+    print_timing(graph, stopwatch_elapsed(&stopwatch), 
+                 options.platform != PLATFORM_CPU);
     mem_free(rank);
   }
 }
