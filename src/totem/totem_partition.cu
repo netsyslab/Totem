@@ -206,13 +206,18 @@ error_t partition_by_sorted_degree(graph_t* graph, int partition_count,
   *partition_labels = (id_t*)calloc(graph->vertex_count, sizeof(id_t));
   assert(*partition_labels);
 
-  // Assign vertices to partitions
+  // Assign vertices to partitions. Considering the sum of edges and vertices as
+  // the normalizing factor allows to create a partition with space complexity 
+  // proportional to the requested fraction. This is important when creating 
+  // partitions with few edges but many vertices (e.g., a partition dominated by
+  // low-degree vertices).
+  double total_elements = graph->vertex_count + graph->edge_count;
   id_t index = 0;
   for (int pid = 0; pid < partition_count - 1; pid++) {
     double assigned = 0;
-    while (((assigned / (double)graph->edge_count) < partition_fraction[pid]) &&
+    while ((assigned / total_elements < partition_fraction[pid]) &&
            (index < graph->vertex_count)) {
-      assigned += vd[index].degree;
+      assigned += vd[index].degree + 1;
       (*partition_labels)[vd[index].id] = pid;
       index++;
     }
