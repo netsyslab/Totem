@@ -273,7 +273,6 @@ TEST_P(GraphPartitionTest , PartitionFractionSingleNodeGraph) {
   EXPECT_EQ(SUCCESS, partition_func_(graph_, 10, partition_fraction,
                                      &partitions_));
   EXPECT_TRUE(partitions_[0] < 10);
-  EXPECT_EQ(9, partitions_[0]);
   free(partition_fraction);
 }
 
