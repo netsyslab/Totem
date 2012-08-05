@@ -322,7 +322,8 @@ PRIVATE error_t graph_initialize_binary(FILE* fh, bool load_weights,
   CHK(fread(&weighted, sizeof(bool), 1, fh) == 1, err);
   bool directed;
   CHK(fread(&directed, sizeof(bool), 1, fh) == 1, err);  
-  allocate_graph(vertex_count, edge_count, directed, weighted, valued, graph);
+  allocate_graph(vertex_count, edge_count, directed, 
+                 load_weights, valued, graph);
   
   // Load the vertices and their values if any
   for(id_t vid = 0; vid < vertex_count; vid++) {
@@ -338,9 +339,12 @@ PRIVATE error_t graph_initialize_binary(FILE* fh, bool load_weights,
   // Load the edges and their weights if any
   for(id_t eid = 0; eid < edge_count; eid++) {
     CHK(fread(&((*graph)->edges[eid]), sizeof(id_t), 1, fh) == 1, err_free);
-    if (load_weights && weighted) {
-      CHK(fread(&((*graph)->weights[eid]), sizeof(weight_t), 1, fh) == 1, 
-          err_free);
+    if (load_weights) {
+      weight_t weight = DEFAULT_EDGE_WEIGHT;
+      if (weighted) {
+        CHK(fread(&(weight), sizeof(weight_t), 1, fh) == 1, err_free);
+      }
+      (*graph)->weights[eid] = weight;
     }
   }
   fclose(fh);
