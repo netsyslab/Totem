@@ -11,10 +11,8 @@
  *      Author: Elizeu Santos-Neto (elizeus@ece.ubc.ca)
  */
 
-// system includes
-#include <cuda.h>
-
 // totem includes
+#include "totem_bitmap.cuh"
 #include "totem_comdef.h"
 #include "totem_comkernel.cuh"
 #include "totem_graph.h"
@@ -46,7 +44,6 @@ typedef struct {
 PRIVATE
 error_t check_special_cases(const graph_t* graph, id_t source_id,
                             weight_t **shortest_distances, bool* finished) {
-
   *finished = true;
   if ((graph == NULL) || !graph->weighted
       || (source_id >= graph->vertex_count)) {
@@ -409,75 +406,56 @@ error_t dijkstra_vwarp_gpu(const graph_t* graph, id_t source_id,
     return FAILURE;
 }
 
-__host__
-error_t dijkstra_cpu(const graph_t* graph, id_t source_id,
-                     weight_t** shortest_distances) {
-  // Validate input parameters
-  if ((graph == NULL) || !graph->weighted
-      || (source_id >= graph->vertex_count)) {
-    *shortest_distances = NULL;
-    return FAILURE;
-  } else if (graph->vertex_count == 1) {
-    *shortest_distances = (weight_t*)mem_alloc(sizeof(weight_t));
-    (*shortest_distances)[0] = 0;
-    return SUCCESS;
-  }
+__host__ error_t dijkstra_cpu(const graph_t* graph, id_t source_id,
+                              weight_t** shortest_distances) {
+  // Check for special cases
+  bool finished = false;
+  error_t rc = check_special_cases(graph, source_id, shortest_distances,
+                                   &finished);
+  if (finished) return rc;
 
   // Initialize the shortest_distances to infinite
-  *shortest_distances =
+  *shortest_distances = 
     (weight_t*)mem_alloc(graph->vertex_count * sizeof(weight_t));
-
-  // An entry in this array indicate whether the corresponding vertex should
-  // try to update the current distances.
-  bool* to_update = (bool *)mem_alloc(graph->vertex_count * sizeof(bool));
-
+  OMP(omp parallel for)
   for (id_t vertex_id = 0; vertex_id < graph->vertex_count; vertex_id++) {
     (*shortest_distances)[vertex_id] = WEIGHT_MAX;
-    to_update[vertex_id] = false;
   }
+
+  // An entry in this bitmap indicates whether the corresponding vertex is
+  // active and that it should try to update the distances of its neighbors
+  bitmap_t active = bitmap_init_cpu(graph->vertex_count);
+
+  // Initialize the distance of the source vertex
   (*shortest_distances)[source_id] =  (weight_t)0.0;
-  to_update[source_id] = true;
+  bitmap_set_cpu(active, source_id);
 
-  // Check whether the graph has vertices, but an empty edge set.
-  if ((graph->vertex_count > 0) && (graph->edge_count == 0)) {
-    mem_free(to_update);
-    return SUCCESS;
-  }
-
-  // get direct access to graph members
-  id_t  vertex_count = graph->vertex_count;
-  id_t* vertices     = graph->vertices;
-  id_t* edges        = graph->edges;
-  weight_t* weights  = graph->weights;
-
-  bool changed = true;
-  while (changed) {
-    changed = false;
-
-    OMP(omp parallel for)
-    for (id_t vertex_id = 0; vertex_id < vertex_count; vertex_id++) {
-      if (!to_update[vertex_id]) {
+  finished = false;
+  while (!finished) {
+    finished = true;
+    OMP(omp parallel for reduction(& : finished))
+    for (id_t vertex_id = 0; vertex_id < graph->vertex_count; vertex_id++) {
+      if (!bitmap_is_set(active, vertex_id)) {
         continue;
       }
-      to_update[vertex_id] = false;
-
-      id_t* neighbors = &edges[vertices[vertex_id]];
-      weight_t* local_weights = &weights[vertices[vertex_id]];
-      uint64_t neighbor_count = vertices[vertex_id + 1] - vertices[vertex_id];
-
-      for (id_t i = 0; i < neighbor_count; i++) {
-        id_t neighbor_id = neighbors[i];
-        weight_t current_distance = (*shortest_distances)[vertex_id] +
-                                    local_weights[i];
+      bitmap_unset_cpu(active, vertex_id);
+      
+      for (id_t i = graph->vertices[vertex_id]; 
+           i < graph->vertices[vertex_id + 1]; i++) {
+        const id_t neighbor_id = graph->edges[i];
+        weight_t new_distance = (*shortest_distances)[vertex_id] + 
+          graph->weights[i];
         weight_t old_distance =
-            __sync_fetch_and_min_float(&((*shortest_distances)[neighbor_id]),
-                                       current_distance);
-        if ( current_distance < old_distance ) {
-          to_update[neighbor_id] = true;
-          changed = true;
+          __sync_fetch_and_min_float(&((*shortest_distances)[neighbor_id]),
+                                       new_distance);
+        if (new_distance < old_distance) {
+          bitmap_set_cpu(active, neighbor_id);
+          finished = false;
         }
       } // for
     } // for
   } // while
+  bitmap_finalize_cpu(active);
   return SUCCESS;
 }
+
