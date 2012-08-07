@@ -6,6 +6,7 @@
  */
 
 #include "totem_engine.cuh"
+#include "totem_util.h"
 
 engine_context_t context = ENGINE_DEFAULT_CONTEXT;
 
@@ -146,42 +147,34 @@ error_t engine_init(graph_t* graph, totem_attr_t* attr) {
   context.attr = *attr;
 
   // identify the execution platform
-  int gpu_count;
+  int gpu_count = attr->gpu_count;
   bool use_cpu = true;
-  CALL_CU_SAFE(cudaGetDeviceCount(&gpu_count));
   switch(context.attr.platform) {
     case PLATFORM_CPU:
       gpu_count = 0;
-      context.attr.cpu_par_share = 0;
       break;
     case PLATFORM_GPU:
-      gpu_count = 1;
       use_cpu = false;
-      break;
-    case PLATFORM_MULTI_GPU:
-      use_cpu = false;
-      break;
     case PLATFORM_HYBRID:
-      gpu_count = 1;
-      break;
-    case PLATFORM_ALL:
+      if (gpu_count > get_gpu_count()) {
+        return FAILURE;
+      }
       break;
     default:
       assert(false);
   }
-  int pcount = use_cpu ? gpu_count + 1 : gpu_count;
-  processor_t* processors = (processor_t*)calloc(pcount, sizeof(processor_t));
-  assert(processors);
 
   // identify the share of each partition
   // TODO(abdullah): ideally, we would like to split the graph among processors
   // with different shares (e.g., a system with GPUs with different
   // memory capacities).
+  int pcount = use_cpu ? gpu_count + 1 : gpu_count;
   double* par_share = NULL;
-  if (context.attr.cpu_par_share && use_cpu) {
+  if (context.attr.platform == PLATFORM_HYBRID) {
     par_share = (double*)calloc(pcount, sizeof(double));
     par_share[pcount - 1] = context.attr.cpu_par_share;
-    double gpu_par_share =
+    // the rest is divided equally among the GPUs
+    double gpu_par_share = 
       (1.0 - context.attr.cpu_par_share) / (double)gpu_count;
     double total_share = context.attr.cpu_par_share;
     for (int gpu_id = 0; gpu_id < gpu_count - 1; gpu_id++) {
@@ -192,6 +185,8 @@ error_t engine_init(graph_t* graph, totem_attr_t* attr) {
   }
 
   // setup the processors' types and ids
+  processor_t* processors = (processor_t*)calloc(pcount, sizeof(processor_t));
+  assert(processors);
   for (int gpu_id = 0; gpu_id < gpu_count; gpu_id++) {
     processors[gpu_id].type = PROCESSOR_GPU;
     processors[gpu_id].id = gpu_id;

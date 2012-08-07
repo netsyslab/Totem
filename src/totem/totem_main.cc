@@ -43,6 +43,8 @@ typedef struct options_s {
   char*                 graph_file; // The file to run the benchmark on
   benchmark_t           benchmark;  // Benchmark to run
   platform_t            platform;   // Execution platform
+  int                   gpu_count;  // Number of GPUs to use for hybrid and
+                                    // GPU-only platforms
   int                   repeat;     // Number of times to repeat an execution
                                     // (for traversal algorithms, number of 
                                     // sources used)
@@ -51,26 +53,29 @@ typedef struct options_s {
                                     // hybrid platforms
   partition_algorithm_t par_algo;   // Partitioning algorithm
 } options_t;
+
+// A global options_t instance that is used to configure the benchmark
 PRIVATE options_t options = {
   NULL,           // graph_file
   BENCHMARK_BFS,  // benchmark 
   PLATFORM_CPU,   // platform
+  1,              // number of GPUs
   5,              // repeat
   false,          // verify
   50,             // alpha
-  PAR_RANDOM,     // partitioning algorithm
+  PAR_RANDOM      // partitioning algorithm
 };
 
-// Misc global constants
+// Misc global variables
+PRIVATE int max_gpu_count = 0;
 PRIVATE const int REPEAT_MAX = 100;
 PRIVATE const int SEED = 1985;
 PRIVATE const char* PLATFORM_STR[] = {
   "CPU",
   "GPU",
-  "MULTI_GPU",
-  "HYBRID",
-  "ALL"
+  "HYBRID"
 };
+
 PRIVATE const char* PAR_ALGO_STR[] = {
   "RANDOM",
   "SORTED_ASC",
@@ -95,11 +100,11 @@ PRIVATE void display_help(char* exe_name, int exit_err) {
          "     %d: Sorted Ascending\n"
          "     %d: Sorted Dscending\n"
          "  -pNUM Platform\n"
-         "     %d: Execute on the CPU only (default)\n"
-         "     %d: Execute on the GPU only\n"
-         "     %d: Execute on all available GPUs\n"
-         "     %d: Execute on the CPU and one GPU\n"
-         "     %d: Execute on all available processors (CPU and all GPUs)\n"
+         "     %d: Execute on CPU only (default)\n"
+         "     %d: Execute on GPUs only\n"
+         "     %d: Execute on the CPU and on the GPUs\n"
+         "  -gNUM [0-%d] Number of GPUs to use. This is applicable for GPU\n"
+         "              and Hybrid platforms only (default 1).\n"
          "  -rNUM [1-%d] Number of times an experiment is repeated"
          " (default 1)\n"
          "  -sNUM Number sources used to benchmark a traversal algorithm"
@@ -108,8 +113,7 @@ PRIVATE void display_help(char* exe_name, int exit_err) {
          "  -h Print this help message\n",
          exe_name, BENCHMARK_BFS, BENCHMARK_PAGERANK, BENCHMARK_DIJKSTRA, 
          PAR_RANDOM, PAR_SORTED_ASC, PAR_SORTED_DSC, PLATFORM_CPU, 
-         PLATFORM_GPU, PLATFORM_MULTI_GPU, PLATFORM_HYBRID, PLATFORM_ALL, 
-         REPEAT_MAX);
+         PLATFORM_GPU, PLATFORM_HYBRID, max_gpu_count, REPEAT_MAX);
   exit(exit_err);
 }
 
@@ -121,7 +125,7 @@ PRIVATE void display_help(char* exe_name, int exit_err) {
 PRIVATE void parse_command_line(int argc, char** argv) {
   optarg = NULL;
   int ch, benchmark, platform, par_algo;
-  while(((ch = getopt(argc, argv, "ha:b:t:p:r:v")) != EOF)) {
+  while(((ch = getopt(argc, argv, "ha:b:t:p:g:r:v")) != EOF)) {
     switch (ch) {
       case 'a':
         options.alpha = atoi(optarg);
@@ -153,6 +157,13 @@ PRIVATE void parse_command_line(int argc, char** argv) {
           display_help(argv[0], -1);
         }
         options.platform = (platform_t)platform;
+        break;
+      case 'g':
+        options.gpu_count = atoi(optarg);
+        if (options.gpu_count > max_gpu_count || options.gpu_count < 0) {
+          fprintf(stderr, "Invalid number of GPUs %d\n", options.gpu_count);
+          display_help(argv[0], -1);
+        }
         break;
       case 'r':
         options.repeat = atoi(optarg);
@@ -299,9 +310,21 @@ PRIVATE void benchmark_pagerank(graph_t* graph, totem_attr_t* attr) {
  * Runs PageRank benchmark
  */
 PRIVATE void benchmark_dijkstra(graph_t* graph, totem_attr_t* attr) {
-  // TODO(abdullah): Implement this
-  printf("Dijkstra benchmark not yet implemented!\n");
-  exit(-1);
+  srand(SEED);
+  for (int s = 0; s < options.repeat; s++) {
+    id_t src = get_random_src(graph);
+    stopwatch_t stopwatch;
+    stopwatch_start(&stopwatch);
+    weight_t* distance = NULL;
+    if (options.platform == PLATFORM_CPU) {
+      dijkstra_cpu(graph, src, &distance);
+    } else {
+      assert(false);
+    }
+    print_timing(graph, stopwatch_elapsed(&stopwatch),
+                 options.platform != PLATFORM_CPU);
+    mem_free(distance);
+  }
 }
 
 /**
@@ -320,6 +343,7 @@ PRIVATE void run_benchmark() {
     attr.par_algo = options.par_algo;
     attr.cpu_par_share = (float)options.alpha / 100.0;
     attr.platform = options.platform;
+    attr.gpu_count = options.gpu_count;
     attr.msg_size = BENCHMARK_MSG_SIZE[options.benchmark];
     CALL_SAFE(totem_init(graph, &attr));
     print_header(graph, true);
@@ -333,8 +357,9 @@ PRIVATE void run_benchmark() {
  * The main entry of the program
  */
 int main(int argc, char** argv) {
+  //  CALL_SAFE(check_cuda_version());
+  //  max_gpu_count = get_gpu_count();
   parse_command_line(argc, argv);
-  CALL_SAFE(check_cuda_version());
   run_benchmark();
   return 0;
 }

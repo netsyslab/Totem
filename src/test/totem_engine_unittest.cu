@@ -112,7 +112,7 @@ void degree_aggr(partition_t* par) {
   }
 }
 
-class EngineTest : public TestWithParam<platform_t> {
+class EngineTest : public TestWithParam<totem_attr_t*> {
  protected:
   graph_t* graph_;
   engine_config_t config_;
@@ -122,21 +122,10 @@ class EngineTest : public TestWithParam<platform_t> {
     CUDA_CHECK_VERSION();
     graph_ = NULL;
     engine_config_t config  = {
-      NULL,
-      degree,
-      degree_scatter,
-      degree_init,
-      degree_finalize,
-      degree_aggr
+      NULL, degree, degree_scatter, degree_init, degree_finalize, degree_aggr
     };
     config_ = config;
-    totem_attr_t attr = {
-      PAR_RANDOM,
-      GetParam(),
-      0.3,
-      sizeof(int) * BITS_PER_BYTE
-    };
-    attr_ = attr;
+    attr_ = *GetParam();
   }
 
   virtual void TearDown() {
@@ -148,13 +137,13 @@ class EngineTest : public TestWithParam<platform_t> {
   void TestGraph(const char* graph_str) {
     graph_initialize(graph_str, false, &graph_);
     EXPECT_FALSE(graph_->directed);
-    engine_init(graph_, &attr_);
-    engine_config(&config_);
+    EXPECT_EQ(SUCCESS, engine_init(graph_, &attr_));
+    EXPECT_EQ(SUCCESS, engine_config(&config_));
     degree_g = (int*)calloc(graph_->vertex_count, sizeof(int));
     if (engine_largest_gpu_partition()) {
       degree_h = (int*)mem_alloc(engine_largest_gpu_partition() * sizeof(int));
     }
-    engine_execute();
+    EXPECT_EQ(SUCCESS, engine_execute());
     engine_finalize();
     if (engine_largest_gpu_partition()) mem_free(degree_h);
     for (id_t v = 0; v < graph_->vertex_count; v++) {
@@ -177,6 +166,30 @@ TEST_P(EngineTest, CompleteGraph) {
   TestGraph(DATA_FOLDER("complete_graph_300_nodes.totem"));
 }
 
+TEST_P(EngineTest, InvalidGPUCount) {
+  graph_initialize(DATA_FOLDER("chain_1000_nodes.totem"), false, &graph_);
+  totem_attr_t attr = {
+    PAR_RANDOM, PLATFORM_HYBRID, get_gpu_count() + 1, 
+    .3, sizeof(int) * BITS_PER_BYTE
+  };
+  EXPECT_EQ(FAILURE, engine_init(graph_, &attr));
+  attr.platform = PLATFORM_GPU;
+  EXPECT_EQ(FAILURE, engine_init(graph_, &attr));
+}
+
+// Values() seems to accept only pointers, hence the possible parameters
+// are defined here, and a pointer to each of them is used.
+totem_attr_t engine_params[] = {
+  {PAR_RANDOM, PLATFORM_CPU, 1, 0, 0},
+  {PAR_RANDOM, PLATFORM_GPU, 1, 0, 0},
+  {PAR_RANDOM, PLATFORM_GPU, get_gpu_count(), 
+   0, sizeof(int) * BITS_PER_BYTE},    // All GPUs
+  {PAR_RANDOM, PLATFORM_HYBRID, 1, .3, // 1 CPU + 1 GPU
+   sizeof(int) * BITS_PER_BYTE},
+  {PAR_RANDOM, PLATFORM_HYBRID, get_gpu_count(), 
+   .3, sizeof(int) * BITS_PER_BYTE}  // 1 CPU + All GPUs
+};
+
 // From Google documentation:
 // In order to run value-parameterized tests, we need to instantiate them,
 // or bind them to a list of values which will be used as test parameters.
@@ -184,11 +197,11 @@ TEST_P(EngineTest, CompleteGraph) {
 // Values() receives a list of parameters and the framework will execute the
 // whole set of tests BFSTest for each element of Values()
 INSTANTIATE_TEST_CASE_P(EngineTestAllPlatforms, EngineTest,
-                        Values(PLATFORM_CPU,       // on the CPU only
-                               PLATFORM_GPU,       // on one GPU only
-                               PLATFORM_MULTI_GPU, // all available GPUs
-                               PLATFORM_HYBRID,    // on CPU and one GPU
-                               PLATFORM_ALL));     // on CPU and all GPUs
+                        Values(&engine_params[0],
+                               &engine_params[1],
+                               &engine_params[2],
+                               &engine_params[3],
+                               &engine_params[4]));
 
 #else
 
