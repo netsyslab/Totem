@@ -15,18 +15,13 @@
 #include "totem_graph.h"
 
 /**
- * Execution platform options. The engine will create a partition per processor.
- * Note that if the system has one GPU only, then ENGINE_PLATFORM_GPU and
- * ENGINE_PLATFORM_MULTI_GPU will be the same, as well as ENGINE_PLATFORM_HYBRID
- * and ENGINE_PLATFORM_ALL.
+ * Execution platform options
  */
 typedef enum {
   PLATFORM_CPU,       // execute on the CPU only
-  PLATFORM_GPU,       // execute on one GPU only
-  PLATFORM_MULTI_GPU, // execute on all available GPUs
-  PLATFORM_HYBRID,    // execute on the CPU and one GPU
-  PLATFORM_ALL,       // execute on all processors (CPU and all GPUs)
-  PLATFORM_MAX        // indicates number of platform options
+  PLATFORM_GPU,       // execute on GPUs only
+  PLATFORM_HYBRID,    // execute on the CPU and the GPUs
+  PLATFORM_MAX        // indicates the number of platform options
 } platform_t;
 
 /**
@@ -45,6 +40,7 @@ typedef enum {
 typedef struct totem_attr_s {
   partition_algorithm_t par_algo;      /**< partitioning algorithm */
   platform_t            platform;      /**< the execution platform */
+  uint32_t              gpu_count;     /**< number of GPUs to use  */
   float                 cpu_par_share; /**< the percentage of edges
                                             assigned to the CPU
                                             partition. Note that the
@@ -62,7 +58,7 @@ typedef struct totem_attr_s {
 } totem_attr_t;
 
 // default attributes
-#define TOTEM_DEFAULT_ATTR {PAR_RANDOM, PLATFORM_ALL, 0.5, \
+#define TOTEM_DEFAULT_ATTR {PAR_RANDOM, PLATFORM_HYBRID, 1, 0.5, \
       (sizeof(int) * BITS_PER_BYTE)}
 
 /**

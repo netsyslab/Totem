@@ -10,8 +10,6 @@
 
 // totem includes
 #include "totem_comdef.h"
-// cuda includes
-#include <cuda_runtime_api.h>
 
 /**
  * This defines the minimum required CUDA architecture version, denoted
@@ -26,6 +24,12 @@
  * @return generic success or failure
  */
 error_t check_cuda_version();
+
+/**
+ * Returns the number of available CUDA-enabled GPUs
+ * @return number of CUDA-enabled GPUs
+ */
+int get_gpu_count();
 
 /**
  * Compares two vertex ids, used by the qsort function

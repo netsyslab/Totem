@@ -14,7 +14,6 @@
  * @return generic success or failure
  */
 error_t check_cuda_version() {
-
   /* check that the device(s) actually support the right CUDA version */
   int num_devices = 0;
   cudaGetDeviceCount(&num_devices);
@@ -35,6 +34,12 @@ error_t check_cuda_version() {
     return FAILURE;
   }
   return SUCCESS;
+}
+
+int get_gpu_count() {
+  int gpu_count = 0;
+  cudaGetDeviceCount(&gpu_count);
+  return gpu_count;
 }
 
 int compare_ids(const void *a, const void *b) {
