@@ -209,7 +209,7 @@ __global__ void bfs_scatter_kernel(grooves_box_table_t inbox, uint32_t* cost,
   id_t vid = inbox.rmt_nbrs[index];
     if (bitmap_is_set(rmt_visited, index) &&
         !bitmap_is_set(*visited, vid)) {
-      assert(bitmap_set_gpu(*visited, vid));
+      bitmap_set_gpu(*visited, vid);
       cost[vid] = level;
     }
 }

@@ -77,7 +77,7 @@ inline void bitmap_reset_gpu(bitmap_t map, size_t len) {
 }
 
 /**
- * Atomically sets a bit to 1 in the bitmap (CPU version)
+ * Atomically sets a bit to 1 in the bitmap
  * @param[in] bitmap the bitmap to be manipulated
  * @param[in] bit    the bit to be set
  * @return true if the bit is set, false if it was already set
@@ -94,7 +94,24 @@ __device__ inline bool bitmap_set_gpu(bitmap_t map, id_t bit) {
 }
 
 /**
- * Checks if a bit is set (CPU version).
+ * Atomically unsets a bit in the bitmap
+ * @param[in] bitmap the bitmap to be manipulated
+ * @param[in] bit    the bit to unset
+ * @return true if the bit is unset, false if it was already unset
+*/
+inline bool bitmap_unset_cpu(bitmap_t map, id_t bit) {
+  bitmap_word_t mask = bitmap_bit_mask(bit);
+  return (__sync_fetch_and_and(&(map[bit / BITMAP_BITS_PER_WORD]), 
+                               ~mask) & mask);
+}
+
+__device__ inline bool bitmap_unset_gpu(bitmap_t map, id_t bit) {
+  bitmap_word_t mask = bitmap_bit_mask(bit);
+  return (atomicAnd(&(map[bit / BITMAP_BITS_PER_WORD]), ~mask) & mask);
+}
+
+/**
+ * Checks if a bit is set
  * @param[in] bitmap the bitmap to be manipulated
  * @param[in] bit    the bit to be checked
  * @return true if the bit is set, false if not
