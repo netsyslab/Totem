@@ -276,7 +276,7 @@ PRIVATE void benchmark_bfs(graph_t* graph, totem_attr_t* attr) {
     stopwatch_start(&stopwatch);
     uint32_t* cost = NULL;
     if (options.platform == PLATFORM_CPU) {
-      bfs_cpu(graph, get_random_src(graph), &cost);
+      bfs_cpu(graph, src, &cost);
     } else {
       CALL_SAFE(bfs_hybrid(src, &cost));
     }
@@ -357,8 +357,8 @@ PRIVATE void run_benchmark() {
  * The main entry of the program
  */
 int main(int argc, char** argv) {
-  //  CALL_SAFE(check_cuda_version());
-  //  max_gpu_count = get_gpu_count();
+  CALL_SAFE(check_cuda_version());
+  max_gpu_count = get_gpu_count();
   parse_command_line(argc, argv);
   run_benchmark();
   return 0;
