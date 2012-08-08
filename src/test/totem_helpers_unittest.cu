@@ -253,7 +253,7 @@ TEST_F(GraphHelper, AtomicOperations) {
     sum_float += buf_f[i];
   }
   float p_sum_float = 0;
-#pragma omp parallel for
+  OMP(omp parallel for)
   for (int i = 0; i < buf_count; i++) {
     __sync_fetch_and_add_float(&p_sum_float, buf_f[i]);
   }
@@ -265,7 +265,7 @@ TEST_F(GraphHelper, AtomicOperations) {
     sum_double += buf_d[i];
   }
   double p_sum_double = 0;
-#pragma omp parallel for
+  OMP(omp parallel for)
   for (int i = 0; i < buf_count; i++) {
     __sync_fetch_and_add_double(&p_sum_double, buf_d[i]);
   }
@@ -278,7 +278,7 @@ TEST_F(GraphHelper, AtomicOperations) {
     min_int = min_int > buf[i] ? buf[i] : min_int;
   }
   int p_min_int = 0;
-#pragma omp parallel for
+  OMP(omp parallel for)
   for (int i = 0; i < buf_count; i++) {
     __sync_fetch_and_min(&p_min_int, buf[i]);
   }
@@ -290,7 +290,7 @@ TEST_F(GraphHelper, AtomicOperations) {
     min_float = min_float > buf_f[i] ? buf_f[i] : min_float;
   }
   float p_min_float = 0;
-#pragma omp parallel for
+  OMP(omp parallel for)
   for (int i = 0; i < buf_count; i++) {
     __sync_fetch_and_min_float(&p_min_float, buf_f[i]);
   }
@@ -302,7 +302,7 @@ TEST_F(GraphHelper, AtomicOperations) {
     min_double = min_double > buf_d[i] ? buf_d[i] : min_double;
   }
   double p_min_double = 0;
-#pragma omp parallel for
+  OMP(omp parallel for)
   for (int i = 0; i < buf_count; i++) {
     __sync_fetch_and_min_double(&p_min_double, buf_d[i]);
   }
@@ -311,128 +311,4 @@ TEST_F(GraphHelper, AtomicOperations) {
   free(buf);
   free(buf_f);
   free(buf_d);
-}
-
-PRIVATE void bits_set_init(id_t* bits_set, id_t bits_set_count,
-                           id_t bitmap_len) {
-  // The first two are initialized statically to the first and last bits, the 
-  // rest is initialized randomly.
-  bits_set[0] = 0;
-  bits_set[1] = bits_set_count - 1;
-  srand (time(NULL));
-  for (id_t i = 2; i < bits_set_count; i++) {
-    bits_set[i] = rand() % bitmap_len;
-  }
-}
-
-PRIVATE void bits_get_not_set(id_t* bits_set, id_t bits_set_count, 
-                              id_t bitmap_len, id_t* bits_not_set,
-                              id_t* bits_not_set_count) {
-  *bits_not_set_count = 0;
-  for (id_t i = 0; i < bitmap_len; i++) {
-    // Search for the bit in the bits_set array
-    id_t j = 0;
-    for (; j < bits_set_count; j++) {
-      if (bits_set[j] == i) {
-        break;
-      }
-    }
-    if (j == bits_set_count) {
-      // This bit is not set, add it to the bits_not_set array
-      bits_not_set[(*bits_not_set_count)++] = i;
-    }
-  }
-}
-
-TEST_F(GraphHelper, Bitmap) {
-  // Initialize the bitmap
-  const id_t bitmap_len = 10006;
-  bitmap_t bitmap = bitmap_init_cpu(bitmap_len);
-  
-  // Initialize the bits to be set.
-  const id_t bits_set_count = bitmap_len/2;
-  id_t bits_set[bits_set_count];
-  bits_set_init(bits_set, bits_set_count, bitmap_len);
-
-  // Get the bits that are not set
-  id_t bits_not_set[bitmap_len];
-  id_t bits_not_set_count = 0;
-  bits_get_not_set(bits_set, bits_set_count, bitmap_len, bits_not_set, 
-                   &bits_not_set_count);
-
-  // First set the bits in the bits_set array
-  OMP(omp parallel for)
-  for (id_t i = 0; i < bits_set_count; i++) {
-    bitmap_set_cpu(bitmap, bits_set[i]);
-    // Try to set again
-    EXPECT_FALSE(bitmap_set_cpu(bitmap, bits_set[i]));
-  }
-
-  // Second check if the bits are set correctly
-  for (id_t i = 0; i < bits_set_count; i++) {
-    EXPECT_TRUE(bitmap_is_set(bitmap, bits_set[i]));
-  }
-  for (id_t i = 0; i < bits_not_set_count; i++) {
-    EXPECT_FALSE(bitmap_is_set(bitmap, bits_not_set[i]));
-  }
-
-  bitmap_finalize_cpu(bitmap);
-}
-
-__global__ void bitmap_set_kernel(id_t* bitmap, id_t* bits_set,
-                                             id_t bits_set_count) {
-  if (THREAD_GLOBAL_INDEX < bits_set_count) {
-    bitmap_set_gpu(bitmap, bits_set[THREAD_GLOBAL_INDEX]);
-    KERNEL_EXPECT_TRUE(!bitmap_set_gpu(bitmap, bits_set[THREAD_GLOBAL_INDEX]));
-  }
-}
-
-__global__ void bitmap_verify_kernel(id_t* bitmap, id_t* bits_set, 
-                                     id_t bits_set_count, id_t* bits_not_set, 
-                                     id_t bits_not_set_count) {
-  id_t index = THREAD_GLOBAL_INDEX;
-  if (index < bits_set_count) {
-    KERNEL_EXPECT_TRUE(bitmap_is_set(bitmap, bits_set[index]));
-  }
-  if (index < bits_not_set_count) {
-    KERNEL_EXPECT_TRUE(!bitmap_is_set(bitmap, bits_not_set[index]));
-  }
-}
-
-TEST_F(GraphHelper, BitmapGPU) {
-  // Initialize the bitmap
-  const id_t bitmap_len = 10006;
-  bitmap_t bitmap = bitmap_init_gpu(bitmap_len);
-  
-  // Initialize the bits to be set. The first two are initialized statically to
-  // the first and last bits, the rest is initialized randomly.
-  const id_t bits_set_count = bitmap_len/2;
-  id_t bits_set[bits_set_count];
-  bits_set_init(bits_set, bits_set_count, bitmap_len);
-  id_t* bits_set_d = NULL;
-  CALL_CU_SAFE(cudaMalloc(&bits_set_d, bits_set_count * sizeof(id_t)));
-  CALL_CU_SAFE(cudaMemcpy(bits_set_d, bits_set, bits_set_count * sizeof(id_t),
-                          cudaMemcpyDefault));
-  // Set the bits twice
-  dim3 blocks, threads;
-  KERNEL_CONFIGURE(bitmap_len, blocks, threads);
-  bitmap_set_kernel<<<blocks, threads>>>(bitmap, bits_set_d, bits_set_count);
-
-  // Get the bits that are not set
-  id_t bits_not_set[bitmap_len];
-  id_t bits_not_set_count = 0;
-  bits_get_not_set(bits_set, bits_set_count, bitmap_len, bits_not_set, 
-                   &bits_not_set_count);
-  id_t* bits_not_set_d = NULL;
-  CALL_CU_SAFE(cudaMalloc(&bits_not_set_d, bits_not_set_count * sizeof(id_t)));
-  CALL_CU_SAFE(cudaMemcpy(bits_not_set_d, bits_not_set,
-                          bits_not_set_count * sizeof(id_t),
-                          cudaMemcpyDefault));
-  // Check if the bits are set correctly
-  bitmap_verify_kernel<<<blocks, threads>>>(bitmap, bits_set_d, bits_set_count,
-                                            bits_not_set_d, bits_not_set_count);
-
-  bitmap_finalize_gpu(bitmap);
-  cudaFree(bits_set_d);
-  cudaFree(bits_not_set_d);
 }
