@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# Invokes the R script that computes the node degree distribution and the alpha 
+# Invokes the R script that computes the node degree distribution and the alpha
 # coefficient. 
 #
 # Created on: 2011-04-02
