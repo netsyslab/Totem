@@ -198,7 +198,7 @@ error_t engine_init(graph_t* graph, totem_attr_t* attr) {
   // partition the graph
   stopwatch_t stopwatch_par;
   stopwatch_start(&stopwatch_par);
-  id_t* par_labels;
+  vid_t* par_labels;
   assert(context.attr.par_algo < PAR_MAX);
   CALL_SAFE(PARTITION_FUNC[context.attr.par_algo](context.graph, pcount, 
                                                   par_share, &par_labels));

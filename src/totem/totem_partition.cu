@@ -16,8 +16,8 @@
  * on sorting the vertices by edge degree.
  */
 typedef struct vdegree_s {
-  id_t     id;     // vertex id
-  uint32_t degree; // vertex degree
+  vid_t id;     // vertex id
+  vid_t degree; // vertex degree
 } vdegree_t;
 
 
@@ -31,14 +31,14 @@ error_t partition_modularity(graph_t* graph, partition_set_t* partition_set,
   // The final modularity value
   double Q = 0.0;
   for (int p = 0; p < partition_set->partition_count; p++) {
-    uint32_t local_edges = 0;
-    uint32_t remote_edges = 0;
+    eid_t local_edges = 0;
+    eid_t remote_edges = 0;
     partition_t* partition = &partition_set->partitions[p];
     graph_t* subgraph = &partition->subgraph;
-    for (id_t v = 0; v < subgraph->vertex_count; v++) {
-      for (id_t e = subgraph->vertices[v];
+    for (vid_t v = 0; v < subgraph->vertex_count; v++) {
+      for (eid_t e = subgraph->vertices[v];
            e < subgraph->vertices[v + 1]; e++) {
-        if ((uint64_t)p == GET_PARTITION_ID(subgraph->edges[e])) {
+        if (p == GET_PARTITION_ID(subgraph->edges[e])) {
           local_edges++;
         } else {
           remote_edges++;
@@ -55,8 +55,8 @@ error_t partition_modularity(graph_t* graph, partition_set_t* partition_set,
 }
 
 PRIVATE error_t partition_check(graph_t* graph, int partition_count, 
-                                double* partition_fraction,
-                                id_t** partition_labels) {
+                                double* partition_fraction, 
+                                vid_t** partition_labels) {
   *partition_labels = NULL;
   if (graph == NULL || (partition_count <= 0) || (graph->vertex_count == 0)) {
     return FAILURE;
@@ -92,9 +92,9 @@ PRIVATE error_t partition_check(graph_t* graph, int partition_count,
 }
 
 PRIVATE error_t partition_random(graph_t* graph, int partition_count,
-                                 id_t** partition_labels) {
+                                 vid_t** partition_labels) {
   // Allocate the partition vector
-  id_t* partitions = (id_t*)malloc((graph->vertex_count) * sizeof(id_t));
+  vid_t* partitions = (vid_t*)malloc((graph->vertex_count) * sizeof(vid_t));
 
   // Initialize the random number generator
   // TODO(abdullah): pass the seed as an argument to control the randomness
@@ -102,7 +102,7 @@ PRIVATE error_t partition_random(graph_t* graph, int partition_count,
   //                 performance or the characteristics of the partitions.
   srand(time(NULL));
 
-  for (uint64_t vertex_id = 0; vertex_id < graph->vertex_count; vertex_id++) {
+  for (vid_t vertex_id = 0; vertex_id < graph->vertex_count; vertex_id++) {
     // Assign each vertex to a random partition within the range
     // (0, PARTITION_COUNT - 1)
     partitions[vertex_id] = rand() % partition_count;
@@ -112,7 +112,7 @@ PRIVATE error_t partition_random(graph_t* graph, int partition_count,
 }
 
 error_t partition_random(graph_t* graph, int partition_count,
-                         double* partition_fraction, id_t** partition_labels) {
+                         double* partition_fraction, vid_t** partition_labels) {
   // Check pre-conditions
   if (partition_check(graph, partition_count, partition_fraction,
                       partition_labels) == FAILURE) {
@@ -125,16 +125,16 @@ error_t partition_random(graph_t* graph, int partition_count,
   }
 
   // Allocate the partition vector
-  id_t* partitions = (id_t*)malloc(graph->vertex_count * sizeof(id_t));
+  vid_t* partitions = (vid_t*)malloc(graph->vertex_count * sizeof(vid_t));
   assert(partitions != NULL);
 
   // Initialize the random number generator
   srand(time(NULL));
 
   // Allocate all the partition ids to the id vector
-  id_t v = 0;
+  vid_t v = 0;
   for (int pid = 0; pid < partition_count; pid++) {
-    uint64_t end = (pid == partition_count - 1) ? graph->vertex_count :
+    vid_t end = (pid == partition_count - 1) ? graph->vertex_count :
       v + ((double)graph->vertex_count * partition_fraction[pid]);
     for (; v < end; v++) {
       partitions[v] = pid;
@@ -143,9 +143,9 @@ error_t partition_random(graph_t* graph, int partition_count,
 
   /* Randomize the vector to achieve a random distribution. This is using the
    * Fisher-Yates "Random permutation" algorithm */
-  for (uint64_t i = graph->vertex_count - 1; i > 0; i--) {
-    uint64_t j = rand() % (i + 1);
-    id_t temp = partitions[i];
+  for (vid_t i = graph->vertex_count - 1; i > 0; i--) {
+    vid_t j = rand() % (i + 1);
+    vid_t temp = partitions[i];
     partitions[i] = partitions[j];
     partitions[j] = temp;
   }
@@ -173,7 +173,7 @@ PRIVATE int compare_degrees_dsc(const void *a, const void *b) {
 PRIVATE 
 error_t partition_by_sorted_degree(graph_t* graph, int partition_count, 
                                    bool asc, double* partition_fraction, 
-                                   id_t** partition_labels) {
+                                   vid_t** partition_labels) {
   // Check pre-conditions
   if (partition_check(graph, partition_count, partition_fraction,
                       partition_labels) == FAILURE) {
@@ -192,7 +192,7 @@ error_t partition_by_sorted_degree(graph_t* graph, int partition_count,
   // Prepare the degree-sorted list of vertices 
   vdegree_t* vd = (vdegree_t*)calloc(graph->vertex_count, sizeof(vdegree_t));
   assert(vd);
-  for (id_t v = 0; v < graph->vertex_count; v++) {
+  for (vid_t v = 0; v < graph->vertex_count; v++) {
     vd[v].id = v;
     vd[v].degree = graph->vertices[v + 1] - graph->vertices[v];
   }
@@ -203,16 +203,17 @@ error_t partition_by_sorted_degree(graph_t* graph, int partition_count,
   }
 
   // Allocate the labels array
-  *partition_labels = (id_t*)calloc(graph->vertex_count, sizeof(id_t));
+  *partition_labels = (vid_t*)calloc(graph->vertex_count, sizeof(vid_t));
   assert(*partition_labels);
 
   // Assign vertices to partitions. Considering the sum of edges and vertices as
   // the normalizing factor allows to create a partition with space complexity 
   // proportional to the requested fraction. This is important when creating 
   // partitions with few edges but many vertices (e.g., a partition dominated by
-  // low-degree vertices).
-  double total_elements = graph->vertex_count + graph->edge_count;
-  id_t index = 0;
+  // low-degree vertices). 
+  double total_elements = (double)graph->vertex_count + 
+    (double)graph->edge_count;
+  vid_t index = 0;
   for (int pid = 0; pid < partition_count - 1; pid++) {
     double assigned = 0;
     while ((assigned / total_elements < partition_fraction[pid]) &&
@@ -237,14 +238,14 @@ error_t partition_by_sorted_degree(graph_t* graph, int partition_count,
 
 error_t partition_by_asc_sorted_degree(graph_t* graph, int partition_count,
                                        double* partition_fraction, 
-                                       id_t** partition_labels) {
+                                       vid_t** partition_labels) {
   return partition_by_sorted_degree(graph, partition_count, true, 
                                     partition_fraction, partition_labels);
 }
 
 error_t partition_by_dsc_sorted_degree(graph_t* graph, int partition_count,
                                        double* partition_fraction, 
-                                       id_t** partition_labels) {
+                                       vid_t** partition_labels) {
   return partition_by_sorted_degree(graph, partition_count, false, 
                                     partition_fraction, partition_labels);
 }
@@ -256,7 +257,7 @@ PRIVATE error_t init_allocate_struct_space(graph_t* graph, int pcount,
   assert(*pset);
   (*pset)->partitions = (partition_t*)calloc(pcount, sizeof(partition_t));
   assert((*pset)->partitions);
-  (*pset)->id_in_partition = (id_t*)calloc(graph->vertex_count, sizeof(id_t));
+  (*pset)->id_in_partition = (vid_t*)calloc(graph->vertex_count, sizeof(vid_t));
   assert((*pset)->id_in_partition);
   (*pset)->graph = graph;
   (*pset)->partition_count = pcount;
@@ -265,12 +266,12 @@ PRIVATE error_t init_allocate_struct_space(graph_t* graph, int pcount,
   return SUCCESS;
 }
 
-PRIVATE void init_compute_partitions_sizes(partition_set_t* pset,
-                                           id_t* plabels) {
+PRIVATE
+void init_compute_partitions_sizes(partition_set_t* pset, vid_t* plabels) {
   graph_t* graph = pset->graph;
   OMP(omp parallel for)
-  for (id_t vid = 0; vid < graph->vertex_count; vid++) {
-    id_t nbr_count = graph->vertices[vid + 1] - graph->vertices[vid];
+  for (vid_t vid = 0; vid < graph->vertex_count; vid++) {
+    vid_t nbr_count = graph->vertices[vid + 1] - graph->vertices[vid];
     int pid = plabels[vid];
     partition_t* partition = &(pset->partitions[pid]);
     __sync_fetch_and_add(&(partition->subgraph.vertex_count), 1);
@@ -284,11 +285,11 @@ PRIVATE void init_allocate_partitions_space(partition_set_t* pset) {
     graph_t* subgraph = &partition->subgraph;
     if (subgraph->vertex_count > 0) {
       subgraph->vertices =
-        (id_t*)malloc(sizeof(id_t) * (subgraph->vertex_count + 1));
+        (eid_t*)malloc(sizeof(eid_t) * (subgraph->vertex_count + 1));
       assert(subgraph->vertices);
-      partition->map = (id_t*)calloc(subgraph->vertex_count, sizeof(id_t));
+      partition->map = (vid_t*)calloc(subgraph->vertex_count, sizeof(vid_t));
       if (subgraph->edge_count > 0) {
-        subgraph->edges = (id_t*)malloc(sizeof(id_t) * subgraph->edge_count);
+        subgraph->edges = (vid_t*)malloc(sizeof(vid_t) * subgraph->edge_count);
         assert(subgraph->edges);
         if (pset->graph->weighted) {
           subgraph->weights = (weight_t*)malloc(sizeof(weight_t) *
@@ -300,13 +301,13 @@ PRIVATE void init_allocate_partitions_space(partition_set_t* pset) {
   }
 }
 
-PRIVATE void init_build_map(partition_set_t* pset, id_t* plabels) {
+PRIVATE void init_build_map(partition_set_t* pset, vid_t* plabels) {
   // Reset the vertex and edge count, will be set again while building the map
   for (int pid = 0; pid < pset->partition_count; pid++) {
     pset->partitions[pid].subgraph.vertex_count = 0;
   }
-  for (id_t vid = 0; vid < pset->graph->vertex_count; vid++) {
-    id_t pid = plabels[vid];
+  for (vid_t vid = 0; vid < pset->graph->vertex_count; vid++) {
+    vid_t pid = plabels[vid];
     graph_t* subgraph = &pset->partitions[pid].subgraph;
      // forward map
     pset->id_in_partition[vid] = SET_PARTITION_ID(subgraph->vertex_count, pid);
@@ -315,7 +316,7 @@ PRIVATE void init_build_map(partition_set_t* pset, id_t* plabels) {
   }
 }
 
-PRIVATE void init_build_partitions(partition_set_t* pset, id_t* plabels,
+PRIVATE void init_build_partitions(partition_set_t* pset, vid_t* plabels,
                                    processor_t* pproc) {
   // build the map. The map maps the old vertex id to its new id in the
   // partition. This is necessary because the vertices assigned to a
@@ -334,12 +335,12 @@ PRIVATE void init_build_partitions(partition_set_t* pset, id_t* plabels,
   // Construct the partitions vertex, edge and weight lists
   {
   graph_t* graph = pset->graph;
-  for (id_t vid = 0; vid < graph->vertex_count; vid++) {
+  for (vid_t vid = 0; vid < graph->vertex_count; vid++) {
     partition_t* partition = &pset->partitions[plabels[vid]];
     graph_t* subgraph = &partition->subgraph;
     subgraph->vertices[subgraph->vertex_count] =
       subgraph->edge_count;
-    for (id_t i = graph->vertices[vid]; i < graph->vertices[vid + 1]; i++) {
+    for (eid_t i = graph->vertices[vid]; i < graph->vertices[vid + 1]; i++) {
       subgraph->edges[subgraph->edge_count] =
         pset->id_in_partition[graph->edges[i]];
       if (graph->weighted) {
@@ -360,10 +361,10 @@ PRIVATE void init_sort_nbrs(partition_set_t* pset) {
   for (uint32_t pid = 0; pid < pcount; pid++) {
     graph_t* subgraph = &pset->partitions[pid].subgraph;
     OMP(omp parallel for)
-    for (id_t v = 0; v < subgraph->vertex_count; v++) {
-      id_t* nbrs = &subgraph->edges[subgraph->vertices[v]];
+    for (vid_t v = 0; v < subgraph->vertex_count; v++) {
+      vid_t* nbrs = &subgraph->edges[subgraph->vertices[v]];
       qsort(nbrs, subgraph->vertices[v+1] - subgraph->vertices[v],
-            sizeof(id_t), compare_ids);
+            sizeof(vid_t), compare_ids);
     }
   }
 }
@@ -389,7 +390,7 @@ PRIVATE void init_build_partitions_gpu(partition_set_t* pset) {
   }
 }
 
-error_t partition_set_initialize(graph_t* graph, id_t* plabels,
+error_t partition_set_initialize(graph_t* graph, vid_t* plabels,
                                  processor_t* pproc, int pcount,
                                  size_t msg_size, partition_set_t** pset) {
   assert(graph && plabels && pproc);

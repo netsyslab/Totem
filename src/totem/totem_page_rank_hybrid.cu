@@ -83,12 +83,8 @@ error_t check_special_cases(float** rank, bool* finished) {
  * a single virtual warp.
  */
 typedef struct {
+  eid_t vertices[VWARP_BATCH_SIZE + 2];
   float rank[VWARP_BATCH_SIZE];
-  id_t vertices[VWARP_BATCH_SIZE + 1];
-  // the following ensures 64-bit alignment, it assumes that the
-  // cost and vertices arrays are of 32-bit elements.
-  // TODO(abdullah) a portable way to do this (what if id_t is 64-bit?)
-  int pad;
 } vwarp_mem_t;
 
 /**
@@ -98,15 +94,15 @@ typedef struct {
  */
 __global__
 void vwarp_sum_neighbors_rank_kernel(partition_t par, float* rank, 
-                                     float* rank_s, int thread_count) {
+                                     float* rank_s, vid_t thread_count) {
   if (THREAD_GLOBAL_INDEX >= thread_count) return;
-  int warp_offset = THREAD_GLOBAL_INDEX % VWARP_WARP_SIZE;
-  int warp_id     = THREAD_GLOBAL_INDEX / VWARP_WARP_SIZE;
+  vid_t warp_offset = THREAD_GLOBAL_INDEX % VWARP_WARP_SIZE;
+  vid_t warp_id     = THREAD_GLOBAL_INDEX / VWARP_WARP_SIZE;
 
   // copy my work to local space
   __shared__ vwarp_mem_t smem[(MAX_THREADS_PER_BLOCK / VWARP_WARP_SIZE)];
   vwarp_mem_t* my_space = smem + (THREAD_GRID_INDEX / VWARP_WARP_SIZE);
-  int v_ = warp_id * VWARP_BATCH_SIZE;
+  vid_t v_ = warp_id * VWARP_BATCH_SIZE;
   int my_batch_size = VWARP_BATCH_SIZE;
   if (v_ + VWARP_BATCH_SIZE > par.subgraph.vertex_count) {
     my_batch_size = par.subgraph.vertex_count - v_;
@@ -116,11 +112,11 @@ void vwarp_sum_neighbors_rank_kernel(partition_t par, float* rank,
                my_batch_size + 1, warp_offset);
 
   // iterate over my work
-  for(uint32_t v = 0; v < my_batch_size; v++) {
-    int nbr_count = my_space->vertices[v + 1] - my_space->vertices[v];
-    id_t* nbrs = &(par.subgraph.edges[my_space->vertices[v]]);
-    for(int i = warp_offset; i < nbr_count; i += VWARP_WARP_SIZE) {
-      float* dst; const id_t nbr = nbrs[i];
+  for(vid_t v = 0; v < my_batch_size; v++) {
+    vid_t nbr_count = my_space->vertices[v + 1] - my_space->vertices[v];
+    vid_t* nbrs = &(par.subgraph.edges[my_space->vertices[v]]);
+    for(vid_t i = warp_offset; i < nbr_count; i += VWARP_WARP_SIZE) {
+      float* dst; const vid_t nbr = nbrs[i];
       ENGINE_FETCH_DST(par.id, nbr, par.outbox_d, rank_s, dst, float);
       atomicAdd(dst, my_space->rank[v]);
     }
@@ -128,9 +124,9 @@ void vwarp_sum_neighbors_rank_kernel(partition_t par, float* rank,
 }
 
 __global__
-void compute_normalized_rank_kernel(partition_t par, uint64_t vc,
-                                    float* rank, float* rank_s) {
-  id_t v = THREAD_GLOBAL_INDEX;
+void compute_normalized_rank_kernel(partition_t par, vid_t vc, float* rank, 
+                                    float* rank_s) {
+  vid_t v = THREAD_GLOBAL_INDEX;
   if (v >= par.subgraph.vertex_count) return;
   float r = ((1 - DAMPING_FACTOR) / vc) + (DAMPING_FACTOR * rank_s[v]);
   rank[v] = r / (par.subgraph.vertices[v + 1] - par.subgraph.vertices[v]);
@@ -138,9 +134,9 @@ void compute_normalized_rank_kernel(partition_t par, uint64_t vc,
 }
 
 __global__
-void compute_unnormalized_rank_kernel(partition_t par, uint64_t vc,
-                                      float* rank, float* rank_s) {
-  id_t v = THREAD_GLOBAL_INDEX;
+void compute_unnormalized_rank_kernel(partition_t par, vid_t vc, float* rank,
+                                      float* rank_s) {
+  vid_t v = THREAD_GLOBAL_INDEX;
   if (v >= par.subgraph.vertex_count) return;
   rank[v] = ((1 - DAMPING_FACTOR) / vc) + (DAMPING_FACTOR * rank_s[v]);
 }
@@ -171,14 +167,14 @@ PRIVATE void page_rank_gpu(partition_t* par) {
 PRIVATE void page_rank_cpu(partition_t* par) {
   page_rank_state_t* ps = (page_rank_state_t*)par->algo_state;
   graph_t* subgraph = &par->subgraph;
-  uint32_t vcount = engine_vertex_count();
+  vid_t vcount = engine_vertex_count();
   int round = engine_superstep();
 
   if (round > 1) {
     // compute my rank
     OMP(omp parallel for)
-    for(id_t v = 0; v < subgraph->vertex_count; v++) {
-      uint32_t nbrs = subgraph->vertices[v + 1] - subgraph->vertices[v];
+    for(vid_t v = 0; v < subgraph->vertex_count; v++) {
+      vid_t nbrs = subgraph->vertices[v + 1] - subgraph->vertices[v];
       float rank = ((1 - DAMPING_FACTOR) / vcount) +
         (DAMPING_FACTOR * ps->rank_s[v]);
       ps->rank[v] = (round == (PAGE_RANK_ROUNDS)) ? rank : rank / nbrs;
@@ -189,10 +185,10 @@ PRIVATE void page_rank_cpu(partition_t* par) {
   // communicate the ranks
   engine_set_outbox(par->id, 0);
   OMP(omp parallel for)
-  for(id_t v = 0; v < subgraph->vertex_count; v++) {
+  for(vid_t v = 0; v < subgraph->vertex_count; v++) {
     float my_rank = ps->rank[v];
-    for (id_t i = subgraph->vertices[v]; i < subgraph->vertices[v + 1]; i++) {
-      float* dst; id_t nbr = subgraph->edges[i];
+    for (eid_t i = subgraph->vertices[v]; i < subgraph->vertices[v + 1]; i++) {
+      float* dst; vid_t nbr = subgraph->edges[i];
       ENGINE_FETCH_DST(par->id, nbr, par->outbox, ps->rank_s, dst, float);
       __sync_fetch_and_add_float(dst, my_rank);
     }
@@ -231,14 +227,14 @@ PRIVATE void page_rank_aggr(partition_t* partition) {
     src_rank = ps->rank;
   }
   // aggregate the results
-  for (id_t v = 0; v < subgraph->vertex_count; v++) {
+  for (vid_t v = 0; v < subgraph->vertex_count; v++) {
     rank_g[partition->map[v]] = src_rank[v];
   }
 }
 
 PRIVATE void page_rank_init_gpu(partition_t* par, page_rank_state_t* ps,
                                 float init_value) {
-  uint64_t vcount = par->subgraph.vertex_count;
+  vid_t vcount = par->subgraph.vertex_count;
   CALL_CU_SAFE(cudaMalloc((void**)&(ps->rank), vcount * sizeof(float)));
   CALL_CU_SAFE(cudaMalloc((void**)&(ps->rank_s), vcount * sizeof(float)));
   KERNEL_CONFIGURE(VWARP_WARP_SIZE * VWARP_BATCH_COUNT(vcount),
@@ -255,12 +251,12 @@ PRIVATE void page_rank_init_gpu(partition_t* par, page_rank_state_t* ps,
 
 PRIVATE void page_rank_init_cpu(partition_t* par, page_rank_state_t* ps,
                                 float init_value) {
-  uint64_t vcount = par->subgraph.vertex_count;
+  vid_t vcount = par->subgraph.vertex_count;
   assert(par->processor.type == PROCESSOR_CPU);
   ps->rank = (float*)calloc(vcount, sizeof(float));
   ps->rank_s = (float*)calloc(vcount, sizeof(float));
   assert(ps->rank && ps->rank_s);
-  for (id_t v = 0; v < vcount; v++) ps->rank[v] = init_value;
+  for (vid_t v = 0; v < vcount; v++) ps->rank[v] = init_value;
 }
 
 PRIVATE void page_rank_init(partition_t* par) {

@@ -46,19 +46,19 @@ uint32_t totem_partition_count() {
   return engine_partition_count();
 }
 
-uint64_t totem_par_vertex_count(uint32_t pid) {
+vid_t totem_par_vertex_count(uint32_t pid) {
   return context.vertex_count[pid];
 }
 
-uint64_t totem_par_edge_count(uint32_t pid) {
+eid_t totem_par_edge_count(uint32_t pid) {
   return context.edge_count[pid];
 }
 
-uint64_t totem_par_rmt_vertex_count(uint32_t pid) {
+vid_t totem_par_rmt_vertex_count(uint32_t pid) {
   return context.rmt_vertex_count[pid];
 }
 
-uint64_t totem_par_rmt_edge_count(uint32_t pid) {
+eid_t totem_par_rmt_edge_count(uint32_t pid) {
   return context.rmt_edge_count[pid];
 }
 

@@ -33,8 +33,8 @@ typedef struct engine_context_s {
   engine_config_t  config;
   totem_attr_t     attr;
   bool*            finished;
-  uint64_t         largest_gpu_par;
-  int              partition_count;
+  vid_t            largest_gpu_par;
+  uint32_t         partition_count;
   double           time_init;
   double           time_par;
   double           time_exec;
@@ -43,10 +43,10 @@ typedef struct engine_context_s {
   double           time_comp;
   double           time_gpu_comp;
   double           time_aggr;
-  uint64_t         vertex_count[MAX_PARTITION_COUNT];
-  uint64_t         edge_count[MAX_PARTITION_COUNT];
-  uint64_t         rmt_vertex_count[MAX_PARTITION_COUNT];
-  uint64_t         rmt_edge_count[MAX_PARTITION_COUNT];
+  vid_t            vertex_count[MAX_PARTITION_COUNT];
+  eid_t            edge_count[MAX_PARTITION_COUNT];
+  vid_t            rmt_vertex_count[MAX_PARTITION_COUNT];
+  eid_t            rmt_edge_count[MAX_PARTITION_COUNT];
 } engine_context_t;
 
 /**
@@ -73,21 +73,21 @@ extern engine_context_t context;
  */
 #define _REDUCE_ENTRY_ADD(_box, _index, _dst)         \
   do {                                                \
-    id_t vid; T value;                                \
+    vid_t vid; T value;                                \
     _FETCH_ENTRY((_box), (_index), vid, value);       \
     (_dst)[vid] += value;                             \
   } while(0)
 
 #define _REDUCE_ENTRY_MIN(_box, _index, _dst)                 \
   do {                                                        \
-    id_t vid; T value;                                        \
+    vid_t vid; T value;                                        \
     _FETCH_ENTRY((_box), _index, vid, value);                 \
     (_dst)[vid] = value < (_dst)[vid] ? value : (_dst)[vid];  \
   } while(0)
 
 #define _REDUCE_ENTRY_MAX(_box, _index, _dst)                   \
   do {                                                          \
-    id_t vid; T value;                                          \
+    vid_t vid; T value;                                          \
     _FETCH_ENTRY((_box), _index, vid, value);                   \
     (_dst)[vid] = value > (_dst)[vid] ? value : (_dst)[vid];    \
   } while(0)
@@ -133,7 +133,7 @@ void engine_scatter_inbox_add(uint32_t pid, T* dst) {
     } else {
       assert(par->processor.type == PROCESSOR_CPU);
       OMP(omp parallel for)
-      for (int index = 0; index < inbox->count; index++) {
+      for (uint32_t index = 0; index < inbox->count; index++) {
         _REDUCE_ENTRY_ADD(inbox, index, dst);
       }
     }
@@ -156,7 +156,7 @@ void engine_scatter_inbox_min(uint32_t pid, T* dst) {
     } else {
       assert(par->processor.type == PROCESSOR_CPU);
       OMP(omp parallel for)
-      for (int index = 0; index < inbox->count; index++) {
+      for (uint32_t index = 0; index < inbox->count; index++) {
         _REDUCE_ENTRY_MIN(inbox, index, dst);
       }
     }
@@ -179,7 +179,7 @@ void engine_scatter_inbox_max(uint32_t pid, T* dst) {
     } else {
       assert(par->processor.type == PROCESSOR_CPU);
       OMP(omp parallel for)
-      for (int index = 0; index < inbox->count; index++) {
+      for (uint32_t index = 0; index < inbox->count; index++) {
         _REDUCE_ENTRY_MAX(inbox, index, dst);
       }
     }
@@ -204,7 +204,7 @@ void engine_set_outbox(uint32_t pid, T value) {
     } else {
       assert(par->processor.type == PROCESSOR_CPU);
       OMP(omp parallel for)
-      for (int i = 0; i < outbox->count; i++) values[i] = value;
+      for (uint32_t i = 0; i < outbox->count; i++) values[i] = value;
     }
   }
 }
@@ -218,17 +218,17 @@ inline uint32_t engine_superstep() {
   return context.superstep;
 }
 
-inline uint32_t engine_vertex_count() {
+inline vid_t engine_vertex_count() {
   assert(context.pset);
   return context.pset->graph->vertex_count;
 }
 
-inline uint32_t engine_edge_count() {
+inline eid_t engine_edge_count() {
   assert(context.pset);
   return context.pset->graph->edge_count;
 }
 
-inline uint64_t engine_largest_gpu_partition() {
+inline vid_t engine_largest_gpu_partition() {
   return context.largest_gpu_par;
 }
 
@@ -237,11 +237,11 @@ inline void engine_report_finished(uint32_t pid) {
   context.finished[pid] = true;
 }
 
-inline id_t* engine_vertex_id_in_partition() {
+inline vid_t* engine_vertex_id_in_partition() {
   return context.pset->id_in_partition;
 }
 
-inline id_t engine_vertex_id_in_partition(id_t v) {
+inline vid_t engine_vertex_id_in_partition(vid_t v) {
   return context.pset->id_in_partition[v];
 }
 

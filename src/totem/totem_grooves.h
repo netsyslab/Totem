@@ -28,9 +28,9 @@ typedef struct partition_set_s partition_set_t;
  * atomic update of the value by two different threads.
  */
 typedef struct grooves_box_table_s {
-  id_t*         rmt_nbrs; /**< a table of the remote neighbors' ids. */
-  void*         values;   /**< the actual state of each vertex */
-  uint32_t      count;    /**< number of neighbors */
+  vid_t* rmt_nbrs; /**< a table of the remote neighbors' ids. */
+  void*  values;   /**< the actual state of each vertex */
+  vid_t  count;    /**< number of neighbors */
 } grooves_box_table_t;
 
 /**

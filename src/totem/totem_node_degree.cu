@@ -6,9 +6,6 @@
  *      Author: Greg Redekop
  */
 
-// system includes
-#include <cuda.h>
-
 // totem includes
 #include "totem_comdef.h"
 #include "totem_comkernel.cuh"
@@ -20,7 +17,7 @@
  * initalizes state on the GPU.
  */
 PRIVATE
-error_t initialize_gpu(const graph_t* graph, id_t** node_degree_d,
+error_t initialize_gpu(const graph_t* graph, vid_t** node_degree_d,
                        graph_t** graph_d) {
   dim3 blocks;
   dim3 threads_per_block;
@@ -28,10 +25,10 @@ error_t initialize_gpu(const graph_t* graph, id_t** node_degree_d,
   // Allocate space on GPU
   CHK_SUCCESS(graph_initialize_device(graph, graph_d), err);
   CHK_CU_SUCCESS(cudaMalloc((void**)node_degree_d, graph->vertex_count *
-                            sizeof(id_t)), err_free_graph_d);
+                            sizeof(vid_t)), err_free_graph_d);
   // Initialize count to 0.
   KERNEL_CONFIGURE(graph->vertex_count, blocks, threads_per_block);
-  memset_device<<<blocks, threads_per_block>>>((*node_degree_d), (id_t)0,
+  memset_device<<<blocks, threads_per_block>>>((*node_degree_d), (vid_t)0,
                                                graph->vertex_count);
   CHK_CU_SUCCESS(cudaGetLastError(), err_free_all_d);
 
@@ -50,8 +47,8 @@ error_t initialize_gpu(const graph_t* graph, id_t** node_degree_d,
  * Simply counts the degree of each vertex
  */
 __global__
-void node_degree_kernel(graph_t graph, id_t* node_degree) {
-  const id_t u = THREAD_GLOBAL_INDEX;
+void node_degree_kernel(graph_t graph, vid_t* node_degree) {
+  const vid_t u = THREAD_GLOBAL_INDEX;
   if (u >= graph.vertex_count) return;
   node_degree[u] = graph.vertices[u + 1] - graph.vertices[u];
 }
@@ -63,12 +60,12 @@ void node_degree_kernel(graph_t graph, id_t* node_degree) {
  * frees up some resources.
  */
 PRIVATE
-error_t finalize_gpu(graph_t* graph_d, id_t* node_degree_d,
-                     id_t** node_degree) {
+error_t finalize_gpu(graph_t* graph_d, vid_t* node_degree_d,
+                     vid_t** node_degree) {
   // Allocate space for returned node degree list
-  *node_degree = (id_t*)mem_alloc(graph_d->vertex_count * sizeof(id_t));
+  *node_degree = (vid_t*)mem_alloc(graph_d->vertex_count * sizeof(vid_t));
   CHK_CU_SUCCESS(cudaMemcpy(*node_degree, node_degree_d,
-                            graph_d->vertex_count * sizeof(id_t),
+                            graph_d->vertex_count * sizeof(vid_t),
                             cudaMemcpyDeviceToHost), err);
   graph_finalize_device(graph_d);
   cudaFree(node_degree_d);
@@ -83,14 +80,14 @@ error_t finalize_gpu(graph_t* graph_d, id_t* node_degree_d,
  * GPU implementation for counting node degree.
  */
 __host__
-error_t node_degree_gpu(const graph_t* graph, id_t** node_degree) {
+error_t node_degree_gpu(const graph_t* graph, vid_t** node_degree) {
   // Sanity on input parameters
   if (graph == NULL || node_degree == NULL || graph->vertex_count == 0)
     return FAILURE;
 
   // Create and initialize state on GPU
   graph_t* graph_d;
-  id_t* node_degree_d;
+  vid_t* node_degree_d;
 
   CHK_SUCCESS(initialize_gpu(graph, &node_degree_d, &graph_d), err_free_all);
 
@@ -121,18 +118,18 @@ error_t node_degree_gpu(const graph_t* graph, id_t** node_degree) {
 /**
  * CPU implementation of counting node degree
  */
-error_t node_degree_cpu(const graph_t* graph, id_t** node_degree) {
+error_t node_degree_cpu(const graph_t* graph, vid_t** node_degree) {
   // Sanity on input parameters
   if (graph == NULL || node_degree == NULL || graph->vertex_count == 0) {
     return FAILURE;
   }
 
   // Allocate node_degree output list
-  *node_degree = (id_t*)mem_alloc(graph->vertex_count * sizeof(id_t));
-  memset(*node_degree, 0, graph->vertex_count * sizeof(id_t));
+  *node_degree = (vid_t*)mem_alloc(graph->vertex_count * sizeof(vid_t));
+  memset(*node_degree, 0, graph->vertex_count * sizeof(vid_t));
 
   OMP(omp parallel for)
-  for (id_t vid = 0; vid < graph->vertex_count; vid++) {
+  for (vid_t vid = 0; vid < graph->vertex_count; vid++) {
     // Count the node degree at the given node
     (*node_degree)[vid] = graph->vertices[vid + 1] - graph->vertices[vid];
   }

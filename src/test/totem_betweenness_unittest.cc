@@ -71,10 +71,10 @@ TEST_P(BetweennessCentralityTest, Chain100Unweighted) {
   // First vertex as source
   EXPECT_EQ(SUCCESS, betweenness(graph, &centrality_score));
   weight_t centrality[50];
-  for (id_t i = 0; i < 50; i++) {
+  for (vid_t i = 0; i < 50; i++) {
     centrality[i] = (99 - i) * (i);
   }
-  for (id_t i = 0; i < 50; i++) {
+  for (vid_t i = 0; i < 50; i++) {
     EXPECT_EQ(centrality[i], centrality_score[i]);
     EXPECT_EQ(centrality[i], centrality_score[99 - i]);
   }
@@ -91,7 +91,7 @@ TEST_P(BetweennessCentralityTest, CompleteGraphUnweighted) {
 
   EXPECT_EQ(SUCCESS, betweenness(graph, &centrality_score));
   EXPECT_FALSE(centrality_score == NULL);
-  for(id_t vertex = 0; vertex < graph->vertex_count; vertex++){
+  for(vid_t vertex = 0; vertex < graph->vertex_count; vertex++){
     EXPECT_FLOAT_EQ(0.0, centrality_score[0]);
   }
   mem_free(centrality_score);

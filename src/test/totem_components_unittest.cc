@@ -81,17 +81,17 @@ TEST_P(GetComponentsTest, EmptyEdges) {
   EXPECT_EQ(SUCCESS, get_components(graph, &comp_set));
   EXPECT_FALSE(NULL == comp_set);
   EXPECT_EQ((uint32_t)1000, comp_set->count);
-  for (id_t comp = 0; comp < comp_set->count; comp++) {
+  for (vid_t comp = 0; comp < comp_set->count; comp++) {
     EXPECT_EQ((uint32_t)1, comp_set->vertex_count[0]);
     EXPECT_EQ((uint32_t)0, comp_set->edge_count[0]);
   }
-  for (id_t vid = 0; vid < graph->vertex_count; vid++) {
+  for (vid_t vid = 0; vid < graph->vertex_count; vid++) {
     // each vertex will be a componenet on its own
     EXPECT_EQ((uint32_t)vid, comp_set->marker[vid]);
   }
   // All components are of the same size. The biggest component is the one with
   // the lowest id
-  EXPECT_EQ(comp_set->biggest, (id_t)0);
+  EXPECT_EQ(comp_set->biggest, (vid_t)0);
 }
 
 // Tests GetComponents for a chain of 1000 nodes.
@@ -99,13 +99,13 @@ TEST_P(GetComponentsTest, Chain) {
   graph_initialize(DATA_FOLDER("chain_1000_nodes.totem"), false, &graph);
   EXPECT_EQ(SUCCESS, get_components(graph, &comp_set));
   EXPECT_FALSE(NULL == comp_set);
-  EXPECT_EQ(comp_set->count, (id_t)1);
+  EXPECT_EQ(comp_set->count, (vid_t)1);
   EXPECT_EQ(comp_set->vertex_count[0], graph->vertex_count);
   EXPECT_EQ(comp_set->edge_count[0], graph->edge_count);
-  for (id_t vid = 0; vid < graph->vertex_count; vid++) {
-    EXPECT_EQ(comp_set->marker[vid], (id_t)0);
+  for (vid_t vid = 0; vid < graph->vertex_count; vid++) {
+    EXPECT_EQ(comp_set->marker[vid], (vid_t)0);
   }
-  EXPECT_EQ(comp_set->biggest, (id_t)0);
+  EXPECT_EQ(comp_set->biggest, (vid_t)0);
 }
 
 // Tests GetComponents for a graph of four chains. The first two have 10
@@ -114,17 +114,17 @@ TEST_P(GetComponentsTest, MultiChain) {
   graph_initialize(DATA_FOLDER("chain_4_comp_40_nodes.totem"), false, &graph);
   EXPECT_EQ(SUCCESS, get_components(graph, &comp_set));
   EXPECT_FALSE(NULL == comp_set);
-  EXPECT_EQ(comp_set->count, (id_t)4);
-  for (id_t comp = 0; comp < comp_set->count; comp++) {
-    id_t vertex_count = comp == comp_set->count - 1 ?
+  EXPECT_EQ(comp_set->count, (vid_t)4);
+  for (vid_t comp = 0; comp < comp_set->count; comp++) {
+    vid_t vertex_count = comp == comp_set->count - 1 ?
       9 : comp == comp_set->count -2 ? 11 : 10;
     EXPECT_EQ(comp_set->vertex_count[comp], vertex_count);
     EXPECT_EQ(comp_set->edge_count[comp], vertex_count * 2 - 2);
   }
 
-  for (id_t vid = 0; vid < graph->vertex_count; vid++) {
+  for (vid_t vid = 0; vid < graph->vertex_count; vid++) {
     // the second to last chain is one vertex longer
-    id_t comp = vid == 30 ? (comp_set->count - 2) : vid / 10;
+    vid_t comp = vid == 30 ? (comp_set->count - 2) : vid / 10;
     EXPECT_EQ(comp_set->marker[vid], comp);
   }
   // the biggest component is the second to last one
@@ -137,14 +137,14 @@ TEST_P(GetComponentsTest, CompleteGraph) {
                    &graph);
   EXPECT_EQ(SUCCESS, get_components(graph, &comp_set));
   EXPECT_FALSE(NULL == comp_set);
-  EXPECT_EQ(comp_set->count, (id_t)1);
+  EXPECT_EQ(comp_set->count, (vid_t)1);
   EXPECT_EQ(comp_set->vertex_count[0], graph->vertex_count);
   EXPECT_EQ(comp_set->edge_count[0], graph->edge_count);
 
-  for (id_t vid = 0; vid < graph->vertex_count; vid++) {
-    EXPECT_EQ(comp_set->marker[vid], (id_t)0);
+  for (vid_t vid = 0; vid < graph->vertex_count; vid++) {
+    EXPECT_EQ(comp_set->marker[vid], (vid_t)0);
   }
-  EXPECT_EQ(comp_set->biggest, (id_t)0);
+  EXPECT_EQ(comp_set->biggest, (vid_t)0);
 }
 
 // Tests GetComponents for a complete graph of 1000 nodes.
@@ -152,14 +152,14 @@ TEST_P(GetComponentsTest, Star) {
   graph_initialize(DATA_FOLDER("star_1000_nodes.totem"), false, &graph);
   EXPECT_EQ(SUCCESS, get_components(graph, &comp_set));
   EXPECT_FALSE(NULL == comp_set);
-  EXPECT_EQ(comp_set->count, (id_t)1);
+  EXPECT_EQ(comp_set->count, (vid_t)1);
   EXPECT_EQ(comp_set->vertex_count[0], graph->vertex_count);
   EXPECT_EQ(comp_set->edge_count[0], graph->edge_count);
 
-  for (id_t vid = 0; vid < graph->vertex_count; vid++) {
-    EXPECT_EQ(comp_set->marker[vid], (id_t)0);
+  for (vid_t vid = 0; vid < graph->vertex_count; vid++) {
+    EXPECT_EQ(comp_set->marker[vid], (vid_t)0);
   }
-  EXPECT_EQ(comp_set->biggest, (id_t)0);
+  EXPECT_EQ(comp_set->biggest, (vid_t)0);
 }
 
 // TODO(lauro): Add test cases for not well defined structures.

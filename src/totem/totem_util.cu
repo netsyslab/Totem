@@ -7,7 +7,7 @@
 
 // totem includes
 #include "totem_util.h"
-
+#include "totem_graph.h"
 
 /**
  * Ensure the device supports the minimum CUDA architecture requirements
@@ -43,8 +43,8 @@ int get_gpu_count() {
 }
 
 int compare_ids(const void *a, const void *b) {
-  id_t v1 = *((id_t*)a);
-  id_t v2 = *((id_t*)b);
+  vid_t v1 = *((vid_t*)a);
+  vid_t v2 = *((vid_t*)b);
   if (v1 < v2) return -1;
   if (v1 == v2) return 0;
   return 1;

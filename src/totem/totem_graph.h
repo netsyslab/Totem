@@ -44,21 +44,40 @@
 //               to allow clients to set on compile time the specific type their
 //               applications will use.
 /**
- * Specifies an id type. This is useful to allow future changes in the
- * underlying type that hold vertex and edge ids. For instance, to support
- * larger graphs that need vertex ids in the 64-bit space.
+ * Specifies an id type. 
+ * We have two id types (vid_t and eid_t). The rule to use them is as follows: 
+ * anything that is constrained by the number of vertices should be defined 
+ * using the vid_t type, similarly anything that is constrained by the number
+ * of edges eid_t should be used as a type. For example, to access the vertices
+ * array, a vid_t index is used, while accessing the edges array requires an 
+ * index of type eid_t. A typical iteration over the graph looks like this:
+ * 
+ * for (vid_t vid = 0; vid < graph->vertex_count; vid++) {
+ *   for (eid_t eid = graph->vertices[vid]; 
+ *        eid < graph->vertices[vid + 1]; eid++) {
+ *     vid_t nbr_id = graph->edges[eid];
+ *     // do stuff to the neighbour
+ *   }
+ * }
+ *
+ * Finally, to enable 64 bit edge ids, the code must be compiled: make EID=64
  */
-typedef uint32_t id_t;
+typedef uint32_t vid_t;
+#ifdef FEATURE_64BIT_EDGE_ID
+typedef uint64_t eid_t;
+#else
+typedef uint32_t eid_t;
+#endif
 
 /**
  * Specifies the maximum value an id can hold.
  */
-const id_t ID_MAX = UINT32_MAX;
+const vid_t VERTEX_ID_MAX = UINT32_MAX;
 
 /**
  * Specifies the infinite quantity used by several algorithms (e.g., edge cost).
  */
-const id_t INFINITE = UINT32_MAX;
+const vid_t INFINITE = UINT32_MAX;
 
 /**
  * Specifies a type for edge weights. This is useful to allow future changes in
@@ -98,15 +117,15 @@ const weight_t DEFAULT_VERTEX_VALUE = 0;
  * in the same way as every other vertex.
  */
 typedef struct graph_s {
-  id_t*        vertices;        /**< the vertices list. */
-  id_t*        edges;           /**< the edges list. */
-  weight_t*    weights;         /**< stores the weights of the edges. */
-  weight_t*    values;          /**< stores the values of the vertices. */
-  uint64_t     vertex_count;    /**< number of vertices. */
-  uint64_t     edge_count;      /**< number of edges. */
-  bool         valued;          /**< indicates if vertices have values. */
-  bool         weighted;        /**< indicates if edges have weights. */
-  bool         directed;        /**< indicates if the graph is directed. */
+  eid_t*    vertices;        /**< the vertices list. */
+  vid_t*    edges;           /**< the edges list. */
+  weight_t* weights;         /**< stores the weights of the edges. */
+  weight_t* values;          /**< stores the values of the vertices. */
+  vid_t     vertex_count;    /**< number of vertices. */
+  eid_t     edge_count;      /**< number of edges. */
+  bool      valued;          /**< indicates if vertices have values. */
+  bool      weighted;        /**< indicates if edges have weights. */
+  bool      directed;        /**< indicates if the graph is directed. */
 } graph_t;
 
 /**
@@ -116,12 +135,12 @@ typedef struct graph_s {
  */
 typedef struct component_set_s {
   graph_t* graph;        /**< the graph which this component set belongs to */
-  id_t     count;        /**< number of components */
-  id_t*    vertex_count; /**< vertex count of each component (length: count) */
-  id_t*    edge_count;   /**< edge count of each component (length: count) */
-  id_t*    marker;       /**< the component id for each vertex */
+  vid_t    count;        /**< number of components */
+  vid_t*   vertex_count; /**< vertex count of each component (length: count) */
+  eid_t*   edge_count;   /**< edge count of each component (length: count) */
+  vid_t*   marker;       /**< the component id for each vertex */
                          /**< (length: graph->vertex_count) */
-  id_t     biggest;      /**< the id of the biggest component */
+  vid_t    biggest;      /**< the id of the biggest component */
 } component_set_t;
 
 /**
@@ -189,7 +208,7 @@ error_t graph_remove_singletons(const graph_t* graph, graph_t** subgraph);
  * @param[out] reverse_indices a reference to array of indices of reverse edges
  * @return bidirected graph
  */
-graph_t* graph_create_bidirectional(graph_t* graph, id_t** reverse_indices);
+graph_t* graph_create_bidirectional(graph_t* graph, eid_t** reverse_indices);
 
 /**
  * Given an undirected, unweighted graph and a source vertex, find the minimum
@@ -206,10 +225,10 @@ graph_t* graph_create_bidirectional(graph_t* graph, id_t** reverse_indices);
  * ownership of the array and, thus, the client is responsible for freeing the
  * memory area.
 */
-error_t bfs_cpu(graph_t* graph, id_t src_id, uint32_t** cost);
-error_t bfs_gpu(graph_t* graph, id_t src_id, uint32_t** cost);
-error_t bfs_vwarp_gpu(graph_t* graph, id_t src_id, uint32_t** cost);
-error_t bfs_hybrid(id_t src_id, uint32_t** cost);
+error_t bfs_cpu(graph_t* graph, vid_t src_id, uint32_t** cost);
+error_t bfs_gpu(graph_t* graph, vid_t src_id, uint32_t** cost);
+error_t bfs_vwarp_gpu(graph_t* graph, vid_t src_id, uint32_t** cost);
+error_t bfs_hybrid(vid_t src_id, uint32_t** cost);
 
 /**
  * Given a weighted graph \f$G = (V, E, w)\f$ and a source vertex \f$v\inV\f$,
@@ -222,9 +241,9 @@ error_t bfs_hybrid(id_t src_id, uint32_t** cost);
  * @param[out] shortest_distances the length of the computed shortest paths
  * @return a flag indicating whether the operation succeeded or not.
  */
-error_t dijkstra_cpu(const graph_t* graph, id_t src_id, weight_t** distance);
-error_t dijkstra_gpu(const graph_t* graph, id_t src_id, weight_t** distance);
-error_t dijkstra_vwarp_gpu(const graph_t* graph, id_t src_id,
+error_t dijkstra_cpu(const graph_t* graph, vid_t src_id, weight_t** distance);
+error_t dijkstra_gpu(const graph_t* graph, vid_t src_id, weight_t** distance);
+error_t dijkstra_vwarp_gpu(const graph_t* graph, vid_t src_id,
                            weight_t** distance);
 
 /**
@@ -272,11 +291,11 @@ error_t page_rank_hybrid(float* rank_i, float** rank);
  * @param[out] flow_ret the maximum flow through the network
  * @return generic success or failure
  */
-error_t maxflow_cpu(graph_t* graph, id_t source_id, id_t sink_id,
+error_t maxflow_cpu(graph_t* graph, vid_t source_id, vid_t sink_id,
                     weight_t* flow_ret);
-error_t maxflow_gpu(graph_t* graph, id_t source_id, id_t sink_id,
+error_t maxflow_gpu(graph_t* graph, vid_t source_id, vid_t sink_id,
                     weight_t* flow_ret);
-error_t maxflow_vwarp_gpu(graph_t* graph, id_t source_id, id_t sink_id,
+error_t maxflow_vwarp_gpu(graph_t* graph, vid_t source_id, vid_t sink_id,
                           weight_t* flow_ret);
 
 /**
@@ -317,10 +336,10 @@ error_t pcore_gpu(const graph_t* graph, uint32_t start, uint32_t step,
  *             otherwise, false.
  * @return a flag indicating whether the operation succeeded or not.
 */
-error_t stcon_cpu(const graph_t* graph, id_t source_id, id_t destination_id,
+error_t stcon_cpu(const graph_t* graph, vid_t source_id, vid_t destination_id,
                   bool* connected);
 
-error_t stcon_gpu(const graph_t* graph, id_t source_id, id_t destination_id,
+error_t stcon_gpu(const graph_t* graph, vid_t source_id, vid_t destination_id,
                   bool* connected);
 
 /**
@@ -330,8 +349,8 @@ error_t stcon_gpu(const graph_t* graph, id_t source_id, id_t destination_id,
  *             vertex id
  * @return a flag indicating whether the operation succeeded or not.
 */
-error_t node_degree_cpu(const graph_t* graph, id_t** node_degree);
-error_t node_degree_gpu(const graph_t* graph, id_t** node_degree);
+error_t node_degree_cpu(const graph_t* graph, uint32_t** node_degree);
+error_t node_degree_gpu(const graph_t* graph, uint32_t** node_degree);
 
 /**
  * Identifies the weakly connected components in the graph

@@ -26,8 +26,8 @@
 
 // Static function declarations
 __global__
-void init_preflow(graph_t graph, id_t edge_base, id_t edge_end, weight_t* flow,
-                  weight_t* excess, id_t* reverse_indices);
+void init_preflow(graph_t graph, eid_t edge_base, eid_t edge_end, 
+                  weight_t* flow, weight_t* excess, eid_t* reverse_indices);
 
 /**
    This structure is used by the virtual warp-based implementation. It stores a
@@ -35,12 +35,8 @@ void init_preflow(graph_t graph, id_t edge_base, id_t edge_end, weight_t* flow,
    a single virtual warp.
  */
 typedef struct {
+  eid_t vertices[VWARP_BATCH_SIZE + 2];
   uint32_t height[VWARP_BATCH_SIZE];
-  id_t vertices[VWARP_BATCH_SIZE + 1];
-  // the following ensures 64-bit alignment, it assumes that the cost and
-  // vertices arrays are of 32-bit elements.
-  // TODO(abdullah) a portable way to do this (what if id_t is 64-bit?)
-  int pad;
 } vwarp_mem_t;
 
 
@@ -49,7 +45,7 @@ typedef struct {
  * beginning of public interfaces (GPU and CPU)
  */
 PRIVATE
-error_t check_special_cases(graph_t* graph, id_t source_id, id_t sink_id) {
+error_t check_special_cases(graph_t* graph, vid_t source_id, vid_t sink_id) {
   if((graph == NULL) || (graph->vertex_count == 0) || (!graph->weighted) ||
      (!graph->directed) || (source_id >= graph->vertex_count) ||
      (sink_id >= graph->vertex_count) || (source_id == sink_id)) {
@@ -58,25 +54,23 @@ error_t check_special_cases(graph_t* graph, id_t source_id, id_t sink_id) {
   return SUCCESS;
 }
 
-
 /**
  * A common initialization function for GPU implementations. It allocates and
  * initalizes state on the GPU
  */
 PRIVATE
-error_t initialize_gpu(graph_t* graph, id_t source_id, uint64_t vwarp_length,
-                       id_t* reverse_indices, graph_t** graph_d,
+error_t initialize_gpu(graph_t* graph, vid_t source_id, vid_t vwarp_length,
+                       eid_t* reverse_indices, graph_t** graph_d,
                        weight_t** flow_d, weight_t** excess_d,
-                       uint32_t** height_d, id_t** reverse_indices_d,
+                       uint32_t** height_d, eid_t** reverse_indices_d,
                        bool** finished_d) {
-
   dim3 blocks;
   dim3 threads_per_block;
 
   // Calculate the source excess directly prior to allocation. This prevents
   // compilation errors about variable declaration after a jump
   weight_t source_excess = (weight_t)0;
-  for (id_t edge_id = graph->vertices[source_id];
+  for (eid_t edge_id = graph->vertices[source_id];
        edge_id < graph->vertices[source_id + 1]; edge_id++) {
     source_excess -= graph->weights[edge_id];
   }
@@ -85,7 +79,7 @@ error_t initialize_gpu(graph_t* graph, id_t source_id, uint64_t vwarp_length,
   CHK_CU_SUCCESS(cudaMalloc((void**)flow_d, graph->edge_count *
                             sizeof(weight_t)), err_free_graph_d);
   CHK_CU_SUCCESS(cudaMalloc((void**)reverse_indices_d, graph->edge_count *
-                            sizeof(id_t)), err_free_flow_d);
+                            sizeof(eid_t)), err_free_flow_d);
   CHK_CU_SUCCESS(cudaMalloc((void**)excess_d, graph->vertex_count *
                             sizeof(weight_t)), err_free_reverse_indices_d);
   CHK_CU_SUCCESS(cudaMalloc((void**)height_d, vwarp_length * sizeof(uint32_t)),
@@ -103,7 +97,7 @@ error_t initialize_gpu(graph_t* graph, id_t source_id, uint64_t vwarp_length,
                                                graph->vertex_count);
   CHK_CU_SUCCESS(cudaGetLastError(), err_free_all_d);
   CHK_CU_SUCCESS(cudaMemcpy((*reverse_indices_d), reverse_indices,
-                            graph->edge_count * sizeof(id_t),
+                            graph->edge_count * sizeof(eid_t),
                             cudaMemcpyHostToDevice), err_free_all_d);
 
   // From the source vertex, initialize preflow
@@ -138,14 +132,13 @@ error_t initialize_gpu(graph_t* graph, id_t source_id, uint64_t vwarp_length,
     return FAILURE;
 }
 
-
 /**
  * Initializes preflow from a given source index. Each edge connected to
  * the source vertex is initialized with its capacity.
  */
 __global__
-void init_preflow(graph_t graph, id_t edge_base, id_t edge_end, weight_t* flow,
-                  weight_t* excess, id_t* reverse_indices) {
+void init_preflow(graph_t graph, eid_t edge_base, eid_t edge_end, 
+                  weight_t* flow, weight_t* excess, eid_t* reverse_indices) {
   const int offset = THREAD_GLOBAL_INDEX;
   if (offset >= edge_end) return;
   if (graph.weights[edge_base + offset] == 0) return;
@@ -155,15 +148,14 @@ void init_preflow(graph_t graph, id_t edge_base, id_t edge_end, weight_t* flow,
   excess[graph.edges[edge_base + offset]] = graph.weights[edge_base + offset];
 }
 
-
 /**
  * Implements the push relabel kernel, as per [Hong08]
  */
 __global__
 void push_relabel_kernel(graph_t graph, weight_t* flow, weight_t* excess,
-                         uint32_t* height, id_t* reverse_indices,
-                         id_t source_id, id_t sink_id, bool* finished) {
-  const id_t u = THREAD_GLOBAL_INDEX;
+                         uint32_t* height, eid_t* reverse_indices,
+                         vid_t source_id, vid_t sink_id, bool* finished) {
+  const vid_t u = THREAD_GLOBAL_INDEX;
   if (u >= graph.vertex_count) return;
   if (u == source_id || u == sink_id) return;
 
@@ -173,10 +165,10 @@ void push_relabel_kernel(graph_t graph, weight_t* flow, weight_t* excess,
 
     weight_t e_prime = excess[u];
     uint32_t h_prime = INFINITE;
-    id_t best_edge_id = INFINITE;
+    eid_t best_edge_id = INFINITE;
 
     // Find the lowest neighbor connected by a residual edge
-    for (id_t edge_id = graph.vertices[u]; edge_id < graph.vertices[u + 1];
+    for (eid_t edge_id = graph.vertices[u]; edge_id < graph.vertices[u + 1];
          edge_id++) {
       if (graph.weights[edge_id] == flow[edge_id]) continue;
       uint32_t h_pprime = height[graph.edges[edge_id]];
@@ -204,7 +196,6 @@ void push_relabel_kernel(graph_t graph, weight_t* flow, weight_t* excess,
   }
 }
 
-
 /**
  * The neighbors processing function. This function finds the smallest neighbor
  * height and sets the corresponding best edge index for the vertex. The
@@ -215,13 +206,13 @@ void push_relabel_kernel(graph_t graph, weight_t* flow, weight_t* excess,
  * while thread 1 in the warp processes neighbors 1, (1 + VWARP_WARP_SIZE),
  * (1 + 2 * VWARP_WARP_SIZE) and so on.
 */
-__device__
-void vwarp_process_neighbors(int warp_offset, int warp_id, int neighbor_count,
-                             id_t* neighbors, weight_t* flow, weight_t* weight,
-                             uint32_t* height, uint32_t* lowest_height,
-                             id_t* best_edge_id) {
-  for (int i = warp_offset; i < neighbor_count; i += VWARP_WARP_SIZE) {
-    id_t neighbor_id = neighbors[i];
+__device__ void
+vwarp_process_neighbors(vid_t warp_offset, vid_t warp_id, vid_t neighbor_count,
+                        vid_t* neighbors, weight_t* flow, weight_t* weight,
+                        uint32_t* height, uint32_t* lowest_height,
+                        vid_t* best_edge_id) {
+  for (vid_t i = warp_offset; i < neighbor_count; i += VWARP_WARP_SIZE) {
+    vid_t neighbor_id = neighbors[i];
     if (weight[i] > flow[i]) {
       uint32_t h_pprime = height[neighbor_id];
       while (*lowest_height > h_pprime) {
@@ -236,30 +227,29 @@ void vwarp_process_neighbors(int warp_offset, int warp_id, int neighbor_count,
   } // for
 }
 
-
 /**
  * Implements the push relabel kernel, as per [Hong08]. Modified to employ the
  * virtual warp technique.
  */
 __global__
 void vwarp_push_relabel_kernel(graph_t graph, weight_t* flow, weight_t* excess,
-                               uint32_t* height, id_t* reverse_indices,
-                               id_t source_id, id_t sink_id, bool* finished,
-                               uint32_t thread_count) {
-  const id_t thread_id = THREAD_GLOBAL_INDEX;
+                               uint32_t* height, eid_t* reverse_indices,
+                               vid_t source_id, vid_t sink_id, bool* finished,
+                               vid_t thread_count) {
+  const vid_t thread_id = THREAD_GLOBAL_INDEX;
   if (thread_id >= thread_count) return;
 
-  int warp_offset = thread_id % VWARP_WARP_SIZE;
-  int warp_id     = thread_id / VWARP_WARP_SIZE;
+  vid_t warp_offset = thread_id % VWARP_WARP_SIZE;
+  vid_t warp_id     = thread_id / VWARP_WARP_SIZE;
 
   __shared__ vwarp_mem_t shared_memory[(MAX_THREADS_PER_BLOCK /
                                         VWARP_WARP_SIZE)];
-  __shared__ id_t best_edge_ids[(MAX_THREADS_PER_BLOCK / VWARP_WARP_SIZE)];
+  __shared__ vid_t best_edge_ids[(MAX_THREADS_PER_BLOCK / VWARP_WARP_SIZE)];
   __shared__ uint32_t lowest_heights[(MAX_THREADS_PER_BLOCK / VWARP_WARP_SIZE)];
   vwarp_mem_t* my_space = shared_memory + (THREAD_GRID_INDEX / VWARP_WARP_SIZE);
 
   // copy my work to local space
-  int v_ = warp_id * VWARP_BATCH_SIZE;
+  vid_t v_ = warp_id * VWARP_BATCH_SIZE;
   vwarp_memcpy(my_space->height, &(height[v_]), VWARP_BATCH_SIZE, warp_offset);
   vwarp_memcpy(my_space->vertices, &(graph.vertices[v_]), VWARP_BATCH_SIZE + 1,
                warp_offset);
@@ -267,12 +257,12 @@ void vwarp_push_relabel_kernel(graph_t graph, weight_t* flow, weight_t* excess,
   int count = KERNEL_CYCLES;
   while(count--) {
     // iterate over my work
-    for(uint32_t v = 0; v < VWARP_BATCH_SIZE; v++) {
-      id_t vertex_id = v_ + v;
+    for(vid_t v = 0; v < VWARP_BATCH_SIZE; v++) {
+      vid_t vertex_id = v_ + v;
       if (excess[vertex_id] > 0 && (vertex_id != sink_id) &&
           my_space->height[v] < graph.vertex_count) {
-        id_t* best_edge_id = &(best_edge_ids[(THREAD_GRID_INDEX /
-                                             VWARP_WARP_SIZE)]);
+        vid_t* best_edge_id = &(best_edge_ids[(THREAD_GRID_INDEX /
+                                               VWARP_WARP_SIZE)]);
         uint32_t* lowest_height = &(lowest_heights[(THREAD_GRID_INDEX /
                                                     VWARP_WARP_SIZE)]);
         *best_edge_id = INFINITE;
@@ -280,13 +270,13 @@ void vwarp_push_relabel_kernel(graph_t graph, weight_t* flow, weight_t* excess,
         // TODO: remove synchronization when VWARP_WARP_SIZE <= 32
         __threadfence();
 
-        id_t* edges = &(graph.edges[my_space->vertices[v]]);
+        vid_t* edges = &(graph.edges[my_space->vertices[v]]);
         weight_t* weights = &(graph.weights[my_space->vertices[v]]);
         weight_t* flows = &(flow[my_space->vertices[v]]);
 
         // Find the lowest neighbor connected by a residual edge
-        int neighbor_count = my_space->vertices[v + 1] - my_space->vertices[v];
-        vwarp_process_neighbors(warp_offset, warp_id, neighbor_count, edges,
+        vid_t nbr_count = my_space->vertices[v + 1] - my_space->vertices[v];
+        vwarp_process_neighbors(warp_offset, warp_id, nbr_count, edges,
                                 flows, weights, height, lowest_height,
                                 best_edge_id);
         // TODO: remove synchronization when VWARP_WARP_SIZE <= 32
@@ -294,7 +284,7 @@ void vwarp_push_relabel_kernel(graph_t graph, weight_t* flow, weight_t* excess,
 
         // Only one thread does this per vertex
         if (warp_offset == 0) {
-          id_t edge = my_space->vertices[v] + *best_edge_id;
+          eid_t edge = my_space->vertices[v] + *best_edge_id;
           // If a push applies
           if (height[vertex_id] > *lowest_height && *best_edge_id != INFINITE &&
               (graph.weights[edge] != flow[edge])) {
@@ -325,8 +315,8 @@ void vwarp_push_relabel_kernel(graph_t graph, weight_t* flow, weight_t* excess,
  */
 PRIVATE
 error_t finalize_gpu(graph_t* graph_d, weight_t* flow_d, weight_t* excess_d,
-                     uint32_t* height_d, id_t* reverse_indices_d,
-                     bool* finished_d, weight_t* flow_ret, id_t sink_id) {
+                     uint32_t* height_d, eid_t* reverse_indices_d,
+                     bool* finished_d, weight_t* flow_ret, vid_t sink_id) {
   CHK_CU_SUCCESS(cudaMemcpy(flow_ret, (weight_t*)&(excess_d[sink_id]),
                             sizeof(weight_t), cudaMemcpyDeviceToHost), err);
   graph_finalize_device(graph_d);
@@ -346,7 +336,7 @@ error_t finalize_gpu(graph_t* graph_d, weight_t* flow_d, weight_t* excess_d,
  * implementing the virtual warping technique.
  */
 __host__
-error_t maxflow_vwarp_gpu(graph_t* graph, id_t source_id, id_t sink_id,
+error_t maxflow_vwarp_gpu(graph_t* graph, vid_t source_id, vid_t sink_id,
                           weight_t* flow_ret) {
   error_t rc = check_special_cases(graph, source_id, sink_id);
   if (rc != SUCCESS) return rc;
@@ -354,7 +344,7 @@ error_t maxflow_vwarp_gpu(graph_t* graph, id_t source_id, id_t sink_id,
   // Setup reverse edges. This creates a new graph and updates the graph
   // pointer to point to this new graph. Thus, we have to do this step before
   // any other allocations/initialization.
-  id_t* reverse_indices = NULL;
+  eid_t* reverse_indices = NULL;
   graph_t* local_graph = graph_create_bidirectional(graph, &reverse_indices);
 
   uint32_t* height = (uint32_t*)mem_alloc(local_graph->vertex_count *
@@ -371,7 +361,7 @@ error_t maxflow_vwarp_gpu(graph_t* graph, id_t source_id, id_t sink_id,
   weight_t* flow_d;
   weight_t* excess_d;
   uint32_t* height_d;
-  id_t* reverse_indices_d;
+  eid_t* reverse_indices_d;
   bool* finished_d;
   CHK_SUCCESS(initialize_gpu(local_graph, source_id, vwarp_length,
                              reverse_indices, &graph_d, &flow_d, &excess_d,
@@ -438,7 +428,7 @@ error_t maxflow_vwarp_gpu(graph_t* graph, id_t source_id, id_t sink_id,
  * GPU implementation of the Push-Relabel algorithm, as described in [Hong08]
  */
 __host__
-error_t maxflow_gpu(graph_t* graph, id_t source_id, id_t sink_id,
+error_t maxflow_gpu(graph_t* graph, vid_t source_id, vid_t sink_id,
                     weight_t* flow_ret) {
   error_t rc = check_special_cases(graph, source_id, sink_id);
   if (rc != SUCCESS) return rc;
@@ -446,7 +436,7 @@ error_t maxflow_gpu(graph_t* graph, id_t source_id, id_t sink_id,
   // Setup reverse edges. This creates a new graph and updates the graph
   // pointer to point to this new graph. Thus, we have to do this step before
   // any other allocations/initialization.
-  id_t* reverse_indices = NULL;
+  eid_t* reverse_indices = NULL;
   graph_t* local_graph = graph_create_bidirectional(graph, &reverse_indices);
 
   uint32_t* height = (uint32_t*)mem_alloc(local_graph->vertex_count *
@@ -461,7 +451,7 @@ error_t maxflow_gpu(graph_t* graph, id_t source_id, id_t sink_id,
   weight_t* flow_d;
   weight_t* excess_d;
   uint32_t* height_d;
-  id_t* reverse_indices_d;
+  eid_t* reverse_indices_d;
   bool* finished_d;
   CHK_SUCCESS(initialize_gpu(local_graph, source_id, graph->vertex_count,
                              reverse_indices, &graph_d, &flow_d, &excess_d,
@@ -527,17 +517,17 @@ error_t maxflow_gpu(graph_t* graph, id_t source_id, id_t sink_id,
  * If the push operation fails, perform a relabel.
  */
 PRIVATE
-void push_relabel_cpu(graph_t* graph, id_t u, id_t source_id, id_t sink_id,
+void push_relabel_cpu(graph_t* graph, vid_t u, vid_t source_id, vid_t sink_id,
                       weight_t* flow, weight_t* excess, uint32_t* height,
-                      id_t* reverse_indices, bool* finished) {
+                      eid_t* reverse_indices, bool* finished) {
   if (excess[u] <= 0 || height[u] >= graph->vertex_count) return;
 
   weight_t e_prime = excess[u];
   uint32_t h_prime = INFINITE;
-  id_t best_edge_id = INFINITE;
+  eid_t best_edge_id = INFINITE;
 
   // Find the lowest neighbor connected by a residual edge
-  for (id_t edge_id = graph->vertices[u]; edge_id < graph->vertices[u + 1];
+  for (eid_t edge_id = graph->vertices[u]; edge_id < graph->vertices[u + 1];
        edge_id++) {
     if (graph->weights[edge_id] <= flow[edge_id]) continue;
     uint32_t h_pprime = height[graph->edges[edge_id]];
@@ -565,7 +555,7 @@ void push_relabel_cpu(graph_t* graph, id_t u, id_t source_id, id_t sink_id,
 }
 
 
-error_t maxflow_cpu(graph_t* graph, id_t source_id, id_t sink_id,
+error_t maxflow_cpu(graph_t* graph, vid_t source_id, vid_t sink_id,
                     weight_t* flow_ret) {
   error_t rc = check_special_cases(graph, source_id, sink_id);
   if (rc != SUCCESS) return rc;
@@ -573,7 +563,7 @@ error_t maxflow_cpu(graph_t* graph, id_t source_id, id_t sink_id,
   // Setup residual edges. This creates a new graph and updates the graph
   // pointer to point to this new graph. Thus, we have to do this step before
   // any other allocations/initialization.
-  id_t* reverse_indices = NULL;
+  eid_t* reverse_indices = NULL;
   graph_t* local_graph = graph_create_bidirectional(graph, &reverse_indices);
 
   weight_t* excess = (weight_t*)mem_alloc(local_graph->vertex_count *
@@ -591,7 +581,7 @@ error_t maxflow_cpu(graph_t* graph, id_t source_id, id_t sink_id,
   height[source_id] = (uint32_t) local_graph->vertex_count;
 
   // Initialize preflow
-  for (id_t edge_id = local_graph->vertices[source_id];
+  for (eid_t edge_id = local_graph->vertices[source_id];
        edge_id < local_graph->vertices[source_id + 1]; edge_id++) {
     // Don't setup preflow on residual edges
     if (local_graph->weights[edge_id] == 0) continue;
@@ -608,7 +598,7 @@ error_t maxflow_cpu(graph_t* graph, id_t source_id, id_t sink_id,
     int count = KERNEL_CYCLES;
     while(count--) {
       OMP(omp parallel for)
-      for (id_t u = 0; u < local_graph->vertex_count; u++) {
+      for (vid_t u = 0; u < local_graph->vertex_count; u++) {
         if (u == sink_id || u == source_id) continue;
         // Perform a push/relabel operation
         push_relabel_cpu(local_graph, u, source_id, sink_id, flow, excess,

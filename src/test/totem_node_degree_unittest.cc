@@ -19,7 +19,7 @@ using ::testing::Values;
 // Details on how to use TestWithParam<T> can be found at:
 // http://code.google.com/p/googletest/source/browse/trunk/samples/sample7_unittest.cc
 
-typedef error_t(*NodeDegreeFunction)(const graph_t*, id_t**);
+typedef error_t(*NodeDegreeFunction)(const graph_t*, vid_t**);
 
 class NodeDegreeTest : public TestWithParam<NodeDegreeFunction> {
  public:
@@ -32,7 +32,7 @@ class NodeDegreeTest : public TestWithParam<NodeDegreeFunction> {
  protected:
   NodeDegreeFunction node_degree;
   graph_t* graph;
-  id_t* node_degree_count;
+  vid_t* node_degree_count;
 };
 
 
@@ -55,15 +55,15 @@ TEST_P(NodeDegreeTest, EmptyEdgeSet) {
   graph->directed = false;
   graph->edge_count = 0;
   graph->vertex_count = 123;
-  graph->vertices = (id_t*)mem_alloc(124 * sizeof(id_t));
-  memset(graph->vertices, (id_t)0, 124 * sizeof(id_t));
+  graph->vertices = (eid_t*)mem_alloc(124 * sizeof(eid_t));
+  memset(graph->vertices, (eid_t)0, 124 * sizeof(eid_t));
   graph->weighted = true;
   graph->weights = NULL;
 
   EXPECT_EQ(SUCCESS, node_degree(graph, &node_degree_count));
   EXPECT_FALSE(NULL == node_degree_count);
-  for (id_t vertex = 0; vertex < graph->vertex_count; vertex++) {
-    EXPECT_EQ((id_t)0, node_degree_count[vertex]);
+  for (vid_t vertex = 0; vertex < graph->vertex_count; vertex++) {
+    EXPECT_EQ((vid_t)0, node_degree_count[vertex]);
   }
   mem_free(graph->vertices);
   mem_free(graph);
@@ -76,7 +76,7 @@ TEST_P(NodeDegreeTest, SingleNode) {
 
   EXPECT_EQ(SUCCESS, node_degree(graph, &node_degree_count));
   EXPECT_FALSE(NULL == node_degree_count);
-  EXPECT_EQ((id_t)0, node_degree_count[0]);
+  EXPECT_EQ((vid_t)0, node_degree_count[0]);
   mem_free(node_degree_count);
   graph_finalize(graph);
 }
@@ -88,8 +88,8 @@ TEST_P(NodeDegreeTest, Star) {
   EXPECT_EQ(SUCCESS, node_degree(graph, &node_degree_count));
   EXPECT_FALSE(NULL == node_degree_count);
   // Test all vertices
-  EXPECT_EQ((id_t)999, node_degree_count[0]);
-  for (id_t vert = 1; vert < graph->vertex_count; vert++) {
+  EXPECT_EQ((vid_t)999, node_degree_count[0]);
+  for (vid_t vert = 1; vert < graph->vertex_count; vert++) {
     EXPECT_EQ((weight_t)1, node_degree_count[vert]);
   }
   mem_free(node_degree_count);
@@ -104,8 +104,8 @@ TEST_P(NodeDegreeTest, Complete) {
   EXPECT_EQ(SUCCESS, node_degree(graph, &node_degree_count));
   EXPECT_FALSE(NULL == node_degree_count);
   // Test all vertices
-  for (id_t vert = 0; vert < graph->vertex_count; vert++) {
-    EXPECT_EQ((id_t)299, node_degree_count[vert]);
+  for (vid_t vert = 0; vert < graph->vertex_count; vert++) {
+    EXPECT_EQ((vid_t)299, node_degree_count[vert]);
   }
   mem_free(node_degree_count);
   graph_finalize(graph);

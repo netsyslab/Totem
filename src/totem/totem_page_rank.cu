@@ -44,12 +44,12 @@
    a single virtual warp.
  */
 typedef struct {
+  // One is added to make it easy to calculate the number of neighbors of the
+  // last vertex. Another one is added to ensure 8 bytes alignment irrespective 
+  // whether sizeof(eid_t) is 4 or 8. Alignment is enforced for performance 
+  // reasons.
+  eid_t  vertices[VWARP_BATCH_SIZE + 2];
   float rank[VWARP_BATCH_SIZE];
-  id_t vertices[VWARP_BATCH_SIZE + 1];
-  // the following ensures 64-bit alignment, it assumes that the
-  // cost and vertices arrays are of 32-bit elements.
-  // TODO(abdullah) a portable way to do this (what if id_t is 64-bit?)
-  int pad;
 } vwarp_mem_t;
 
 /**
@@ -78,10 +78,8 @@ error_t check_special_cases(const graph_t* graph, float** rank,
  * initalizes state on the GPU
 */
 PRIVATE
-error_t initialize_gpu(const graph_t* graph, float* rank_i,
-                       uint64_t rank_length, graph_t** graph_d, float **rank_d,
-                       float** mailbox_d) {
-
+error_t initialize_gpu(const graph_t* graph, float* rank_i, vid_t rank_length, 
+                       graph_t** graph_d, float **rank_d, float** mailbox_d) {
   /* had to define them at the beginning to avoid a compilation problem with
      goto-label error handling mechanism */
   dim3 blocks;
@@ -156,13 +154,13 @@ error_t finalize_gpu(graph_t* graph_d, float* rank_d, float* mailbox_d,
 __global__
 void sum_neighbors_rank_kernel(graph_t graph, float* rank, float* mailbox) {
   // get the thread's linear index
-  id_t vertex_id = THREAD_GLOBAL_INDEX;
+  vid_t vertex_id = THREAD_GLOBAL_INDEX;
   if (vertex_id >= graph.vertex_count) return;
 
   float my_rank = rank[vertex_id];
-  for (uint64_t i = graph.vertices[vertex_id];
+  for (eid_t i = graph.vertices[vertex_id];
        i < graph.vertices[vertex_id + 1]; i++) {
-    const id_t neighbor_id = graph.edges[i];
+    const eid_t neighbor_id = graph.edges[i];
     atomicAdd(&(mailbox[neighbor_id]), (float)my_rank);
   }
 }
@@ -176,13 +174,11 @@ __global__
 void compute_normalized_rank_kernel(graph_t graph, float* rank,
                                     float* mailbox) {
   // get the thread's linear index
-  id_t vertex_id = THREAD_GLOBAL_INDEX;
+  vid_t vertex_id = THREAD_GLOBAL_INDEX;
   if (vertex_id >= graph.vertex_count) return;
-
   // get sum of incoming neighbors' ranks
   float sum = mailbox[vertex_id];
   mailbox[vertex_id] = 0;
-
   // calculate my normalized rank
   float my_rank =
     ((1 - DAMPING_FACTOR) / graph.vertex_count) + (DAMPING_FACTOR * sum);
@@ -192,20 +188,18 @@ void compute_normalized_rank_kernel(graph_t graph, float* rank,
 
 /**
  * Phase2 final kernel of the original PageRank GPU algorithm (i.e., non-vwarp).
- * This kernel is similar to the compute_normalized_rank_kernel. The difference is that
- * it does not normalize the rank (by dividing it by the number of neighbors).
- * It is invoked in the end to get the final, un-normalized, rank.
+ * This kernel is similar to the compute_normalized_rank_kernel. The difference
+ * is that it does not normalize the rank (by dividing it by the number of 
+ * neighbors). It is invoked in the end to get the final, un-normalized, rank.
  */
 __global__
-void compute_unnormalized_rank_kernel(graph_t graph, float* rank,
+void compute_unnormalized_rank_kernel(graph_t graph, float* rank, 
                                       float* mailbox) {
   // get the thread's linear index
-  id_t vertex_id = THREAD_GLOBAL_INDEX;
+  vid_t vertex_id = THREAD_GLOBAL_INDEX;
   if (vertex_id >= graph.vertex_count) return;
-
   // get sum of neighbors' ranks
   float sum = mailbox[vertex_id];
-
   // calculate my rank
   rank[vertex_id] =
     ((1 - DAMPING_FACTOR) / graph.vertex_count) + (DAMPING_FACTOR * sum);
@@ -222,10 +216,10 @@ void compute_unnormalized_rank_kernel(graph_t graph, float* rank,
  * so on.
 */
 __device__ inline
-void vwarp_process_neighbors(int warp_offset, int neighbor_count,
-                             id_t* neighbors, float my_rank, float* mailbox) {
-  for(int i = warp_offset; i < neighbor_count; i += VWARP_WARP_SIZE) {
-    const int neighbor_id = neighbors[i];
+void vwarp_process_neighbors(vid_t warp_offset, vid_t neighbor_count,
+                             vid_t* neighbors, float my_rank, float* mailbox) {
+  for(vid_t i = warp_offset; i < neighbor_count; i += VWARP_WARP_SIZE) {
+    const vid_t neighbor_id = neighbors[i];
     atomicAdd(&(mailbox[neighbor_id]), my_rank);
   }
 }
@@ -237,27 +231,25 @@ void vwarp_process_neighbors(int warp_offset, int neighbor_count,
  */
 __global__
 void vwarp_sum_neighbors_rank_kernel(graph_t graph, float* rank, float* mailbox,
-                                     int thread_count) {
-
+                                     uint32_t thread_count) {
   if (THREAD_GLOBAL_INDEX >= thread_count) return;
-
-  int warp_offset = THREAD_GLOBAL_INDEX % VWARP_WARP_SIZE;
-  int warp_id     = THREAD_GLOBAL_INDEX / VWARP_WARP_SIZE;
+  vid_t warp_offset = THREAD_GLOBAL_INDEX % VWARP_WARP_SIZE;
+  vid_t warp_id     = THREAD_GLOBAL_INDEX / VWARP_WARP_SIZE;
 
   __shared__ vwarp_mem_t shared_memory[(MAX_THREADS_PER_BLOCK /
                                         VWARP_WARP_SIZE)];
   vwarp_mem_t* my_space = shared_memory + (THREAD_GRID_INDEX / VWARP_WARP_SIZE);
 
   // copy my work to local space
-  int v_ = warp_id * VWARP_BATCH_SIZE;
+  vid_t v_ = warp_id * VWARP_BATCH_SIZE;
   vwarp_memcpy(my_space->rank, &rank[v_], VWARP_BATCH_SIZE, warp_offset);
   vwarp_memcpy(my_space->vertices, &(graph.vertices[v_]), VWARP_BATCH_SIZE + 1,
                warp_offset);
 
   // iterate over my work
-  for(uint32_t v = 0; v < VWARP_BATCH_SIZE; v++) {
-    int neighbor_count = my_space->vertices[v + 1] - my_space->vertices[v];
-    id_t* neighbors = &(graph.edges[my_space->vertices[v]]);
+  for(vid_t v = 0; v < VWARP_BATCH_SIZE; v++) {
+    vid_t neighbor_count = my_space->vertices[v + 1] - my_space->vertices[v];
+    vid_t* neighbors = &(graph.edges[my_space->vertices[v]]);
     vwarp_process_neighbors(warp_offset, neighbor_count, neighbors,
                             my_space->rank[v], mailbox);
   }
@@ -271,8 +263,7 @@ void vwarp_sum_neighbors_rank_kernel(graph_t graph, float* rank, float* mailbox,
 __global__
 void vwarp_compute_normalized_rank_kernel(graph_t graph, float* rank,
                                           float* mailbox) {
-  // get the thread's linear index
-  id_t vertex_id = THREAD_GLOBAL_INDEX;
+  vid_t vertex_id = THREAD_GLOBAL_INDEX;
   if (vertex_id >= graph.vertex_count) return;
   // get sum of incoming neighbors' ranks
   float sum = mailbox[vertex_id];
@@ -285,16 +276,15 @@ void vwarp_compute_normalized_rank_kernel(graph_t graph, float* rank,
 }
 
 /**
- * Phase2 final kernel of the vwarp PageRank GPU algorithm.
- * This kernel is similar to the compute_normalized_rank_kernel. The difference is that
- * it does not normalize the rank (by dividing it by the number of neighbors).
+ * Phase2 final kernel of the vwarp PageRank GPU algorithm. This kernel is 
+ * similar to the compute_normalized_rank_kernel. The difference is that it 
+ * does not normalize the rank (by dividing it by the number of neighbors). 
  * It is invoked in the end to get the final, un-normalized, rank.
  */
 __global__
 void vwarp_compute_unnormalized_rank_kernel(graph_t graph, float* rank,
                                             float* mailbox) {
-  // get the thread's linear index
-  id_t vertex_id = THREAD_GLOBAL_INDEX;
+  vid_t vertex_id = THREAD_GLOBAL_INDEX;
   if (vertex_id >= graph.vertex_count) return;
   // get sum of neighbors' ranks
   float sum = mailbox[vertex_id];
@@ -305,18 +295,16 @@ void vwarp_compute_unnormalized_rank_kernel(graph_t graph, float* rank,
 
 __host__
 error_t page_rank_vwarp_gpu(graph_t* graph, float* rank_i, float** rank) {
-
   // Check for special cases
   bool finished = false;
   error_t rc = check_special_cases(graph, rank, &finished);
   if (finished) return rc;
 
-
   // Allocate and initialize GPU state
   graph_t* graph_d;
   float* rank_d;
   float* mailbox_d;
-  uint64_t rank_length;
+  vid_t rank_length;
   rank_length = VWARP_BATCH_SIZE * VWARP_BATCH_COUNT(graph->vertex_count);
   CHK_SUCCESS(initialize_gpu(graph, rank_i, rank_length, &graph_d, &rank_d,
                              &mailbox_d), err);
@@ -324,7 +312,7 @@ error_t page_rank_vwarp_gpu(graph_t* graph, float* rank_i, float** rank) {
   {// Configure the kernels. Setup the number of threads for phase1 and phase2,
   // configure the on-chip memory as shared memory rather than L1 cache
   dim3 blocks1, threads_per_block1, blocks2, threads_per_block2;
-  int phase1_thread_count = VWARP_WARP_SIZE *
+  uint32_t phase1_thread_count = VWARP_WARP_SIZE * 
     VWARP_BATCH_COUNT(graph->vertex_count);
   KERNEL_CONFIGURE(phase1_thread_count, blocks1, threads_per_block1);
   KERNEL_CONFIGURE(graph->vertex_count, blocks2, threads_per_block2);
@@ -333,7 +321,6 @@ error_t page_rank_vwarp_gpu(graph_t* graph, float* rank_i, float** rank) {
 
   // Iterate for a specific number of rounds
   for (uint32_t round = 0; round < PAGE_RANK_ROUNDS - 1; round++) {
-    // call the kernel
     vwarp_sum_neighbors_rank_kernel<<<blocks1, threads_per_block1>>>
       (*graph_d, rank_d, mailbox_d, phase1_thread_count);
     CHK_CU_SUCCESS(cudaGetLastError(), err_free_all);
@@ -365,7 +352,6 @@ error_t page_rank_vwarp_gpu(graph_t* graph, float* rank_i, float** rank) {
 
 __host__
 error_t page_rank_gpu(graph_t* graph, float* rank_i, float** rank) {
-
   // Check for special cases
   bool finished = false;
   error_t rc = check_special_cases(graph, rank, &finished);
@@ -375,12 +361,12 @@ error_t page_rank_gpu(graph_t* graph, float* rank_i, float** rank) {
   graph_t* graph_d;
   float* rank_d;
   float* mailbox_d;
-  uint64_t rank_length;
+  vid_t rank_length;
   rank_length = VWARP_BATCH_SIZE * VWARP_BATCH_COUNT(graph->vertex_count);
   CHK_SUCCESS(initialize_gpu(graph, rank_i, rank_length, &graph_d, &rank_d,
                              &mailbox_d), err);
 
-  {// Configure the kernel
+  {
   dim3 blocks, threads_per_block;
   KERNEL_CONFIGURE(graph->vertex_count, blocks, threads_per_block);
   // Iterate for a specific number of rounds
@@ -415,7 +401,6 @@ error_t page_rank_gpu(graph_t* graph, float* rank_i, float** rank) {
 }
 
 error_t page_rank_cpu(graph_t* graph, float* rank_i, float** rank_ret) {
-
   // Check for special cases
   bool finished = false;
   error_t rc = check_special_cases(graph, rank_ret, &finished);
@@ -428,37 +413,37 @@ error_t page_rank_cpu(graph_t* graph, float* rank_i, float** rank_ret) {
   // initialize the rank of each vertex
   if (rank_i == NULL) {
     float initial_value = 1 / (float)graph->vertex_count;
-    for (id_t vertex_id = 0; vertex_id < graph->vertex_count; vertex_id++) {
+    for (vid_t vertex_id = 0; vertex_id < graph->vertex_count; vertex_id++) {
       rank[vertex_id] = initial_value;
       mailbox[vertex_id] = 0;
     }
   } else {
-    for (id_t vertex_id = 0; vertex_id < graph->vertex_count; vertex_id++) {
+    for (vid_t vertex_id = 0; vertex_id < graph->vertex_count; vertex_id++) {
       rank[vertex_id] = rank_i[vertex_id];
       mailbox[vertex_id] = 0;
     }
   }
 
-  for (int round = 0; round < PAGE_RANK_ROUNDS; round++) {
+  for (uint32_t round = 0; round < PAGE_RANK_ROUNDS; round++) {
     // iterate over all vertices to calculate the ranks for this round
     OMP(omp parallel for)
-    for(id_t vertex_id = 0; vertex_id < graph->vertex_count; vertex_id++) {
+    for(vid_t vertex_id = 0; vertex_id < graph->vertex_count; vertex_id++) {
       // calculate the sum of all neighbors' rank
       float my_rank = rank[vertex_id];
-      for (uint64_t i = graph->vertices[vertex_id];
+      for (eid_t i = graph->vertices[vertex_id];
            i < graph->vertices[vertex_id + 1]; i++) {
-        const id_t neighbor_id = graph->edges[i];
+        const vid_t neighbor_id = graph->edges[i];
         __sync_fetch_and_add_float(&mailbox[neighbor_id], (float)my_rank);
       }
     }
 
     OMP(omp parallel for)
-    for(id_t vertex_id = 0; vertex_id < graph->vertex_count; vertex_id++) {
+    for(vid_t vertex_id = 0; vertex_id < graph->vertex_count; vertex_id++) {
       // get sum of neighbors' ranks
       float sum = mailbox[vertex_id];
       mailbox[vertex_id] = 0;
       // calculate my rank
-      uint64_t neighbors_count =
+      vid_t neighbors_count = 
         graph->vertices[vertex_id + 1] - graph->vertices[vertex_id];
       float my_rank =
         ((1 - DAMPING_FACTOR) / graph->vertex_count) + (DAMPING_FACTOR * sum);

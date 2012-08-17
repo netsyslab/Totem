@@ -41,7 +41,7 @@ error_t check_special_cases(const graph_t* graph, bool* finished,
  * implementation of stress centrality.
  */
 PRIVATE
-error_t initialize_gpu(const graph_t* graph, uint64_t vertex_count,
+error_t initialize_gpu(const graph_t* graph, vid_t vertex_count,
                        graph_t** graph_d, uint32_t** sigma_d, uint32_t** dist_d,
                        uint32_t** delta_d, bool** finished_d,
                        weight_t** stress_centrality_d) {
@@ -115,9 +115,9 @@ void unweighted_sc_sssp_kernel(graph_t graph, uint32_t dist, uint32_t* dists,
   if (vertex_id >= graph.vertex_count) return;
   if (dists[vertex_id] != dist) return;
 
-  for (id_t i = graph.vertices[vertex_id];
+  for (eid_t i = graph.vertices[vertex_id];
        i < graph.vertices[vertex_id + 1]; i++) {
-    const id_t neighbor_id = graph.edges[i];
+    const vid_t neighbor_id = graph.edges[i];
     if (dists[neighbor_id] == (uint32_t)-1) {
       // Threads may update finished and the same position in the cost array
       // concurrently. It does not affect correctness since all
@@ -142,13 +142,13 @@ void unweighted_sc_sssp_kernel(graph_t graph, uint32_t dist, uint32_t* dists,
 __global__
 void unweighted_sc_back_prop_kernel(graph_t graph, uint32_t* dists,
                                     uint32_t dist, uint32_t* delta) {
-  const id_t vertex_id = THREAD_GLOBAL_INDEX;
+  const vid_t vertex_id = THREAD_GLOBAL_INDEX;
   if (vertex_id >= graph.vertex_count) return;
   if (dists[vertex_id] != (dist - 1)) return;
 
-  for (id_t i = graph.vertices[vertex_id];
+  for (eid_t i = graph.vertices[vertex_id];
        i < graph.vertices[vertex_id + 1]; i++) {
-    const id_t neighbor_id = graph.edges[i];
+    const vid_t neighbor_id = graph.edges[i];
     if ((dists[neighbor_id] == dist)) {
       delta[vertex_id] += 1 + delta[neighbor_id];
     }
@@ -161,11 +161,11 @@ void unweighted_sc_back_prop_kernel(graph_t graph, uint32_t* dists,
  * score by summing path counts for each vertex.
  */
 __global__
-void unweighted_sc_back_sum_kernel(graph_t graph, id_t source, uint32_t dist,
+void unweighted_sc_back_sum_kernel(graph_t graph, vid_t source, uint32_t dist,
                                    uint32_t* dists, uint32_t* delta,
                                    uint32_t* sigma,
                                    weight_t* stress_centrality) {
-  const id_t vertex_id = THREAD_GLOBAL_INDEX;
+  const vid_t vertex_id = THREAD_GLOBAL_INDEX;
   if (vertex_id >= graph.vertex_count) return;
 
   if ((vertex_id != source) && (dists[vertex_id] == dist)) {
@@ -179,7 +179,7 @@ void unweighted_sc_back_sum_kernel(graph_t graph, id_t source, uint32_t dist,
  * called once per source vertex in the graph.
  */
 PRIVATE
-error_t stress_apsp_gpu(const graph_t* graph, graph_t* graph_d, id_t source,
+error_t stress_apsp_gpu(const graph_t* graph, graph_t* graph_d, vid_t source,
                         uint32_t* dist, uint32_t* dist_d, uint32_t* sigma_d,
                         bool* finished_d) {
   // {} used to limit scope and avoid problems with error handles.
@@ -222,7 +222,7 @@ error_t stress_apsp_gpu(const graph_t* graph, graph_t* graph_d, id_t source,
  */
 PRIVATE
 error_t stress_back_prop_gpu(const graph_t* graph, graph_t* graph_d,
-                             id_t source, uint32_t* dist_d, uint32_t* sigma_d,
+                             vid_t source, uint32_t* dist_d, uint32_t* sigma_d,
                              uint32_t* dist, uint32_t* delta_d,
                              weight_t* stress_centrality_d) {
   // {} used to limit scope and avoid problems with error handles.
@@ -280,7 +280,7 @@ error_t stress_unweighted_gpu(const graph_t* graph,
   // Find and count all shortest paths from every source vertex to every other
   // vertex in the graph. These paths and counts are used to determine the
   // stress centrality for each vertex
-  for (id_t source = 0; source < graph->vertex_count; source++) {
+  for (vid_t source = 0; source < graph->vertex_count; source++) {
     // APSP
     uint32_t dist = 0;
     CHK_SUCCESS(stress_apsp_gpu(graph, graph_d, source, &dist, dist_d, sigma_d,
@@ -337,7 +337,7 @@ error_t stress_unweighted_cpu(const graph_t* graph,
     (uint32_t*)mem_alloc(graph->vertex_count * sizeof(uint32_t));
   memset(stress_centrality, 0.0, graph->vertex_count * sizeof(weight_t));
 
-  for (id_t source = 0; source < graph->vertex_count; source++) {
+  for (vid_t source = 0; source < graph->vertex_count; source++) {
     // Initialize state for SSSP
     memset(sigma, 0, graph->vertex_count * sizeof(uint32_t));
     memset(delta, 0, graph->vertex_count * sizeof(uint32_t));
@@ -351,10 +351,10 @@ error_t stress_unweighted_cpu(const graph_t* graph,
     while (!finished) {
       finished = true;
       OMP(omp parallel for)
-      for (id_t u = 0; u < graph->vertex_count; u++) {
-        for (id_t e = graph->vertices[u]; e < graph->vertices[u + 1]; e++) {
+      for (vid_t u = 0; u < graph->vertex_count; u++) {
+        for (eid_t e = graph->vertices[u]; e < graph->vertices[u + 1]; e++) {
           // For edge (u,v)
-          id_t v = graph->edges[e];
+          vid_t v = graph->edges[e];
 
           if (dists[u] == dist) {
             if (dists[v] == (uint32_t)-1) {
@@ -378,11 +378,11 @@ error_t stress_unweighted_cpu(const graph_t* graph,
     while (dist > 1) {
       dist--;
       OMP(omp parallel for)
-      for (id_t v = 0; v < graph->vertex_count; v++) {
+      for (vid_t v = 0; v < graph->vertex_count; v++) {
         if (dists[v] != (dist - 1)) continue;
-        for (id_t e = graph->vertices[v]; e < graph->vertices[v + 1]; e++) {
+        for (eid_t e = graph->vertices[v]; e < graph->vertices[v + 1]; e++) {
           // For edge (u,v)
-          id_t u = graph->edges[e];
+          vid_t u = graph->edges[e];
 
           if (dists[u] == dist) {
             delta[v] += 1 + delta[u];
@@ -390,7 +390,7 @@ error_t stress_unweighted_cpu(const graph_t* graph,
         }
       }
       OMP(omp parallel for)
-      for (id_t v = 0; v < graph->vertex_count; v++) {
+      for (vid_t v = 0; v < graph->vertex_count; v++) {
         if (v != source && dists[v] == dist) {
           stress_centrality[v] += 1.0 * sigma[v] * delta[v];
         }

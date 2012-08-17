@@ -41,15 +41,15 @@ error_t check_special_cases(graph_t* graph, weight_t **distances,
     return SUCCESS;
   }
 
-  id_t v_count = graph->vertex_count;
+  vid_t v_count = graph->vertex_count;
   // Check whether the graph has vertices, but an empty edge set.
   if ((v_count > 0) && (graph->edge_count == 0)) {
     *distances = (weight_t*)mem_alloc(v_count * v_count * sizeof(weight_t));
 
-    for (id_t src = 0; src < v_count; src++) {
+    for (vid_t src = 0; src < v_count; src++) {
       // Initialize path lengths to WEIGHT_MAX.
       weight_t* base = &(*distances)[src * v_count];
-      for (id_t dest = 0; dest < v_count; dest++) {
+      for (vid_t dest = 0; dest < v_count; dest++) {
         base[dest] = (weight_t)WEIGHT_MAX;
       }
       // 0 distance to oneself
@@ -67,7 +67,7 @@ error_t check_special_cases(graph_t* graph, weight_t **distances,
  * allocates memory for use with Dijkstra's algorithm.
 */
 PRIVATE
-error_t initialize_gpu(graph_t* graph, uint64_t distance_length,
+error_t initialize_gpu(graph_t* graph, vid_t distance_length,
                        graph_t** graph_d, weight_t** distances_d,
                        weight_t** new_distances_d, bool** changed_d,
                        bool** has_true_d) {
@@ -111,7 +111,7 @@ error_t initialize_gpu(graph_t* graph, uint64_t distance_length,
  * source vertex.
 */
 PRIVATE
-error_t initialize_source_gpu(id_t source_id, uint64_t distance_length,
+error_t initialize_source_gpu(vid_t source_id, vid_t distance_length, 
                               bool** changed_d, bool** has_true_d,
                               weight_t** distances_d,
                               weight_t** new_distances_d) {
@@ -194,7 +194,7 @@ error_t apsp_gpu(graph_t* graph, weight_t** path_ret) {
   {
   dim3 block_count, threads_per_block;
   KERNEL_CONFIGURE(graph->vertex_count, block_count, threads_per_block);
-  for (id_t source_id = 0; source_id < graph->vertex_count; source_id++) {
+  for (vid_t source_id = 0; source_id < graph->vertex_count; source_id++) {
     // Run SSSP for the selected vertex
     CHK_SUCCESS(initialize_source_gpu(source_id, graph->vertex_count,
                                       &changed_d, &has_true_d, &distances_d,
@@ -248,20 +248,20 @@ error_t apsp_cpu(graph_t* graph, weight_t** path_ret) {
   error_t ret_val = check_special_cases(graph, path_ret, &finished);
   if (finished) return ret_val;
 
-  uint32_t v_count = graph->vertex_count;
+  vid_t v_count = graph->vertex_count;
   // The distances array mimics a static array to avoid the overhead of
   // creating an array of pointers. Thus, accessing index [i][j] will be
   // done as distances[(i * v_count) + j]
   weight_t* distances = (weight_t*)mem_alloc(v_count * v_count *
                                              sizeof(weight_t));
   // Initialize the path cost from the edge list
-  for (id_t src = 0; src < v_count; src++) {
+  for (vid_t src = 0; src < v_count; src++) {
     weight_t* base = &distances[src * v_count];
     // Initialize path lengths to WEIGHT_MAX.
-    for (id_t dest = 0; dest < v_count; dest++) {
+    for (vid_t dest = 0; dest < v_count; dest++) {
       base[dest] = (weight_t)WEIGHT_MAX;
     }
-    for (id_t edge = graph->vertices[src]; edge < graph->vertices[src + 1];
+    for (eid_t edge = graph->vertices[src]; edge < graph->vertices[src + 1];
          edge++) {
       base[graph->edges[edge]] = graph->weights[edge];
     }
@@ -270,12 +270,12 @@ error_t apsp_cpu(graph_t* graph, weight_t** path_ret) {
   }
 
   // Run the main loop |V| times to converge.
-  for (id_t mid = 0; mid < v_count; mid++) {
+  for (vid_t mid = 0; mid < v_count; mid++) {
     OMP(omp parallel for)
-    for (id_t src = 0; src < v_count; src++) {
+    for (vid_t src = 0; src < v_count; src++) {
       weight_t* base = &distances[src * v_count];
       weight_t* mid_base = &distances[mid * v_count];
-      for (id_t dest = 0; dest < v_count; dest++) {
+      for (vid_t dest = 0; dest < v_count; dest++) {
         base[dest] = min(base[dest], base[mid] + mid_base[dest]);
       }
     }

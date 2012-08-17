@@ -13,9 +13,8 @@
 #include "totem_util.h"
 
 PRIVATE
-void init_get_rmt_nbrs_list(partition_t* par, uint32_t vcount, uint32_t pcount,
-                            id_t** nbrs, int* count_per_par) {
-
+void init_get_rmt_nbrs_list(partition_t* par, vid_t vcount, uint32_t pcount,
+                            vid_t** nbrs, int* count_per_par) {
   // Initialize the counters to zero
   memset(count_per_par, 0, MAX_PARTITION_COUNT * sizeof(int));
 
@@ -27,9 +26,9 @@ void init_get_rmt_nbrs_list(partition_t* par, uint32_t vcount, uint32_t pcount,
   hash_table_t* ht;
   CALL_SAFE(hash_table_initialize_cpu(vcount - subg->vertex_count, &ht));
   // TODO (abdullah): parallelize this loop
-  for (id_t vid = 0; vid < subg->vertex_count; vid++) {
-    for (id_t i = subg->vertices[vid]; i < subg->vertices[vid + 1]; i++) {
-      id_t nbr = subg->edges[i];
+  for (vid_t vid = 0; vid < subg->vertex_count; vid++) {
+    for (eid_t i = subg->vertices[vid]; i < subg->vertices[vid + 1]; i++) {
+      vid_t nbr = subg->edges[i];
       int nbr_pid = GET_PARTITION_ID(nbr);
       if (nbr_pid != par->id) {
         par->rmt_edge_count++;
@@ -47,20 +46,20 @@ void init_get_rmt_nbrs_list(partition_t* par, uint32_t vcount, uint32_t pcount,
 }
 
 PRIVATE
-void init_map_rmt_nbrs(partition_t* par, uint32_t pcount, id_t* nbrs,
+void init_map_rmt_nbrs(partition_t* par, uint32_t pcount, vid_t* nbrs,
                        int* count_per_par, hash_table_t** ht) {
   // Sort the ids. This significantly improves the performance of
   // memory scatter operations and prefetching by improving data locality
   // (hence cache hit rate)
-  qsort(nbrs, par->rmt_vertex_count, sizeof(id_t), compare_ids);
+  qsort(nbrs, par->rmt_vertex_count, sizeof(vid_t), compare_ids);
 
   // Build the hash table map
   CALL_SAFE(hash_table_initialize_cpu(par->rmt_vertex_count, ht));
-  id_t cur_rmt_v = 0;
+  vid_t cur_rmt_v = 0;
   while (cur_rmt_v < par->rmt_vertex_count) {
-    id_t count = count_per_par[GET_PARTITION_ID(nbrs[cur_rmt_v])];
+    int count = count_per_par[GET_PARTITION_ID(nbrs[cur_rmt_v])];
     OMP(omp parallel for)
-    for (id_t i = 0; i < count; i++) {
+    for (int i = 0; i < count; i++) {
       CALL_SAFE(hash_table_put_cpu(*ht, nbrs[cur_rmt_v + i], i));
     }
     cur_rmt_v += count;
@@ -68,22 +67,21 @@ void init_map_rmt_nbrs(partition_t* par, uint32_t pcount, id_t* nbrs,
 }
 
 PRIVATE
-void init_map_rmt_nbrs(partition_t* par, uint32_t pcount, id_t* nbrs,
-                       int* count_per_par, hash_table_t* ht,
-                       id_t** rmt_nbrs) {
+void init_map_rmt_nbrs(partition_t* par, uint32_t pcount, vid_t* nbrs,
+                       int* count_per_par, hash_table_t* ht, vid_t** rmt_nbrs) {
   // allocate the state, it is per remote partition
-  memset(rmt_nbrs, 0, MAX_PARTITION_COUNT * sizeof(id_t*));
+  memset(rmt_nbrs, 0, MAX_PARTITION_COUNT * sizeof(vid_t*));
   for (int i = 0; i < MAX_PARTITION_COUNT; i++) {
     if (count_per_par[i]) {
-      rmt_nbrs[i] = (id_t*)calloc(count_per_par[i], sizeof(id_t));
+      rmt_nbrs[i] = (vid_t*)calloc(count_per_par[i], sizeof(vid_t));
       assert(rmt_nbrs[i]);
     }
   }
   // create the final mapping
   OMP(omp parallel for)
-  for (int v = 0; v < par->rmt_vertex_count; v++) {
+  for (vid_t v = 0; v < par->rmt_vertex_count; v++) {
     int index; HT_LOOKUP(ht, nbrs[v], index);
-    id_t* pnbrs = rmt_nbrs[GET_PARTITION_ID(nbrs[v])];
+    vid_t* pnbrs = rmt_nbrs[GET_PARTITION_ID(nbrs[v])];
     pnbrs[index] = GET_VERTEX_ID(nbrs[v]);
   }
 }
@@ -92,28 +90,28 @@ PRIVATE
 void init_update_subgraph(partition_t* par, hash_table_t* ht) {
   graph_t* subg = &(par->subgraph);
   OMP(omp parallel for)
-  for (id_t vid = 0; vid < subg->vertex_count; vid++) {
-    for (id_t i = subg->vertices[vid]; i < subg->vertices[vid + 1]; i++) {
-      id_t nbr = subg->edges[i];
+  for (vid_t vid = 0; vid < subg->vertex_count; vid++) {
+    for (eid_t i = subg->vertices[vid]; i < subg->vertices[vid + 1]; i++) {
+      vid_t nbr = subg->edges[i];
       int nbr_pid = GET_PARTITION_ID(nbr);
       if (nbr_pid != par->id) {
         int new_nbr_id;
         HT_LOOKUP(ht, nbr, new_nbr_id);
         assert(new_nbr_id != -1);
-        subg->edges[i] = SET_PARTITION_ID((id_t)new_nbr_id, nbr_pid);
+        subg->edges[i] = SET_PARTITION_ID((vid_t)new_nbr_id, nbr_pid);
       }
     }
   }
 }
 
 PRIVATE
-void init_get_rmt_nbrs(partition_t* par, uint32_t vcount, uint32_t pcount,
-                       id_t** rmt_nbrs, int* count_per_par) {
+void init_get_rmt_nbrs(partition_t* par, vid_t vcount, uint32_t pcount,
+                       vid_t** rmt_nbrs, int* count_per_par) {
   // First, identify the remote neighbors to this partition. "nbrs" is a flat
   // array that stores the list of all remote neighbors, irrespective of which
   // remote partition they belong to. "count_per_par" array is the number of
   // remote neighbors per remote partition
-  id_t* nbrs;
+  vid_t* nbrs;
   init_get_rmt_nbrs_list(par, vcount, pcount, &nbrs, count_per_par);
 
   // Second, map the remote neighbors ids in this partition to a new contiguous
@@ -162,12 +160,12 @@ PRIVATE void init_table_gpu(grooves_box_table_t* btable, uint32_t pcount,
   memcpy(*btable_h, btable, pcount * sizeof(grooves_box_table_t));
   // initialize the tables on the gpu
   for (uint32_t pid = 0; pid < pcount; pid++) {
-    int count = (*btable_h)[pid].count;
+    vid_t count = (*btable_h)[pid].count;
     if (count) {
       CALL_CU_SAFE(cudaMalloc((void**)&((*btable_h)[pid].rmt_nbrs),
-                              count * sizeof(id_t)));
+                              count * sizeof(vid_t)));
       CALL_CU_SAFE(cudaMemcpy((*btable_h)[pid].rmt_nbrs,
-                              btable[pid].rmt_nbrs, count * sizeof(id_t),
+                              btable[pid].rmt_nbrs, count * sizeof(vid_t),
                               cudaMemcpyHostToDevice));
       CALL_CU_SAFE(cudaMalloc((void**)&((*btable_h)[pid].values),
                               bits_to_bytes(count * msg_size)));
@@ -183,7 +181,7 @@ PRIVATE void init_table_gpu(grooves_box_table_t* btable, uint32_t pcount,
 }
 
 PRIVATE void init_outbox_table(partition_t* partition, uint32_t pcount,
-                               id_t** rmt_nbrs, int* count_per_par,
+                               vid_t** rmt_nbrs, int* count_per_par,
                                size_t msg_size) {
   grooves_box_table_t* outbox = partition->outbox;
   uint32_t pid = partition->id;
@@ -217,7 +215,7 @@ PRIVATE void init_outbox(partition_set_t* pset) {
         !partition->subgraph.edge_count) continue;
 
     // identify the remote nbrs and their count per remote partition
-    id_t* rmt_nbrs[MAX_PARTITION_COUNT];
+    vid_t* rmt_nbrs[MAX_PARTITION_COUNT];
     int count_per_par[MAX_PARTITION_COUNT];
     init_get_rmt_nbrs(partition, pset->graph->vertex_count, pcount, rmt_nbrs,
                       count_per_par);
@@ -353,8 +351,8 @@ PRIVATE void finalize_table_gpu(grooves_box_table_t* btable_d,
   free(btable_h);
 }
 
-PRIVATE void finalize_gpu_disable_peer_access(uint32_t pid,
-                                              partition_set_t* pset) {
+PRIVATE
+void finalize_gpu_disable_peer_access(uint32_t pid, partition_set_t* pset) {
   uint32_t pcount = pset->partition_count;
   partition_t* partition = &pset->partitions[pid];
   for (int remote_pid = (pid + 1) % pcount; remote_pid != pid;

@@ -19,7 +19,7 @@ using ::testing::Values;
 // Details on how to use TestWithParam<T> can be found at:
 // http://code.google.com/p/googletest/source/browse/trunk/samples/sample7_unittest.cc
 
-typedef error_t(*MaxFlowFunction)(graph_t*, id_t, id_t, weight_t*);
+typedef error_t(*MaxFlowFunction)(graph_t*, vid_t, vid_t, weight_t*);
 
 class MaxFlowTest : public TestWithParam<MaxFlowFunction> {
  public:
@@ -78,8 +78,8 @@ TEST_P(MaxFlowTest, Chain) {
                    &graph);
 
   // First vertex as source
-  id_t source = 0;
-  id_t sink = graph->vertex_count - 1;
+  vid_t source = 0;
+  vid_t sink = graph->vertex_count - 1;
   EXPECT_EQ(SUCCESS, maxflow(graph, source, sink, &flow));
   EXPECT_EQ((weight_t)1, flow);
 
@@ -103,8 +103,8 @@ TEST_P(MaxFlowTest, RMF100) {
   graph_initialize(DATA_FOLDER("rmf_100_nodes.totem"), true, &graph);
 
   // First vertex as source
-  id_t source = 0;
-  id_t sink = graph->vertex_count - 1;
+  vid_t source = 0;
+  vid_t sink = graph->vertex_count - 1;
   EXPECT_EQ(SUCCESS, maxflow(graph, source, sink, &flow));
   EXPECT_EQ((weight_t)174, flow);
   graph_finalize(graph);
@@ -115,8 +115,8 @@ TEST_P(MaxFlowTest, AcyclicDense100) {
   graph_initialize(DATA_FOLDER("acyclic_100_nodes.totem"), true, &graph);
 
   // First vertex as source
-  id_t source = 0;
-  id_t sink = graph->vertex_count - 1;
+  vid_t source = 0;
+  vid_t sink = graph->vertex_count - 1;
   EXPECT_EQ(SUCCESS, maxflow(graph, source, sink, &flow));
   EXPECT_EQ((weight_t)45333, flow);
   graph_finalize(graph);
@@ -127,8 +127,8 @@ TEST_P(MaxFlowTest, WashingtonRandom) {
   graph_initialize(DATA_FOLDER("washington_random.totem"), true, &graph);
 
   // First vertex as source
-  id_t source = 0;
-  id_t sink = graph->vertex_count - 1;
+  vid_t source = 0;
+  vid_t sink = graph->vertex_count - 1;
   EXPECT_EQ(SUCCESS, maxflow(graph, source, sink, &flow));
   EXPECT_EQ((weight_t)863, flow);
   graph_finalize(graph);

@@ -20,28 +20,49 @@
 #include "totem_mem.h"
 
 /**
-   This structure is used by the virtual warp-based implementation. It stores a
-   batch of work. It is typically allocated on shared memory and is processed by
-   a single virtual warp.
+ * This structure is used by the virtual warp-based implementation. It stores a
+ * batch of work. It is allocated on shared memory and is processed by a single
+ * virtual warp.
  */
 typedef struct {
+  // One is added to make it easy to calculate the number of neighbors of the
+  // last vertex. Another one is added to ensure 8Bytes alignment irrespective 
+  // whether sizeof(eid_t) is 4 or 8. Alignment is enforced for performance 
+  // reasons.
+  eid_t vertices[VWARP_BATCH_SIZE + 2];
   uint32_t cost[VWARP_BATCH_SIZE];
-  id_t vertices[VWARP_BATCH_SIZE + 1];
-  // the following ensures 64-bit alignment, it assumes that the
-  // cost and vertices arrays are of 32-bit elements.
-  // TODO(abdullah) a portable way to do this (what if id_t is 64-bit?)
-  int pad;
 } vwarp_mem_t;
+
+PRIVATE 
+error_t check_special_cases(graph_t* graph, vid_t src_id, uint32_t** cost,
+                            bool* finished) {
+  *finished = true;
+  if((graph == NULL) || (src_id >= graph->vertex_count)) {
+    *cost = NULL;
+    return FAILURE;
+  } else if(graph->vertex_count == 1) {
+    *cost = (uint32_t*)mem_alloc(sizeof(uint32_t));
+    *cost[0] = 0;
+    return SUCCESS;
+  } else if(graph->edge_count == 0) {
+  // Initialize cost to INFINITE.
+    *cost = (uint32_t*) mem_alloc(graph->vertex_count * sizeof(uint32_t));
+    memset(*cost, 0xFF, graph->vertex_count * sizeof(uint32_t));
+    (*cost)[src_id] = 0;
+    return SUCCESS;
+  }
+  *finished = false;
+  return SUCCESS;
+}
 
 /**
  * A common initialization function for GPU implementations. It allocates and
  * initalizes state on the GPU
 */
 PRIVATE
-error_t initialize_gpu(const graph_t* graph, id_t source_id, uint64_t cost_len,
-                       graph_t** graph_d, uint32_t** cost_d,
+error_t initialize_gpu(const graph_t* graph, vid_t source_id, vid_t cost_len, 
+                       graph_t** graph_d, uint32_t** cost_d, 
                        bool** finished_d) {
-
   // TODO(lauro) Next four lines are not directly related to this function and
   // should have a better location.
   dim3 blocks;
@@ -77,7 +98,7 @@ error_t initialize_gpu(const graph_t* graph, id_t source_id, uint64_t cost_len,
 */
 PRIVATE
 error_t finalize_gpu(graph_t* graph_d, uint32_t* cost_d, uint32_t** cost) {
-  *cost = (uint32_t*) mem_alloc(graph_d->vertex_count * sizeof(uint32_t));
+  *cost = (uint32_t*)mem_alloc(graph_d->vertex_count * sizeof(uint32_t));
   CHK_CU_SUCCESS(cudaMemcpy(*cost, cost_d, graph_d->vertex_count *
                             sizeof(uint32_t), cudaMemcpyDeviceToHost), err);
   graph_finalize_device(graph_d);
@@ -88,32 +109,28 @@ error_t finalize_gpu(graph_t* graph_d, uint32_t* cost_d, uint32_t** cost) {
 }
 
 /* This comment describes implementation details of the next two functions.
- Modified from [Harish07].
- Breadth First Search
- This implementation uses level synchronization. BFS traverses the
- graph in levels; once a level is visited it is not visited again.
- The BFS frontier corresponds to all the nodes being processed at the current
- level.
- Each thread process a vertex (in the following text these terms are used
- interchangeably). An integer array, cost_d, stores the minimal number of edges
- from the source vertex to each vertex. The cost for vertices that have not been
- visited yet is INFINITE. In each iteration, each vertex checks if it belongs to
- the current level by verifying its own cost. If it does, it updates its not yet
- visited neighbors. If the cost of, at least, one neighbor is updated, the
- variable finished_d is set to false and there will be another iteration.
+ * Modified from [Harish07].
+ * Breadth First Search
+ * This implementation uses level synchronization. BFS traverses the graph
+ * in levels; once a level is visited it is not visited again. The BFs frontier
+ * corresponds to all the nodes being processed at the current level.
+ * Each thread processes a vertex (in the following text these terms are used
+ * interchangeably). An integer array, cost_d, stores the minimal number of 
+ * edges from the source vertex to each vertex. The cost for vertices that have
+ * not been visited yet is INFINITE. In each iteration, each vertex checks if it
+ * belongs to the current level by verifying its own cost. If it does, it
+ * updates its not yet visited neighbors. If the cost of, at least, one neighbor
+ * is updated, the variable finished_d is set to false and there will be another
+ * iteration.
  */
 __global__
 void bfs_kernel(graph_t graph, uint32_t level, bool* finished, uint32_t* cost) {
-  const int vertex_id = THREAD_GLOBAL_INDEX;
+  const vid_t vertex_id = THREAD_GLOBAL_INDEX;
   if (vertex_id >= graph.vertex_count) return;
   if (cost[vertex_id] != level) return;
-
-  // TODO(lauro, abdullah): one optimization is to load the neighbors ids to
-  // shared memory to facilitate  coalesced memory access.
-  // for all neighbors of vertex_id
-  for (id_t i = graph.vertices[vertex_id];
+  for (eid_t i = graph.vertices[vertex_id]; 
        i < graph.vertices[vertex_id + 1]; i++) {
-    const id_t neighbor_id = graph.edges[i];
+    const vid_t neighbor_id = graph.edges[i];
     if (cost[neighbor_id] == INFINITE) {
       // Threads may update finished and the same position in the cost array
       // concurrently. It does not affect correctness since all
@@ -135,10 +152,11 @@ void bfs_kernel(graph_t graph, uint32_t level, bool* finished, uint32_t* cost) {
  * (1 + 2 * VWARP_WARP_SIZE) and so on.
 */
 __device__
-void vwarp_process_neighbors(int warp_offset, int neighbor_count, id_t* edges,
-                             uint32_t* cost, int level, bool* finished) {
-  for(int i = warp_offset; i < neighbor_count; i += VWARP_WARP_SIZE) {
-    int neighbor_id = edges[i];
+void vwarp_process_neighbors(vid_t warp_offset, vid_t neighbor_count, 
+                             vid_t* neighbors, uint32_t* cost, uint32_t level,
+                             bool* finished) {
+  for(vid_t i = warp_offset; i < neighbor_count; i += VWARP_WARP_SIZE) {
+    vid_t neighbor_id = neighbors[i];
     if (cost[neighbor_id] == INFINITE) {
       cost[neighbor_id] = level + 1;
       *finished = false;
@@ -154,54 +172,25 @@ void vwarp_process_neighbors(int warp_offset, int neighbor_count, id_t* edges,
 __global__
 void vwarp_bfs_kernel(graph_t graph, uint32_t level, bool* finished,
                       uint32_t* cost, uint32_t thread_count) {
-
   if (THREAD_GLOBAL_INDEX >= thread_count) return;
-
-  int warp_offset = THREAD_GLOBAL_INDEX % VWARP_WARP_SIZE;
-  int warp_id     = THREAD_GLOBAL_INDEX / VWARP_WARP_SIZE;
+  vid_t warp_offset = THREAD_GLOBAL_INDEX % VWARP_WARP_SIZE;
+  vid_t warp_id     = THREAD_GLOBAL_INDEX / VWARP_WARP_SIZE;
 
   __shared__ vwarp_mem_t shared_memory[(MAX_THREADS_PER_BLOCK /
                                         VWARP_WARP_SIZE)];
   vwarp_mem_t* my_space = shared_memory + (THREAD_GRID_INDEX / VWARP_WARP_SIZE);
 
   // copy my work to local space
-  int v_ = warp_id * VWARP_BATCH_SIZE;
+  vid_t v_ = warp_id * VWARP_BATCH_SIZE;
   vwarp_memcpy(my_space->cost, &cost[v_], VWARP_BATCH_SIZE, warp_offset);
   vwarp_memcpy(my_space->vertices, &(graph.vertices[v_]), VWARP_BATCH_SIZE + 1,
                warp_offset);
 
   // iterate over my work
-  for(uint32_t v = 0; v < VWARP_BATCH_SIZE; v++) {
+  for(vid_t v = 0; v < VWARP_BATCH_SIZE; v++) {
     if (my_space->cost[v] == level) {
-      int neighbor_count = my_space->vertices[v + 1] - my_space->vertices[v];
-      id_t* neighbors = &(graph.edges[my_space->vertices[v]]);
-      vwarp_process_neighbors(warp_offset, neighbor_count, neighbors, cost,
-                              level, finished);
-    }
-  }
-}
-
-/**
- * A modified version of bfs_kernel_warp kernel that does not use shared memory.
- * this is a drop-in replacement for the vwarp_bfs_kernel kernel.
- * TODO(Abdullah) This kernel is not currently in use, will be used once we have
- * an elegant soultion for the multi-version algorithms.
-*/
-__global__
-void vwarp_bfs_kernel_no_shared(graph_t graph, uint32_t level, bool* finished,
-                                uint32_t* cost, uint32_t thread_count) {
-
-  if (THREAD_GLOBAL_INDEX >= thread_count) return;
-
-  int warp_offset = THREAD_GLOBAL_INDEX % VWARP_WARP_SIZE;
-  int warp_id     = THREAD_GLOBAL_INDEX / VWARP_WARP_SIZE;
-
-  // iterate over my work
-  int batch_offset = warp_id * VWARP_BATCH_SIZE;
-  for(uint64_t v = batch_offset; v < (VWARP_BATCH_SIZE + batch_offset); v++) {
-    if (cost[v] == level) {
-      int neighbor_count = graph.vertices[v + 1] - graph.vertices[v];
-      id_t* neighbors = &(graph.edges[graph.vertices[v]]);
+      vid_t neighbor_count = my_space->vertices[v + 1] - my_space->vertices[v];
+      vid_t* neighbors = &(graph.edges[my_space->vertices[v]]);
       vwarp_process_neighbors(warp_offset, neighbor_count, neighbors, cost,
                               level, finished);
     }
@@ -209,23 +198,16 @@ void vwarp_bfs_kernel_no_shared(graph_t graph, uint32_t level, bool* finished,
 }
 
 __host__
-error_t bfs_vwarp_gpu(graph_t* graph, id_t source_id, uint32_t** cost) {
-  // TODO(lauro,abdullah): Factor out a validate graph function.
-  if((graph == NULL) || (source_id >= graph->vertex_count)) {
-    *cost = NULL;
-    return FAILURE;
-  } else if(graph->vertex_count == 1) {
-    *cost = (uint32_t*) mem_alloc(sizeof(uint32_t));
-    *cost[0] = 0;
-    return SUCCESS;
-  }
-  // TODO(lauro): More optimizations can be performed here. For example, if
-  // there is no edge. It can return the cost array initialize as INFINITE.
+error_t bfs_vwarp_gpu(graph_t* graph, vid_t source_id, uint32_t** cost) {
+  // Check for special cases
+  bool finished = false;
+  error_t rc = check_special_cases(graph, source_id, cost, &finished);
+  if (finished) return rc;
 
   // Create and initialize state on GPU
   graph_t* graph_d;
   uint32_t* cost_d;
-  uint64_t cost_length;
+  vid_t cost_length;
   bool* finished_d;
   cost_length = VWARP_BATCH_SIZE * VWARP_BATCH_COUNT(graph->vertex_count);
   CHK_SUCCESS(initialize_gpu(graph, source_id, cost_length, &graph_d,
@@ -237,7 +219,7 @@ error_t bfs_vwarp_gpu(graph_t* graph, id_t source_id, uint32_t** cost) {
   // configured as shared memory rather than L1 cache
   dim3 blocks;
   dim3 threads_per_block;
-  int thread_count = VWARP_WARP_SIZE * VWARP_BATCH_COUNT(graph->vertex_count);
+  vid_t thread_count = VWARP_WARP_SIZE * VWARP_BATCH_COUNT(graph->vertex_count);
   KERNEL_CONFIGURE(thread_count, blocks, threads_per_block);
   cudaFuncSetCacheConfig(vwarp_bfs_kernel, cudaFuncCachePreferShared);
   bool finished = false;
@@ -265,18 +247,11 @@ error_t bfs_vwarp_gpu(graph_t* graph, id_t source_id, uint32_t** cost) {
 }
 
 __host__
-error_t bfs_gpu(graph_t* graph, id_t source_id, uint32_t** cost) {
-  // TODO(lauro,abdullah): Factor out a validate graph function.
-  if((graph == NULL) || (source_id >= graph->vertex_count)) {
-    *cost = NULL;
-    return FAILURE;
-  } else if(graph->vertex_count == 1) {
-    *cost = (uint32_t*) mem_alloc(sizeof(uint32_t));
-    *cost[0] = 0;
-    return SUCCESS;
-  }
-  // TODO(lauro): More optimizations can be performed here. For example, if
-  // there is no edge. It can return the cost array initialize as INFINITE.
+error_t bfs_gpu(graph_t* graph, vid_t source_id, uint32_t** cost) {
+  // Check for special cases
+  bool finished = false;
+  error_t rc = check_special_cases(graph, source_id, cost, &finished);
+  if (finished) return rc;
 
   // Create and initialize state on GPU
   graph_t* graph_d;
@@ -316,11 +291,11 @@ error_t bfs_gpu(graph_t* graph, id_t source_id, uint32_t** cost) {
 }
 
 __host__
-error_t bfs_cpu(graph_t* graph, id_t source_id, uint32_t** cost_ret) {
-  if((graph == NULL) || (source_id >= graph->vertex_count)) {
-    *cost_ret = NULL;
-    return FAILURE;
-  }
+error_t bfs_cpu(graph_t* graph, vid_t source_id, uint32_t** cost_ret) {
+  // Check for special cases
+  bool finished = false;
+  error_t rc = check_special_cases(graph, source_id, cost_ret, &finished);
+  if (finished) return rc;
 
   // Initialize cost to INFINITE.
   uint32_t* cost = (uint32_t*) mem_alloc(graph->vertex_count *
@@ -333,7 +308,7 @@ error_t bfs_cpu(graph_t* graph, id_t source_id, uint32_t** cost_ret) {
   cost[source_id] = 0;
   bitmap_set_cpu(visited, source_id);
 
-  bool finished = false;
+  finished = false;
   // Within the following code segment, all threads execute in parallel the 
   // same code (similar to a cuda kernel)
   OMP(omp parallel)
@@ -363,11 +338,11 @@ error_t bfs_cpu(graph_t* graph, id_t source_id, uint32_t** cost_ret) {
       // store the value in "finished". Similar to the argument above, this 
       // improves performance by reducing cache coherency overhead
       OMP(omp for schedule(static) reduction(& : finished))
-      for (id_t vertex_id = 0; vertex_id < graph->vertex_count; vertex_id++) {
+      for (vid_t vertex_id = 0; vertex_id < graph->vertex_count; vertex_id++) {
         if (cost[vertex_id] != level) continue;
-        for (id_t i = graph->vertices[vertex_id];
+        for (eid_t i = graph->vertices[vertex_id];
              i < graph->vertices[vertex_id + 1]; i++) {
-          const id_t neighbor_id = graph->edges[i];
+          const vid_t neighbor_id = graph->edges[i];
           if (!bitmap_is_set(visited, neighbor_id)) {
             if (bitmap_set_cpu(visited, neighbor_id)) {
               finished = false;
