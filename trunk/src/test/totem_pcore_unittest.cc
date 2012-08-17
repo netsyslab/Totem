@@ -76,7 +76,7 @@ TEST_P(PCoreTest, EmptyEdges) {
   uint32_t* round;
   EXPECT_EQ(SUCCESS, pcore(graph, 0, 1, &round));
   EXPECT_FALSE(round == NULL);
-  for (id_t vertex = 0; vertex < graph->vertex_count; vertex++) {
+  for (vid_t vertex = 0; vertex < graph->vertex_count; vertex++) {
     EXPECT_EQ((uint32_t)0, round[vertex]);
   }
   mem_free(round);
@@ -91,7 +91,7 @@ TEST_P(PCoreTest, Chain) {
   uint32_t* round = NULL;
   EXPECT_EQ(SUCCESS, pcore(graph, 0, 1, &round));
   EXPECT_FALSE(round == NULL);
-  for (id_t vertex = 0; vertex < graph->vertex_count; vertex++) {
+  for (vid_t vertex = 0; vertex < graph->vertex_count; vertex++) {
     EXPECT_EQ((uint32_t)1, round[vertex]);
   }
   mem_free(round);
@@ -106,7 +106,7 @@ TEST_P(PCoreTest, CompleteGraph) {
   uint32_t* round;
   EXPECT_EQ(SUCCESS, pcore(graph, 0, 1, &round));
   EXPECT_FALSE(round == NULL);
-  for (id_t vertex = 0; vertex < graph->vertex_count; vertex++) {
+  for (vid_t vertex = 0; vertex < graph->vertex_count; vertex++) {
     EXPECT_EQ((uint32_t)299, round[vertex]);
   }
   mem_free(round);
@@ -121,7 +121,7 @@ TEST_P(PCoreTest, Star) {
   uint32_t* round;
   EXPECT_EQ(SUCCESS, pcore(graph, 0, 1, &round));
   EXPECT_FALSE(round == NULL);
-  for (id_t vertex = 0; vertex < graph->vertex_count; vertex++) {
+  for (vid_t vertex = 0; vertex < graph->vertex_count; vertex++) {
     EXPECT_EQ((uint32_t)1, round[vertex]);
   }
   mem_free(round);

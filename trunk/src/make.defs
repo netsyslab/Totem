@@ -3,7 +3,7 @@
 #
 # Features (e.g., make MEMORY="PINNED"):
 #   MEMORY=PAGEABLE // enables using pageable instead of pinned memory
-#   MP=NO           // disables OpenMP
+#   OPENMP=NO       // disables OpenMP
 #   VERBOSE=YES     // verbose nvcc output (host symbols are always produced)
 #   DEBUG=DEVICE    // produce device debugging symbols
 #   MAXREG=[number] // maximum number of registers per cuda thread (default 16)
@@ -22,8 +22,13 @@ endif
 
 # OpenMP support, default is enabled
 OPENMP    = -fopenmp
-ifeq ($(MP), NO)
+ifeq ($(OPENMP), NO)
   OPENMP  =
+endif
+
+# 64bit edge IDs
+ifeq ($(EID), 64)
+  TOTEM_FEATURES += -DFEATURE_64BIT_EDGE_ID
 endif
 
 # Set compilation options

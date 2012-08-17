@@ -21,12 +21,12 @@ using ::testing::Values;
 __global__ void VerifyPartitionGPUKernel(partition_t partition, uint32_t pid,
                                          uint32_t pcount) {
   const graph_t* subgraph = &partition.subgraph;
-  const int vid = THREAD_GLOBAL_INDEX;
+  const vid_t vid = THREAD_GLOBAL_INDEX;
   if (vid >= subgraph->vertex_count) return;
-  for (id_t i = subgraph->vertices[vid];
+  for (eid_t i = subgraph->vertices[vid];
        i < subgraph->vertices[vid + 1]; i++) {
-    uint32_t nbr = subgraph->edges[i];
-    uint32_t nbr_pid = GET_PARTITION_ID(nbr);
+    vid_t nbr     = subgraph->edges[i];
+    int  nbr_pid = GET_PARTITION_ID(nbr);
     KERNEL_EXPECT_TRUE(nbr_pid < pcount);
     if (nbr_pid != pid) {
       KERNEL_EXPECT_TRUE(partition.outbox_d[nbr_pid].count > 0);
@@ -52,7 +52,7 @@ __global__ void CheckInboxValuesGPUKernel(uint32_t pid, int* values,
   KERNEL_EXPECT_TRUE(values[index] == pid);
 }
 
-typedef error_t(*PartitionFunction)(graph_t*, int, double*, id_t**);
+typedef error_t(*PartitionFunction)(graph_t*, int, double*, vid_t**);
 class GraphPartitionTest : public TestWithParam<PartitionFunction> {
  public:
   virtual void SetUp() {
@@ -110,13 +110,13 @@ class GraphPartitionTest : public TestWithParam<PartitionFunction> {
     partition_t* partition = &partition_set_->partitions[pid];
     graph_t* subgraph = &partition->subgraph;
     uint32_t pcount = partition_set_->partition_count;
-    for (id_t vid = 0; vid < subgraph->vertex_count; vid++) {
-      for (id_t i = subgraph->vertices[vid];
+    for (vid_t vid = 0; vid < subgraph->vertex_count; vid++) {
+      for (eid_t i = subgraph->vertices[vid];
            i < subgraph->vertices[vid + 1]; i++) {
         uint32_t nbr_pid = GET_PARTITION_ID(subgraph->edges[i]);
         EXPECT_TRUE((nbr_pid < pcount));
         partition_t* nbr_partition = &partition_set_->partitions[nbr_pid];
-        id_t nbr_id = GET_VERTEX_ID(subgraph->edges[i]);
+        vid_t nbr_id = GET_VERTEX_ID(subgraph->edges[i]);
         EXPECT_TRUE((nbr_id < nbr_partition->subgraph.vertex_count));
         if (nbr_pid != pid) {
           grooves_box_table_t* outbox =
@@ -229,7 +229,7 @@ class GraphPartitionTest : public TestWithParam<PartitionFunction> {
  protected:
   PartitionFunction  partition_func_;
   graph_t*           graph_;
-  id_t*              partitions_;
+  vid_t*              partitions_;
   uint32_t           partition_count_;
   processor_t*       partition_processor_;
   partition_set_t*   partition_set_;
@@ -280,7 +280,7 @@ TEST_P(GraphPartitionTest , PartitionChainGraph) {
   EXPECT_EQ(SUCCESS, graph_initialize(DATA_FOLDER("chain_1000_nodes.totem"),
                                       false, &graph_));
   EXPECT_EQ(SUCCESS, partition_func_(graph_, 10, NULL, &partitions_));
-  for (id_t i = 0; i < graph_->vertex_count; i++) {
+  for (vid_t i = 0; i < graph_->vertex_count; i++) {
     EXPECT_TRUE(partitions_[i] < 10);
   }
 }
@@ -294,7 +294,7 @@ TEST_P(GraphPartitionTest , PartitionFractionChainGraph) {
   }
   EXPECT_EQ(SUCCESS, partition_func_(graph_, 10, partition_fraction,
                                      &partitions_));
-  for (id_t i = 0; i < graph_->vertex_count; i++) {
+  for (vid_t i = 0; i < graph_->vertex_count; i++) {
     EXPECT_TRUE(partitions_[i] < 10);
   }
   free(partition_fraction);
@@ -313,8 +313,8 @@ TEST_P(GraphPartitionTest , GetPartitionsSingleNodeGraph) {
                                               &partition_set_));
   EXPECT_EQ(partition_set_->partition_count, 1);
   partition_t* partition = &partition_set_->partitions[0];
-  EXPECT_EQ(partition->subgraph.vertex_count, (uint32_t)1);
-  EXPECT_EQ(partition->subgraph.edge_count, (uint32_t)0);
+  EXPECT_EQ(partition->subgraph.vertex_count, (vid_t)1);
+  EXPECT_EQ(partition->subgraph.edge_count, (eid_t)0);
 }
 
 TEST_P(GraphPartitionTest, GetPartitionsChainGraph) {
@@ -342,7 +342,7 @@ TEST_P(GraphPartitionTest, GetPartitionsImbalancedChainGraph) {
   }
   // Divide the graph in two partitions, one node in one partition and the
   // other 999 in the second partition.
-  partitions_ = (id_t*)calloc(1000, sizeof(id_t));
+  partitions_ = (vid_t*)calloc(1000, sizeof(vid_t));
   partitions_[0] = 1;
   EXPECT_EQ(SUCCESS, partition_set_initialize(graph_, partitions_,
                                               partition_processor_,
@@ -352,11 +352,11 @@ TEST_P(GraphPartitionTest, GetPartitionsImbalancedChainGraph) {
   for (int pid = 0; pid < partition_set_->partition_count; pid++) {
     partition_t* partition = &partition_set_->partitions[pid];
     EXPECT_EQ(pid, partition->id);
-    for (id_t vid = 0; vid < partition->subgraph.vertex_count; vid++) {
+    for (vid_t vid = 0; vid < partition->subgraph.vertex_count; vid++) {
       // Only the vertex-0 and vertex-999 in the original graph have a single
       // neighbor. Vertex-0 is in partition-1, and vertex-999 is renamed to 998
       // in partition-0.
-      id_t expected = (pid == 1 || vid == 998 ? 1 : 2);
+      vid_t expected = (pid == 1 || vid == 998 ? 1 : 2);
       EXPECT_EQ(expected,
                 partition->subgraph.vertices[vid + 1] -
                 partition->subgraph.vertices[vid]);

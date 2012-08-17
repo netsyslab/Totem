@@ -80,7 +80,7 @@ error_t finalize_gpu(graph_t* graph_d, uint32_t* dist_d, bool* finished_d) {
  * Runs the APSP BFS algorithm on the GPU.
  */
 PRIVATE
-error_t closeness_apsp_gpu(const graph_t* graph, id_t source, graph_t* graph_d,
+error_t closeness_apsp_gpu(const graph_t* graph, vid_t source, graph_t* graph_d,
                            uint32_t* dist, uint32_t* dist_d, bool* finished_d) {
   // {} used to limit scope and avoid problems with error handles.
   {
@@ -115,12 +115,12 @@ error_t closeness_apsp_gpu(const graph_t* graph, id_t source, graph_t* graph_d,
  * Calculates closeness centrality scores from the given BFS solution.
  */
 PRIVATE
-error_t calculate_closeness(const graph_t* graph, id_t source, uint32_t* dists,
+error_t calculate_closeness(const graph_t* graph, vid_t source, uint32_t* dists,
                             weight_t* closeness_centrality) {
   uint32_t connected = graph->vertex_count;
   uint64_t sum = 0;
   // TODO (greg): Move this to the GPU
-  for (id_t v = 0; v < graph->vertex_count; v++) {
+  for (vid_t v = 0; v < graph->vertex_count; v++) {
     if (dists[v] == (uint32_t)-1) {
       connected--;
     } else {
@@ -167,7 +167,7 @@ error_t closeness_unweighted_gpu(const graph_t* graph,
   // Find and count all shortest paths from every source vertex to every other
   // vertex in the graph. These paths and counts are used to determine the
   // closeness centrality for each vertex
-  for (id_t source = 0; source < graph->vertex_count; source++) {
+  for (vid_t source = 0; source < graph->vertex_count; source++) {
     // APSP
     uint32_t dist = 0;
     CHK_SUCCESS(closeness_apsp_gpu(graph, source, graph_d, &dist, dist_d,
@@ -220,7 +220,7 @@ error_t closeness_unweighted_cpu(const graph_t* graph,
     (uint32_t*)mem_alloc(graph->vertex_count * sizeof(uint32_t));
   memset(closeness_centrality, 0.0, graph->vertex_count * sizeof(weight_t));
 
-  for (id_t source = 0; source < graph->vertex_count; source++) {
+  for (vid_t source = 0; source < graph->vertex_count; source++) {
     // Initialize state for SSSP
     memset(dists, -1, graph->vertex_count * sizeof(uint32_t));
     dists[source] = 0;
@@ -231,11 +231,11 @@ error_t closeness_unweighted_cpu(const graph_t* graph,
     while (!finished) {
       finished = true;
       OMP(omp parallel for)
-      for (id_t vertex_id = 0; vertex_id < graph->vertex_count; vertex_id++) {
+      for (vid_t vertex_id = 0; vertex_id < graph->vertex_count; vertex_id++) {
         if (dists[vertex_id] != dist) continue;
-        for (id_t i = graph->vertices[vertex_id];
+        for (eid_t i = graph->vertices[vertex_id];
              i < graph->vertices[vertex_id + 1]; i++) {
-          const id_t neighbor_id = graph->edges[i];
+          const vid_t neighbor_id = graph->edges[i];
           if (dists[neighbor_id] == (uint32_t)-1) {
             finished = false;
             dists[neighbor_id] = dist + 1;

@@ -19,7 +19,7 @@ typedef struct bfs_state_s {
   uint32_t* cost;     // one slot per vertex in the partition
   bitmap_t* visited;  // a list of bitmaps, one for each remote partition
   bool*     finished; // points to the global finish flag
-  int       level;    // current level being processed by the partition
+  uint32_t  level;    // current level being processed by the partition
   dim3      blocks;   // kernel configuration parameters
   dim3      threads;
 } bfs_state_t;
@@ -46,21 +46,28 @@ bool* finished_g = NULL;
 /**
  * Source vertex partition and local vertex id
  */
-id_t src_vid_g;
+vid_t src_vid_g;
 int  src_pid_g;
 
 /**
  * Checks for input parameters and special cases. This is invoked at the
  * beginning of public interfaces (GPU and CPU)
 */
-PRIVATE error_t check_special_cases(id_t src, uint32_t** cost, bool* finished) {
+PRIVATE error_t check_special_cases(vid_t src, uint32_t** cost, 
+                                    bool* finished) {
   *finished = true;
   if(src >= engine_vertex_count()) {
     *cost = NULL;
     return FAILURE;
   } else if(engine_vertex_count() == 1) {
     *cost = (uint32_t*)mem_alloc(sizeof(uint32_t));
-    *cost[0] = 0;
+    *(cost)[0] = 0;
+    return SUCCESS;
+  } else if(engine_edge_count() == 0) {
+    // Initialize cost to INFINITE.
+    *cost = (uint32_t*) mem_alloc(engine_vertex_count() * sizeof(uint32_t));
+    memset(*cost, 0xFF, engine_vertex_count() * sizeof(uint32_t));
+    (*cost)[src] = 0;
     return SUCCESS;
   }
   *finished = false;
@@ -68,17 +75,13 @@ PRIVATE error_t check_special_cases(id_t src, uint32_t** cost, bool* finished) {
 }
 
 /**
-   This structure is used by the virtual warp-based implementation. It stores a
-   batch of work. It is typically allocated on shared memory and is processed by
-   a single virtual warp.
+ * This structure is used by the virtual warp-based implementation. It stores a
+ * batch of work. It is typically allocated on shared memory and is processed by
+ * a single virtual warp.
  */
 typedef struct {
+  eid_t vertices[VWARP_BATCH_SIZE + 2];
   uint32_t cost[VWARP_BATCH_SIZE];
-  id_t vertices[VWARP_BATCH_SIZE + 1];
-  // the following ensures 64-bit alignment, it assumes that the
-  // cost and vertices arrays are of 32-bit elements.
-  // TODO(abdullah) a portable way to do this (what if id_t is 64-bit?)
-  int pad;
 } vwarp_mem_t;
 
 /**
@@ -88,10 +91,10 @@ typedef struct {
  */
 __global__
 void bfs_kernel(partition_t par, uint32_t level, bool* finished, 
-                uint32_t* cost, bitmap_t* visited_arr, int thread_count) {
+                uint32_t* cost, bitmap_t* visited_arr, vid_t thread_count) {
   if (THREAD_GLOBAL_INDEX >= thread_count) return;
-  int warp_offset = THREAD_GLOBAL_INDEX % VWARP_WARP_SIZE;
-  int warp_id     = THREAD_GLOBAL_INDEX / VWARP_WARP_SIZE;
+  vid_t warp_offset = THREAD_GLOBAL_INDEX % VWARP_WARP_SIZE;
+  vid_t warp_id     = THREAD_GLOBAL_INDEX / VWARP_WARP_SIZE;
 
   // This flag is used to report the finish state of a block of threads. This
   // is useful to avoid having many threads writing to the global finished
@@ -104,21 +107,21 @@ void bfs_kernel(partition_t par, uint32_t level, bool* finished,
   // copy my work to local space
   __shared__ vwarp_mem_t smem[(MAX_THREADS_PER_BLOCK / VWARP_WARP_SIZE)];
   vwarp_mem_t* my_space = smem + (THREAD_GRID_INDEX / VWARP_WARP_SIZE);
-  int v = warp_id * VWARP_BATCH_SIZE;
-  int batch_size = (v + VWARP_BATCH_SIZE) > par.subgraph.vertex_count ?
+  vid_t v = warp_id * VWARP_BATCH_SIZE;
+  vid_t batch_size = (v + VWARP_BATCH_SIZE) > par.subgraph.vertex_count ?
     (par.subgraph.vertex_count - v) : VWARP_BATCH_SIZE;
   vwarp_memcpy(my_space->cost, &cost[v], batch_size, warp_offset);
   vwarp_memcpy(my_space->vertices, &(par.subgraph.vertices[v]),
                batch_size + 1, warp_offset);
 
   // iterate over my work
-  for(uint32_t v = 0; v < batch_size; v++) {
+  for(vid_t v = 0; v < batch_size; v++) {
     if (my_space->cost[v] == level) {
-      int nbr_count = my_space->vertices[v + 1] - my_space->vertices[v];
-      id_t* nbrs = &(par.subgraph.edges[my_space->vertices[v]]);
-      for(int i = warp_offset; i < nbr_count; i += VWARP_WARP_SIZE) {
+      eid_t nbr_count = my_space->vertices[v + 1] - my_space->vertices[v];
+      vid_t* nbrs = &(par.subgraph.edges[my_space->vertices[v]]);
+      for(vid_t i = warp_offset; i < nbr_count; i += VWARP_WARP_SIZE) {
         int nbr_pid = GET_PARTITION_ID(nbrs[i]);
-        id_t nbr = GET_VERTEX_ID(nbrs[i]);
+        vid_t nbr = GET_VERTEX_ID(nbrs[i]);
         bitmap_t visited = visited_arr[nbr_pid];
         if (!bitmap_is_set(visited, nbr)) {
           if (bitmap_set_gpu(visited, nbr)) {
@@ -151,11 +154,11 @@ PRIVATE inline void bfs_cpu(partition_t* par) {
   bool finished = true;
 
   OMP(omp parallel for reduction(& : finished))
-  for (id_t v = 0; v < subgraph->vertex_count; v++) {
+  for (vid_t v = 0; v < subgraph->vertex_count; v++) {
     if (state->cost[v] != state->level) continue;
-    for (id_t i = subgraph->vertices[v]; i < subgraph->vertices[v + 1]; i++) {
+    for (eid_t i = subgraph->vertices[v]; i < subgraph->vertices[v + 1]; i++) {
       int nbr_pid = GET_PARTITION_ID(subgraph->edges[i]);
-      id_t nbr = GET_VERTEX_ID(subgraph->edges[i]);
+      vid_t nbr = GET_VERTEX_ID(subgraph->edges[i]);
       bitmap_t visited = state->visited[nbr_pid];
       if (!bitmap_is_set(visited, nbr)) {
         if (bitmap_set_cpu(visited, nbr)) {
@@ -191,11 +194,11 @@ PRIVATE inline void bfs_scatter_cpu(grooves_box_table_t* inbox,
                                     bfs_state_t* state, bitmap_t* visited) {
   bitmap_t remotely_visited = (bitmap_t)inbox->values;
   OMP(omp parallel for)
-  for (int index = 0; index < inbox->count; index++) {
-    id_t vid = inbox->rmt_nbrs[index];
+  for (vid_t index = 0; index < inbox->count; index++) {
+    vid_t vid = inbox->rmt_nbrs[index];
     if (bitmap_is_set(remotely_visited, index) &&
         !bitmap_is_set(*visited, vid)) {
-      assert(bitmap_set_cpu(*visited, vid));
+      bitmap_set_cpu(*visited, vid);
       state->cost[vid] = state->level;
     }
   }
@@ -203,15 +206,15 @@ PRIVATE inline void bfs_scatter_cpu(grooves_box_table_t* inbox,
 
 __global__ void bfs_scatter_kernel(grooves_box_table_t inbox, uint32_t* cost, 
                                    uint32_t level, bitmap_t* visited) {
-  uint32_t index = THREAD_GLOBAL_INDEX;
+  vid_t index = THREAD_GLOBAL_INDEX;
   if (index >= inbox.count) return;
   bitmap_t rmt_visited = (bitmap_t)inbox.values;
-  id_t vid = inbox.rmt_nbrs[index];
-    if (bitmap_is_set(rmt_visited, index) &&
-        !bitmap_is_set(*visited, vid)) {
-      bitmap_set_gpu(*visited, vid);
-      cost[vid] = level;
-    }
+  vid_t vid = inbox.rmt_nbrs[index];
+  if (bitmap_is_set(rmt_visited, index) &&
+      !bitmap_is_set(*visited, vid)) {
+    bitmap_set_gpu(*visited, vid);
+    cost[vid] = level;
+  }
 }
 
 PRIVATE inline void bfs_scatter_gpu(grooves_box_table_t* inbox, 
@@ -253,9 +256,9 @@ PRIVATE void bfs_scatter(partition_t* par) {
 
 PRIVATE void bfs_aggregate(partition_t* par) {
   if (!par->subgraph.vertex_count) return;
-  bfs_state_t* state = (bfs_state_t*)par->algo_state;
-  graph_t* subgraph = &par->subgraph;
-  uint32_t* src_cost = NULL;
+  bfs_state_t* state    = (bfs_state_t*)par->algo_state;
+  graph_t*     subgraph = &par->subgraph;
+  uint32_t*    src_cost = NULL;
   if (par->processor.type == PROCESSOR_CPU) {
     src_cost = state->cost;
   } else if (par->processor.type == PROCESSOR_GPU) {
@@ -268,19 +271,19 @@ PRIVATE void bfs_aggregate(partition_t* par) {
   }
   // aggregate the results
   OMP(omp parallel for)
-  for (id_t v = 0; v < subgraph->vertex_count; v++) {
+  for (vid_t v = 0; v < subgraph->vertex_count; v++) {
     cost_g[par->map[v]] = src_cost[v];
   }
 }
 
-__global__ void bfs_init_kernel(bitmap_t visited, id_t src) {
+__global__ void bfs_init_kernel(bitmap_t visited, vid_t src) {
   if (THREAD_GLOBAL_INDEX != 0) return;
   bitmap_set_gpu(visited, src);
 }
 
 PRIVATE inline void bfs_init_gpu(partition_t* par) {
   bfs_state_t* state = (bfs_state_t*)par->algo_state;
-  uint64_t vcount = par->subgraph.vertex_count;
+  vid_t vcount = par->subgraph.vertex_count;
   CALL_CU_SAFE(cudaMalloc((void**)&(state->cost), vcount * sizeof(uint32_t)));
   CALL_CU_SAFE(cudaMalloc((void**)&(state->visited), 
                           MAX_PARTITION_COUNT * sizeof(bitmap_t)));
@@ -327,7 +330,7 @@ PRIVATE inline void bfs_init_cpu(partition_t* par) {
   }
   state->finished = finished_g;
   OMP(omp parallel for)
-  for (id_t v = 0; v < par->subgraph.vertex_count; v++) {
+  for (vid_t v = 0; v < par->subgraph.vertex_count; v++) {
     state->cost[v] = INFINITE;
   }
   // initialize the cost of the source vertex 
@@ -372,7 +375,7 @@ PRIVATE void bfs_finalize(partition_t* par) {
   par->algo_state = NULL;
 }
 
-error_t bfs_hybrid(id_t src, uint32_t** cost) {
+error_t bfs_hybrid(vid_t src, uint32_t** cost) {
   // check for special cases
   bool finished = false;
   error_t rc = check_special_cases(src, cost, &finished);

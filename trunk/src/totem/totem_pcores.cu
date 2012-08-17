@@ -43,7 +43,7 @@
 __global__
 void init_state_kernel(graph_t graph, int* weights_sum, uint32_t* round) {
   // get the thread's linear index
-  id_t vertex_id = THREAD_GLOBAL_INDEX;
+  vid_t vertex_id = THREAD_GLOBAL_INDEX;
   if (vertex_id >= graph.vertex_count) return;
 
   // all vertices are active at the beginnig
@@ -52,7 +52,7 @@ void init_state_kernel(graph_t graph, int* weights_sum, uint32_t* round) {
   /* initialize the sum of edge weights for this vertex. Since all vertices
      are active at this stage, all edges of a vertex are considered */
   weights_sum[vertex_id] = 0;
-  for (uint64_t i = graph.vertices[vertex_id];
+  for (eid_t i = graph.vertices[vertex_id];
        i < graph.vertices[vertex_id + 1]; i++) {
     weights_sum[vertex_id] += (int)graph.weights[i];
   } // for
@@ -75,7 +75,7 @@ void pcore_kernel(graph_t graph, int* weights_sum, uint32_t* round,
                   uint32_t cur_round,  uint32_t cur_threshold,
                   bool* finish_flags) {
   // get the thread's linear index
-  id_t vertex_id = THREAD_GLOBAL_INDEX;
+  vid_t vertex_id = THREAD_GLOBAL_INDEX;
   if (vertex_id >= graph.vertex_count ||
       round[vertex_id] != ACTIVE_FLAG) return;
 
@@ -90,9 +90,9 @@ void pcore_kernel(graph_t graph, int* weights_sum, uint32_t* round,
        active neighbors of this vertex will be visited again after their
        weights_sum have been updated */
     finish_flags[ROUND_INDEX] = false;
-    for (uint64_t i = graph.vertices[vertex_id];
+    for (eid_t i = graph.vertices[vertex_id];
          i < graph.vertices[vertex_id + 1]; i++) {
-      id_t neighbor_id = graph.edges[i];
+      vid_t neighbor_id = graph.edges[i];
       // atomically modify the neighbor's sum of edge weights
       atomicSub(&(weights_sum[neighbor_id]), (int)graph.weights[i]);
     }
@@ -233,13 +233,13 @@ error_t pcore_cpu(const graph_t* graph, uint32_t start, uint32_t step,
   round  = (uint32_t*)mem_alloc(graph->vertex_count * sizeof(uint32_t));
 
   OMP(omp parallel for)
-  for (id_t vertex_id = 0; vertex_id < graph->vertex_count; vertex_id++) {
+  for (vid_t vertex_id = 0; vertex_id < graph->vertex_count; vertex_id++) {
     // all vertices are active at the beginnig
     round[vertex_id] = ACTIVE_FLAG;
     /* initialize the sum of edge weights for this vertex. Since all vertices
        are active at this stage, all edges of a vertex are considered */
     weights_sum[vertex_id] = 0;
-    for (uint64_t i = graph->vertices[vertex_id];
+    for (eid_t i = graph->vertices[vertex_id];
          i < graph->vertices[vertex_id + 1]; i++) {
       weights_sum[vertex_id] += (int)graph->weights[i];
     } // for
@@ -263,7 +263,7 @@ error_t pcore_cpu(const graph_t* graph, uint32_t start, uint32_t step,
       round_finished = true; // a deactivated vertex will set this back to false
       finished = true; // an active vertex will set this back to false
       OMP(omp parallel for)
-      for (id_t vertex_id = 0; vertex_id < graph->vertex_count; vertex_id++) {
+      for (vid_t vertex_id = 0; vertex_id < graph->vertex_count; vertex_id++) {
         if (round[vertex_id] != ACTIVE_FLAG) {
           continue;
         }
@@ -279,9 +279,9 @@ error_t pcore_cpu(const graph_t* graph, uint32_t start, uint32_t step,
              active neighbors of this vertex will be visited again after their
              weights_sum have been updated */
           round_finished = false;
-          for (uint64_t i = graph->vertices[vertex_id];
+          for (eid_t i = graph->vertices[vertex_id];
                i < graph->vertices[vertex_id + 1]; i++) {
-            id_t neighbor_id = graph->edges[i];
+            vid_t neighbor_id = graph->edges[i];
             // atomically modify the neighbor's sum of edge weights
             __sync_sub_and_fetch(&(weights_sum[neighbor_id]),
                                  (int)graph->weights[i]);

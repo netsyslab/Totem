@@ -130,21 +130,21 @@ uint32_t totem_partition_count();
 /**
  * Returns the number of vertices in a specific partition
  */
-uint64_t totem_par_vertex_count(uint32_t pid);
+vid_t totem_par_vertex_count(uint32_t pid);
 
 /**
  * Returns the number of edges in a specific partition
  */
-uint64_t totem_par_edge_count(uint32_t pid);
+eid_t totem_par_edge_count(uint32_t pid);
 
 /**
  * Returns the number of remote vertices in a specific partition
  */
-uint64_t totem_par_rmt_vertex_count(uint32_t pid);
+vid_t totem_par_rmt_vertex_count(uint32_t pid);
 
 /**
  * Returns the number of remote edges in a specific partition
  */
-uint64_t totem_par_rmt_edge_count(uint32_t pid);
+eid_t totem_par_rmt_edge_count(uint32_t pid);
 
 #endif  // TOTEM_H

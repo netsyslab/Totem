@@ -30,9 +30,9 @@
  * @param[out] finished flag for whether the algorithm has completed or not
  */
 __global__
-void unweighted_sssp_succs_kernel(graph_t graph, int64_t phase, id_t* sigma,
-                                  int32_t* dist, id_t* succ,
-                                  uint32_t* succ_count, id_t* stack,
+void unweighted_sssp_succs_kernel(graph_t graph, int64_t phase, vid_t* sigma,
+                                  int32_t* dist, vid_t* succ,
+                                  uint32_t* succ_count, vid_t* stack,
                                   uint32_t* stack_count, bool* finished);
 /**
  * Unweighted BFS single source shortest path kernel with predecessor map.
@@ -48,8 +48,8 @@ void unweighted_sssp_succs_kernel(graph_t graph, int64_t phase, id_t* sigma,
  * @param[out] finished flag for whether the algorithm has completed or not
  */
 __global__
-void unweighted_sssp_preds_kernel(graph_t graph, id_t* r_edges, int32_t dist,
-                                  int32_t* dists, id_t* sigma, bool* preds,
+void unweighted_sssp_preds_kernel(graph_t graph, vid_t* r_edges, int32_t dist,
+                                  int32_t* dists, vid_t* sigma, bool* preds,
                                   bool* finished);
 /**
  * Unweighted centrality back propagation kernel for predecessor map
@@ -63,8 +63,8 @@ void unweighted_sssp_preds_kernel(graph_t graph, id_t* r_edges, int32_t dist,
  * @param[out] delta the dependence of each node
  */
 __global__
-void unweighted_back_prop_kernel(graph_t graph, id_t* r_edges, int32_t* dists,
-                                 id_t* sigma, bool* preds, int32_t dist,
+void unweighted_back_prop_kernel(graph_t graph, vid_t* r_edges, int32_t* dists,
+                                 vid_t* sigma, bool* preds, int32_t dist,
                                  weight_t* delta);
 
 /**
@@ -75,6 +75,6 @@ void unweighted_back_prop_kernel(graph_t graph, id_t* r_edges, int32_t* dists,
  *                       edge id.
  * @returns generic success or failure
  */
-error_t centrality_construct_r_edges(const graph_t* graph, id_t** r_edges_p);
+error_t centrality_construct_r_edges(const graph_t* graph, vid_t** r_edges_p);
 
 #endif // TOTEM_CENTRALITY_H

@@ -21,7 +21,7 @@ using ::testing::Values;
 // totem_bfs_unittest.cc and
 // http://code.google.com/p/googletest/source/browse/trunk/samples/sample7_unittest.cc
 
-typedef error_t(*DijkstraFunction)(const graph_t*, id_t, weight_t**);
+typedef error_t(*DijkstraFunction)(const graph_t*, vid_t, weight_t**);
 
 class DijkstraTest : public TestWithParam<DijkstraFunction> {
  public:
@@ -65,7 +65,7 @@ TEST_P(DijkstraTest, EmptyEdgeSet) {
   EXPECT_EQ(SUCCESS, dijkstra(&graph, 0, &short_distances));
   EXPECT_FALSE(NULL == short_distances);
   EXPECT_EQ((weight_t)0, short_distances[0]);
-  for (id_t vertex_id = 1; vertex_id < graph.vertex_count; vertex_id++) {
+  for (vid_t vertex_id = 1; vertex_id < graph.vertex_count; vertex_id++) {
     EXPECT_EQ(WEIGHT_MAX, short_distances[vertex_id]);
   }
   mem_free(short_distances);
@@ -106,11 +106,11 @@ TEST_P(DijkstraTest, Chain) {
   graph_initialize(DATA_FOLDER("chain_1000_nodes_weight.totem"), true, &graph);
 
   // First vertex as source
-  id_t source = 0;
+  vid_t source = 0;
   weight_t* short_distances;
   EXPECT_EQ(SUCCESS, dijkstra(graph, source, &short_distances));
   EXPECT_FALSE(NULL == short_distances);
-  for(id_t vertex_id = source; vertex_id < graph->vertex_count; vertex_id++){
+  for(vid_t vertex_id = source; vertex_id < graph->vertex_count; vertex_id++){
     EXPECT_EQ(vertex_id, short_distances[vertex_id]);
   }
   mem_free(short_distances);
@@ -118,7 +118,7 @@ TEST_P(DijkstraTest, Chain) {
   // Last vertex as source
   source = graph->vertex_count - 1;
   EXPECT_EQ(SUCCESS, dijkstra(graph, source, &short_distances));
-  for(id_t vertex_id = 0; vertex_id < graph->vertex_count; vertex_id++){
+  for(vid_t vertex_id = 0; vertex_id < graph->vertex_count; vertex_id++){
     EXPECT_EQ(source - vertex_id, short_distances[vertex_id]);
   }
   mem_free(short_distances);
@@ -126,7 +126,7 @@ TEST_P(DijkstraTest, Chain) {
   // A vertex in the middle as source
   source = 199;
   EXPECT_EQ(SUCCESS, dijkstra(graph, source, &short_distances));
-  for(id_t vertex_id = 0; vertex_id < graph->vertex_count; vertex_id++) {
+  for(vid_t vertex_id = 0; vertex_id < graph->vertex_count; vertex_id++) {
     EXPECT_EQ((uint32_t)abs(source - vertex_id), short_distances[vertex_id]);
   }
   mem_free(short_distances);
@@ -144,12 +144,12 @@ TEST_P(DijkstraTest, Star) {
   graph_initialize(DATA_FOLDER("star_1000_nodes_weight.totem"), true, &graph);
 
   // First vertex as source
-  id_t source = 0;
+  vid_t source = 0;
   weight_t* short_distances;
   EXPECT_EQ(SUCCESS, dijkstra(graph, source, &short_distances));
   EXPECT_FALSE(NULL == short_distances);
   EXPECT_EQ(0, short_distances[0]);
-  for(id_t vertex_id = 1; vertex_id < graph->vertex_count; vertex_id++){
+  for(vid_t vertex_id = 1; vertex_id < graph->vertex_count; vertex_id++){
     EXPECT_EQ(1, short_distances[vertex_id]);
   }
   mem_free(short_distances);
@@ -159,7 +159,7 @@ TEST_P(DijkstraTest, Star) {
   EXPECT_EQ(SUCCESS, dijkstra(graph, source, &short_distances));
   EXPECT_EQ(0, short_distances[source]);
   EXPECT_EQ(1, short_distances[0]);
-  for(id_t vertex_id = 1; vertex_id < graph->vertex_count - 1; vertex_id++){
+  for(vid_t vertex_id = 1; vertex_id < graph->vertex_count - 1; vertex_id++){
     EXPECT_EQ(2, short_distances[vertex_id]);
   }
   mem_free(short_distances);
@@ -174,15 +174,16 @@ TEST_P(DijkstraTest, Star) {
 // Tests SSSP algorithm a complete graph with 300 nodes.
 TEST_P(DijkstraTest, Complete) {
   graph_t* graph;
-  graph_initialize(DATA_FOLDER("complete_graph_300_nodes_weight.totem"), true, &graph);
+  graph_initialize(DATA_FOLDER("complete_graph_300_nodes_weight.totem"), 
+                   true, &graph);
 
   // First vertex as source
-  id_t source = 0;
+  vid_t source = 0;
   weight_t* short_distances;
   EXPECT_EQ(SUCCESS, dijkstra(graph, source, &short_distances));
   EXPECT_FALSE(NULL == short_distances);
   EXPECT_EQ(0, short_distances[0]);
-  for(id_t vertex_id = 1; vertex_id < graph->vertex_count; vertex_id++){
+  for(vid_t vertex_id = 1; vertex_id < graph->vertex_count; vertex_id++){
     EXPECT_EQ(1, short_distances[vertex_id]);
   }
   mem_free(short_distances);
@@ -191,7 +192,7 @@ TEST_P(DijkstraTest, Complete) {
   source = graph->vertex_count - 1;
   EXPECT_EQ(SUCCESS, dijkstra(graph, source, &short_distances));
   EXPECT_EQ(0, short_distances[source]);
-  for(id_t vertex_id = 1; vertex_id < graph->vertex_count - 1; vertex_id++){
+  for(vid_t vertex_id = 1; vertex_id < graph->vertex_count - 1; vertex_id++){
     EXPECT_EQ(1, short_distances[vertex_id]);
   }
   mem_free(short_distances);
@@ -210,12 +211,12 @@ TEST_P(DijkstraTest, StarDiffWeight) {
     true, &graph);
 
   // First vertex as source
-  id_t source = 0;
+  vid_t source = 0;
   weight_t* short_distances;
   EXPECT_EQ(SUCCESS, dijkstra(graph, source, &short_distances));
   EXPECT_FALSE(NULL == short_distances);
   EXPECT_EQ(0, short_distances[0]);
-  for(id_t vertex_id = 1; vertex_id < graph->vertex_count; vertex_id++){
+  for(vid_t vertex_id = 1; vertex_id < graph->vertex_count; vertex_id++){
     EXPECT_EQ(1, short_distances[vertex_id]);
   }
   mem_free(short_distances);
@@ -225,7 +226,7 @@ TEST_P(DijkstraTest, StarDiffWeight) {
   EXPECT_EQ(SUCCESS, dijkstra(graph, source, &short_distances));
   EXPECT_EQ(0, short_distances[source]);
   EXPECT_EQ(source + 1, short_distances[0]);
-  for(id_t vertex_id = 1; vertex_id < graph->vertex_count - 1; vertex_id++){
+  for(vid_t vertex_id = 1; vertex_id < graph->vertex_count - 1; vertex_id++){
     // out edge weight = vertex_id + 1
     EXPECT_EQ(source + 2, short_distances[vertex_id]);
   }
@@ -245,12 +246,12 @@ TEST_P(DijkstraTest, CompleteDiffWeight) {
     true, &graph);
 
   // First vertex as source
-  id_t source = 0;
+  vid_t source = 0;
   weight_t* short_distances;
   EXPECT_EQ(SUCCESS, dijkstra(graph, source, &short_distances));
   EXPECT_FALSE(NULL == short_distances);
   EXPECT_EQ(0, short_distances[0]);
-  for(id_t vertex_id = 1; vertex_id < graph->vertex_count; vertex_id++){
+  for(vid_t vertex_id = 1; vertex_id < graph->vertex_count; vertex_id++){
     EXPECT_EQ(1, short_distances[vertex_id]);
   }
   mem_free(short_distances);
@@ -259,7 +260,7 @@ TEST_P(DijkstraTest, CompleteDiffWeight) {
   source = graph->vertex_count - 1;
   EXPECT_EQ(SUCCESS, dijkstra(graph, source, &short_distances));
   EXPECT_EQ(0, short_distances[source]);
-  for(id_t vertex_id = 0; vertex_id < graph->vertex_count - 1; vertex_id++){
+  for(vid_t vertex_id = 0; vertex_id < graph->vertex_count - 1; vertex_id++){
     // out edge from any node has weight = vertex_id + 1
     EXPECT_EQ(source + 1, short_distances[vertex_id]);
   }

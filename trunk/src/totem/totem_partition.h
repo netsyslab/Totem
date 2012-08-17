@@ -15,6 +15,7 @@
  * Log (base 2) of the maximum number of partitions. Practically, it specifies
  * the number of bits allocated for the partition identifier when encoded in the
  * vertex identifier in a partition's edges array
+ * TODO(abdullah): change the macros to constant variables and inline functions
  */
 #define MAX_LOG_PARTITION_COUNT  2
 
@@ -26,13 +27,13 @@
 /**
  * Log (base 2) of the maximum number of vertices in a partition.
  */
-#define MAX_LOG_VERTEX_COUNT     ((sizeof(id_t) * 8) - MAX_LOG_PARTITION_COUNT)
+#define MAX_LOG_VERTEX_COUNT     ((sizeof(vid_t) * 8) - MAX_LOG_PARTITION_COUNT)
 
 /**
  * A mask used to identify the vertex id bits by clearing out the partition id
  * bits which are assumed to be in the higher order bits
  */
-#define VERTEX_ID_MASK           (((id_t)-1) >> MAX_LOG_PARTITION_COUNT)
+#define VERTEX_ID_MASK           (((vid_t)-1) >> MAX_LOG_PARTITION_COUNT)
 
 /**
  * Decodes the partition id, which are placed in the higher order bits
@@ -48,7 +49,8 @@
  * Returns a new vertex id which encodes the correponding partition id in the
  * higher order bits.
  */
-#define SET_PARTITION_ID(_vid, _pid) ((_vid) | ((_pid) << MAX_LOG_VERTEX_COUNT))
+#define SET_PARTITION_ID(_vid, _pid) \
+  ((_vid) | (((vid_t)(_pid)) << MAX_LOG_VERTEX_COUNT))
 
 /**
  * A graph partition type based on adjacency list representation. The vertex ids
@@ -68,9 +70,9 @@ typedef struct partition_s {
                                         partition's index in a partition_set */
   graph_t              subgraph;     /**< the subgraph this partition
                                         represents */
-  id_t*                map;          /**< maps the a vertex id in a partition to
-                                        its original id in the graph. used
-                                        when aggregating the final results */
+  vid_t*               map;          /**< maps the a vertex id in a partition
+                                         to its original id in the graph. used
+                                         when aggregating the final results */
   grooves_box_table_t* outbox;       /**< table of messages to be sent to
                                         remote nbrs */
   grooves_box_table_t* inbox;        /**< table of messages received from
@@ -108,13 +110,13 @@ typedef struct partition_s {
                                         execution event for GPU partitions.
                                         Together with event_start, it is used to
                                         measure the kernel's execution time */
-  uint32_t            rmt_edge_count; /**< the number of remote edges (edges
-                                          that start in this partition and ends
-                                          in another one) */
-  uint32_t            rmt_vertex_count; /**< the number of remote vertices
-                                           (vertices that are the destination
-                                           of edges that start in this partition
-                                           and end in another one) */
+  eid_t            rmt_edge_count;   /**< the number of remote edges (edges
+                                        that start in this partition and ends
+                                        in another one) */
+  vid_t            rmt_vertex_count; /**< the number of remote vertices
+                                        (vertices that are the destination
+                                        of edges that start in this partition
+                                        and end in another one) */
 } partition_t;
 
 /**
@@ -128,7 +130,7 @@ typedef struct partition_set_s {
   partition_t* partitions;      /**< the array of partitions */
   int          partition_count; /**< number of partitions in the set */
   size_t       msg_size;        /**< the size of a communication message */
-  id_t*        id_in_partition; /**< maps a vertex id in the graph to its
+  vid_t*       id_in_partition; /**< maps a vertex id in the graph to its
                                    new id in its designated partition */
 } partition_set_t;
 
@@ -169,7 +171,7 @@ error_t partition_modularity(graph_t* graph, partition_set_t* partition_set,
  * @return SUCCESS if the partitions are assigned, FAILURE otherwise.
  */
 error_t partition_random(graph_t* graph, int partition_count, 
-                         double* partition_fraction, id_t** partition_labels);
+                         double* partition_fraction, vid_t** partition_labels);
 
 /**
  * Split the graph after sorting the vertices by edge degree into the specified 
@@ -191,10 +193,10 @@ error_t partition_random(graph_t* graph, int partition_count,
  */
 error_t partition_by_asc_sorted_degree(graph_t* graph, int partition_count,
                                        double* partition_fraction, 
-                                       id_t** partition_labels);
+                                       vid_t** partition_labels);
 error_t partition_by_dsc_sorted_degree(graph_t* graph, int partition_count,
                                        double* partition_fraction,
-                                       id_t** partition_labels);
+                                       vid_t** partition_labels);
 
 /**
  * The following defines the signature of a partitioning algorithm function. The
@@ -203,7 +205,7 @@ error_t partition_by_dsc_sorted_degree(graph_t* graph, int partition_count,
  * that the order of the functions here must be the same as their corresponding 
  * entry in the enumeration.
  */
-typedef error_t(*partition_func_t)(graph_t*, int, double*, id_t**);
+typedef error_t(*partition_func_t)(graph_t*, int, double*, vid_t**);
 PRIVATE const partition_func_t PARTITION_FUNC[] = {
   partition_random,
   partition_by_asc_sorted_degree,
@@ -222,7 +224,7 @@ PRIVATE const partition_func_t PARTITION_FUNC[] = {
  * @param[out] partition_set the set of resulting graphs
  * @return SUCCESS if the partitions are assigned, FAILURE otherwise.
  */
-error_t partition_set_initialize(graph_t* graph, id_t* partition_labels,
+error_t partition_set_initialize(graph_t* graph, vid_t* partition_labels,
                                  processor_t* partition_processor,
                                  int partition_count, size_t msg_size,
                                  partition_set_t** partition_set);

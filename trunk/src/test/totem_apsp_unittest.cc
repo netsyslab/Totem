@@ -64,9 +64,9 @@ TEST_P(APSPTest, EmptyEdgeSet) {
   weight_t* distances;
   EXPECT_EQ(SUCCESS, apsp(graph, &distances));
   EXPECT_FALSE(NULL == distances);
-  for (id_t src = 0; src < graph->vertex_count; src++) {
+  for (vid_t src = 0; src < graph->vertex_count; src++) {
     weight_t* base = &distances[src * graph->vertex_count];
-    for (id_t dest = 0; dest < graph->vertex_count; dest++) {
+    for (vid_t dest = 0; dest < graph->vertex_count; dest++) {
       if (src == dest)
         EXPECT_EQ((weight_t)0, base[dest]);
       else
@@ -109,9 +109,9 @@ TEST_P(APSPTest, Star) {
   EXPECT_EQ(SUCCESS, apsp(graph, &distances));
   EXPECT_FALSE(NULL == distances);
   // Test all vertices
-  for (id_t src = 0; src < graph->vertex_count; src++) {
+  for (vid_t src = 0; src < graph->vertex_count; src++) {
     weight_t* base = &distances[src * graph->vertex_count];
-    for (id_t dest = 0; dest < graph->vertex_count; dest++) {
+    for (vid_t dest = 0; dest < graph->vertex_count; dest++) {
       if (dest == src)
         EXPECT_EQ((weight_t)0, base[dest]);
       else if (dest == 0 || src == 0)
@@ -133,9 +133,9 @@ TEST_P(APSPTest, Complete) {
   EXPECT_EQ(SUCCESS, apsp(graph, &distances));
   EXPECT_FALSE(NULL == distances);
   // Test all vertices
-  for (id_t src = 0; src < graph->vertex_count; src++) {
+  for (vid_t src = 0; src < graph->vertex_count; src++) {
     weight_t* base = &distances[src * graph->vertex_count];
-    for (id_t dest = 0; dest < graph->vertex_count; dest++) {
+    for (vid_t dest = 0; dest < graph->vertex_count; dest++) {
       if (dest == src)
         EXPECT_EQ((weight_t)0, base[dest]);
       else
@@ -155,9 +155,9 @@ TEST_P(APSPTest, StarDiffWeight) {
   EXPECT_EQ(SUCCESS, apsp(graph, &distances));
   EXPECT_FALSE(NULL == distances);
   // Test all vertices
-  for (id_t src = 0; src < graph->vertex_count; src++) {
+  for (vid_t src = 0; src < graph->vertex_count; src++) {
     weight_t* base = &distances[src * graph->vertex_count];
-    for (id_t dest = 0; dest < graph->vertex_count; dest++) {
+    for (vid_t dest = 0; dest < graph->vertex_count; dest++) {
       if (dest == src)
         EXPECT_EQ((weight_t)0, base[dest]);
       else if (dest == 0 || src == 0)
@@ -179,9 +179,9 @@ TEST_P(APSPTest, CompleteDiffWeight) {
   EXPECT_EQ(SUCCESS, apsp(graph, &distances));
   EXPECT_FALSE(NULL == distances);
   // Test all vertices
-  for (id_t src = 0; src < graph->vertex_count; src++) {
+  for (vid_t src = 0; src < graph->vertex_count; src++) {
     weight_t* base = &distances[src * graph->vertex_count];
-    for (id_t dest = 0; dest < graph->vertex_count; dest++) {
+    for (vid_t dest = 0; dest < graph->vertex_count; dest++) {
       if (dest == src)
         EXPECT_EQ((weight_t)0, base[src]);
       else

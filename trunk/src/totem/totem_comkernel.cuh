@@ -44,7 +44,7 @@
 /**
  * Determines the maximum number of threads per block.
  */
-#define MAX_THREADS_PER_BLOCK 256
+#define MAX_THREADS_PER_BLOCK 512
 
 /**
  * Determines the maximum number of dimensions of a grid block.
@@ -265,16 +265,16 @@ inline error_t graph_initialize_device(const graph_t* graph_h,
   // like the extra vertex we used to have which enables calculating the number
   // of neighbors for the last vertex). Note that this padding does not affect
   // the algorithms that do not apply the virtual warp technique.
-  uint64_t vertex_count_batch_padded = VWARP_BATCH_SIZE *
+  vid_t vertex_count_batch_padded = VWARP_BATCH_SIZE *
     VWARP_BATCH_COUNT(graph_h->vertex_count);
 
   // Allocate device buffers
   CHK_CU_SUCCESS(cudaMalloc((void**)&(*graph_d)->vertices,
                             (vertex_count_batch_padded + 1) *
-                            sizeof(id_t)), err);
+                            sizeof(eid_t)), err);
   if (graph_h->edge_count) {
     CHK_CU_SUCCESS(cudaMalloc((void**)&(*graph_d)->edges, graph_h->edge_count *
-                              sizeof(id_t)), err_free_vertices);
+                              sizeof(vid_t)), err_free_vertices);
   }
   if (graph_h->weighted) {
     CHK_CU_SUCCESS(cudaMalloc((void**)&(*graph_d)->weights,
@@ -284,11 +284,11 @@ inline error_t graph_initialize_device(const graph_t* graph_h,
 
   // Move data to the GPU
   CHK_CU_SUCCESS(cudaMemcpy((*graph_d)->vertices, graph_h->vertices,
-                            (graph_h->vertex_count + 1) * sizeof(id_t),
+                            (graph_h->vertex_count + 1) * sizeof(eid_t),
                             cudaMemcpyHostToDevice), err_free_weights);
   if (graph_h->edge_count){
     CHK_CU_SUCCESS(cudaMemcpy((*graph_d)->edges, graph_h->edges,
-                              graph_h->edge_count * sizeof(id_t),
+                              graph_h->edge_count * sizeof(vid_t),
                               cudaMemcpyHostToDevice), err_free_weights);
   }
   if (graph_h->weighted) {

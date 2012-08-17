@@ -26,8 +26,8 @@ const uint32_t BINARY_MAGIC_WORD = 0x10102048;
  * @param[out] directed set to true if directed
  * @return generic success or failure
  */
-PRIVATE error_t parse_metadata(FILE* file_handler, uint64_t* vertex_count,
-                               uint64_t* edge_count, bool* directed,
+PRIVATE error_t parse_metadata(FILE* file_handler, vid_t* vertex_count,
+                               eid_t* edge_count, bool* directed, 
                                bool* valued) {
   // logistics for parsing
   char*         token          = NULL;
@@ -137,7 +137,7 @@ PRIVATE error_t parse_metadata(FILE* file_handler, uint64_t* vertex_count,
 PRIVATE error_t parse_vertex_list(FILE* file_handler, graph_t* graph) {
   // logistics for parsing
   char* token        = NULL;
-  id_t  vertex_index = 0;
+  vid_t vertex_index = 0;
 
   if (!graph->valued)
     return SUCCESS;
@@ -153,8 +153,8 @@ PRIVATE error_t parse_vertex_list(FILE* file_handler, graph_t* graph) {
     CHK((token = strtok(line, delimiters)) != NULL, err);
     CHK(is_numeric(token), err);
     uint64_t token_num  = atoll(token);
-    CHK((token_num < ID_MAX), err_id_overflow);
-    id_t vertex_id = token_num;
+    CHK((token_num < VERTEX_ID_MAX), err_id_overflow);
+    vid_t vertex_id = token_num;
 
     // second, get the value
     CHK((token = strtok(NULL, delimiters)) != NULL, err);
@@ -196,8 +196,8 @@ PRIVATE error_t parse_vertex_list(FILE* file_handler, graph_t* graph) {
 PRIVATE error_t parse_edge_list(FILE* file_handler, graph_t* graph) {
   // logistics for parsing
   char* token        = NULL;
-  id_t  vertex_index = 0;
-  id_t  edge_index   = 0;
+  vid_t  vertex_index = 0;
+  eid_t  edge_index   = 0;
 
   // read line by line to create the graph
   while (fgets(line, sizeof(line), file_handler) != NULL) {
@@ -212,15 +212,15 @@ PRIVATE error_t parse_edge_list(FILE* file_handler, graph_t* graph) {
     CHK((token = strtok(line, delimiters)) != NULL, err);
     CHK(is_numeric(token), err);
     uint64_t token_num  = atoll(token);
-    CHK((token_num < ID_MAX), err_id_overflow);
-    id_t src_id = token_num;
+    CHK((token_num < VERTEX_ID_MAX), err_id_overflow);
+    vid_t src_id = token_num;
 
     // second, the destination node
     CHK((token = strtok(NULL, delimiters)) != NULL, err);
     CHK(is_numeric(token), err);
     token_num  = atoll(token);
-    CHK(token_num < ID_MAX, err_id_overflow);
-    id_t dst_id = token_num;
+    CHK(token_num < VERTEX_ID_MAX, err_id_overflow);
+    vid_t dst_id = token_num;
 
     // third, get the weight if any
     weight_t weight = DEFAULT_EDGE_WEIGHT;
@@ -282,16 +282,15 @@ PRIVATE error_t parse_edge_list(FILE* file_handler, graph_t* graph) {
  * @param[out] graph reference to allocated graph type to store the edge list
  * @return generic success or failure
  */
-PRIVATE void allocate_graph(uint64_t vertex_count, uint64_t edge_count,
-                            bool directed, bool weighted, bool valued,
-                            graph_t** graph_ret) {
+PRIVATE void allocate_graph(vid_t vertex_count, eid_t edge_count, bool directed,
+                            bool weighted, bool valued, graph_t** graph_ret) {
   // Allocate the main structure
   graph_t* graph = (graph_t*)calloc(1, sizeof(graph_t));
   assert(graph);
   // Allocate the buffers. An extra slot is allocated in the vertices array to
   // make it easy to calculate the number of neighbors of the last vertex.
-  graph->vertices = (id_t*)malloc((vertex_count + 1) * sizeof(id_t));
-  graph->edges    = (id_t*)malloc(edge_count * sizeof(id_t));
+  graph->vertices = (eid_t*)malloc((vertex_count + 1) * sizeof(eid_t));
+  graph->edges    = (vid_t*)malloc(edge_count * sizeof(vid_t));
   graph->weights  = weighted ?
     (weight_t*)malloc(edge_count * sizeof(weight_t)) : NULL;
   graph->values  = valued ?
@@ -311,11 +310,19 @@ PRIVATE void allocate_graph(uint64_t vertex_count, uint64_t edge_count,
 
 PRIVATE error_t graph_initialize_binary(FILE* fh, bool load_weights,
                                         graph_t** graph) {
-  // Assuming the magic word has already been read, read the graph parameters
-  uint64_t vertex_count;
-  CHK(fread(&vertex_count, sizeof(uint64_t), 1, fh) == 1, err);
-  uint64_t edge_count;
-  CHK(fread(&edge_count, sizeof(uint64_t), 1, fh) == 1, err);
+  // Read vertex and edge id sizes and make sure they comply with the compiled
+  // version of Totem
+  // TODO(abdullah): have a portable way of reading the graph that does not 
+  // depend on the compiled types of edge and vertex id.
+  uint32_t vid_size;
+  CHK(fread(&vid_size, sizeof(uint32_t), 1, fh) == 1, err);
+  uint32_t eid_size;
+  CHK(fread(&eid_size, sizeof(uint32_t), 1, fh) == 1, err);
+  CHK((vid_size == sizeof(vid_t)) && eid_size == sizeof(eid_t), err);
+  vid_t vertex_count;
+  CHK(fread(&vertex_count, sizeof(vid_t), 1, fh) == 1, err);
+  eid_t edge_count;
+  CHK(fread(&edge_count, sizeof(eid_t), 1, fh) == 1, err);
   bool valued;
   CHK(fread(&valued, sizeof(bool), 1, fh) == 1, err);
   bool weighted;
@@ -326,19 +333,19 @@ PRIVATE error_t graph_initialize_binary(FILE* fh, bool load_weights,
                  load_weights, valued, graph);
   
   // Load the vertices and their values if any
-  for(id_t vid = 0; vid < vertex_count; vid++) {
-    CHK(fread(&((*graph)->vertices[vid]), sizeof(id_t), 1, fh) == 1, err_free);
+  for(vid_t vid = 0; vid < vertex_count; vid++) {
+    CHK(fread(&((*graph)->vertices[vid]), sizeof(eid_t), 1, fh) == 1, err_free);
     if (valued) {
       CHK(fread(&((*graph)->values[vid]), sizeof(weight_t), 1, fh) == 1, 
           err_free);
     }
   }
-  CHK(fread(&((*graph)->vertices[vertex_count]), sizeof(id_t), 1, fh) == 1, 
+  CHK(fread(&((*graph)->vertices[vertex_count]), sizeof(eid_t), 1, fh) == 1, 
       err_free);
   
   // Load the edges and their weights if any
-  for(id_t eid = 0; eid < edge_count; eid++) {
-    CHK(fread(&((*graph)->edges[eid]), sizeof(id_t), 1, fh) == 1, err_free);
+  for(eid_t eid = 0; eid < edge_count; eid++) {
+    CHK(fread(&((*graph)->edges[eid]), sizeof(vid_t), 1, fh) == 1, err_free);
     if (load_weights) {
       weight_t weight = DEFAULT_EDGE_WEIGHT;
       if (weighted) {
@@ -363,8 +370,8 @@ PRIVATE error_t graph_initialize_text(FILE* file_handler, bool weighted,
   /* we had to define those variables here, not within the code, to overcome a
      compilation problem with using "goto" (used to emulate exceptions). */
   graph_t* graph        = NULL;
-  uint64_t vertex_count = 0;
-  uint64_t edge_count   = 0;
+  vid_t    vertex_count = 0;
+  eid_t    edge_count   = 0;
   bool     directed     = true;
   bool     valued       = false;
 
@@ -426,16 +433,16 @@ error_t get_subgraph(const graph_t* graph, bool* mask, graph_t** subgraph_ret) {
 
   // Used to map vertices in the graph to the subgraph to maintain the
   // requirement that vertex ids start from 0 to vertex_count
-  id_t* map = (id_t*)calloc(graph->vertex_count, sizeof(id_t));
+  vid_t* map = (vid_t*)calloc(graph->vertex_count, sizeof(vid_t));
 
   // get the number of vertices and edges of the subgraph and build the map
-  uint32_t subgraph_vertex_count = 0;
-  uint32_t subgraph_edge_count = 0;
-  for (id_t vertex_id = 0; vertex_id < graph->vertex_count; vertex_id++) {
+  vid_t subgraph_vertex_count = 0;
+  eid_t subgraph_edge_count = 0;
+  for (vid_t vertex_id = 0; vertex_id < graph->vertex_count; vertex_id++) {
     if (mask[vertex_id]) {
       map[vertex_id] = subgraph_vertex_count;
       subgraph_vertex_count++;
-      for (uint32_t i = graph->vertices[vertex_id];
+      for (eid_t i = graph->vertices[vertex_id];
            i < graph->vertices[vertex_id + 1]; i++) {
         if (mask[graph->edges[i]]) subgraph_edge_count++;
       }
@@ -448,9 +455,9 @@ error_t get_subgraph(const graph_t* graph, bool* mask, graph_t** subgraph_ret) {
                  graph->weighted, graph->valued, &subgraph);
 
   // build the vertex and edge lists
-  uint32_t subgraph_edge_index = 0;
-  uint32_t subgraph_vertex_index = 0;
-  for (id_t vertex_id = 0; vertex_id < graph->vertex_count; vertex_id++) {
+  eid_t subgraph_edge_index = 0;
+  vid_t subgraph_vertex_index = 0;
+  for (vid_t vertex_id = 0; vertex_id < graph->vertex_count; vertex_id++) {
     if (mask[vertex_id]) {
       subgraph->vertices[subgraph_vertex_index] = subgraph_edge_index;
       if (subgraph->valued) {
@@ -458,7 +465,7 @@ error_t get_subgraph(const graph_t* graph, bool* mask, graph_t** subgraph_ret) {
       }
       subgraph_vertex_index++;
 
-      for (uint32_t i = graph->vertices[vertex_id];
+      for (vid_t i = graph->vertices[vertex_id];
            i < graph->vertices[vertex_id + 1]; i++) {
         if (mask[graph->edges[i]]) {
           subgraph->edges[subgraph_edge_index] = map[graph->edges[i]];
@@ -485,8 +492,8 @@ error_t graph_remove_singletons(const graph_t* graph, graph_t** subgraph) {
   // TODO(abdullah): change the signature to graph_get_k_degree_nodes
   if (!graph) return FAILURE;
   bool* mask = (bool*)calloc(graph->vertex_count, sizeof(bool));
-  for (id_t vid = 0; vid < graph->vertex_count; vid++) {
-    for (id_t i = graph->vertices[vid]; i < graph->vertices[vid + 1]; i++) {
+  for (vid_t vid = 0; vid < graph->vertex_count; vid++) {
+    for (eid_t i = graph->vertices[vid]; i < graph->vertices[vid + 1]; i++) {
       mask[graph->edges[i]] = true;
       mask[vid] = true;
     }
@@ -497,14 +504,14 @@ error_t graph_remove_singletons(const graph_t* graph, graph_t** subgraph) {
 }
 
 PRIVATE
-void graph_match_bidirected_edges(graph_t* graph, id_t** reverse_indices) {
+void graph_match_bidirected_edges(graph_t* graph, eid_t** reverse_indices) {
   // Calculate the array of indexes matching each edge to its
   // counterpart reverse edge
-  (*reverse_indices) = (id_t*)mem_alloc(graph->edge_count * 2 * sizeof(id_t));
-  for (id_t v = 0; v < graph->vertex_count; v++) {
-    for (id_t edge_id = graph->vertices[v];
+  (*reverse_indices) = (eid_t*)mem_alloc(graph->edge_count * 2 * sizeof(eid_t));
+  for (vid_t v = 0; v < graph->vertex_count; v++) {
+    for (eid_t edge_id = graph->vertices[v];
          edge_id < graph->vertices[v + 1]; edge_id++) {
-      for (id_t rev_edge_id = graph->vertices[graph->edges[edge_id]];
+      for (eid_t rev_edge_id = graph->vertices[graph->edges[edge_id]];
            rev_edge_id < graph->vertices[graph->edges[edge_id] + 1];
            rev_edge_id++) {
         if (graph->edges[rev_edge_id] == v) {
@@ -530,23 +537,23 @@ void graph_match_bidirected_edges(graph_t* graph, id_t** reverse_indices) {
  * @param[out] reverse_indices a reference to array of indices of reverse edges
  * @return bidirected graph
  */
-graph_t* graph_create_bidirectional(graph_t* graph, id_t** reverse_indices) {
+graph_t* graph_create_bidirectional(graph_t* graph, eid_t** reverse_indices) {
   // Create the new graph with the new data
   graph_t* new_graph;
   allocate_graph(graph->vertex_count, 2 * graph->edge_count, graph->directed,
                  graph->weighted, graph->valued, &new_graph);
 
-  id_t new_edge_index = 0;
-  for (id_t v = 0; v < graph->vertex_count; v++) {
+  eid_t new_edge_index = 0;
+  for (vid_t v = 0; v < graph->vertex_count; v++) {
     new_graph->vertices[v] = new_edge_index;
 
     // Add the forward graph edges in order and any reverse edges that might
     // come before it. Note that this assumes the given edge list is already
     // in order.
     // TODO: relax this assumption
-    id_t rev_id = 0;
-    id_t rev_src_v = 0;
-    for (id_t edge_id = graph->vertices[v]; edge_id < graph->vertices[v + 1];
+    eid_t rev_id = 0;
+    vid_t rev_src_v = 0;
+    for (eid_t edge_id = graph->vertices[v]; edge_id < graph->vertices[v + 1];
          edge_id++) {
       while (rev_id < edge_id) {
         // If we found a reverse edge, determine its source vertex
@@ -599,30 +606,26 @@ graph_t* graph_create_bidirectional(graph_t* graph, id_t** reverse_indices) {
 
 error_t graph_finalize(graph_t* graph) {
   assert(graph);
-
   // those buffers are allocated via mem_alloc
   if (graph->vertex_count != 0) free(graph->vertices);
   if (graph->edge_count != 0) free(graph->edges);
   if (graph->weighted && graph->edge_count != 0) free(graph->weights);
   if (graph->valued && graph->vertex_count != 0) free(graph->values);
-
   // this is always allocated via malloc
   free(graph);
-
   return SUCCESS;
 }
 
 void graph_print(graph_t* graph) {
   assert(graph);
-
   printf("#Nodes:%d\n#Edges:%d\n", graph->vertex_count, graph->edge_count);
   if (graph->directed) {
     printf("#Directed\n");
   } else {
     printf("#Undirected\n");
   }
-  for (id_t vid = 0; vid < graph->vertex_count; vid++) {
-    for (id_t i = graph->vertices[vid]; i < graph->vertices[vid + 1]; i++) {
+  for (vid_t vid = 0; vid < graph->vertex_count; vid++) {
+    for (eid_t i = graph->vertices[vid]; i < graph->vertices[vid + 1]; i++) {
       fprintf(stdout, "%d %d", vid, graph->edges[i]);
       if (graph->weighted) {
         fprintf(stdout, " %f\n", graph->weights[i]);
@@ -634,32 +637,37 @@ void graph_print(graph_t* graph) {
 }
 
 error_t graph_store_binary(graph_t* graph, const char* filename) {
+  assert(graph);
   FILE* fh = fopen(filename, "wb");
   if (fh == NULL) return FAILURE;
   
-  uint32_t magic_word = BINARY_MAGIC_WORD;
-  CHK(fwrite(&magic_word, sizeof(uint32_t), 1, fh) == 1, err);
-  
+  uint32_t word = BINARY_MAGIC_WORD;
+  CHK(fwrite(&word, sizeof(uint32_t), 1, fh) == 1, err);
+
   // Write the graph's parameters
-  CHK(fwrite(&(graph->vertex_count), sizeof(uint64_t), 1, fh) == 1, err);
-  CHK(fwrite(&(graph->edge_count), sizeof(uint64_t), 1, fh) == 1, err);
+  word = sizeof(vid_t);
+  CHK(fwrite(&word, sizeof(uint32_t), 1, fh) == 1, err);
+  word = sizeof(eid_t);
+  CHK(fwrite(&word, sizeof(uint32_t), 1, fh) == 1, err);
+  CHK(fwrite(&(graph->vertex_count), sizeof(vid_t), 1, fh) == 1, err);
+  CHK(fwrite(&(graph->edge_count), sizeof(eid_t), 1, fh) == 1, err);
   CHK(fwrite(&(graph->valued), sizeof(bool), 1, fh) == 1, err);
   CHK(fwrite(&(graph->weighted), sizeof(bool), 1, fh) == 1, err);
   CHK(fwrite(&(graph->directed), sizeof(bool), 1, fh) == 1, err);
   
-  for (id_t vid = 0; vid < graph->vertex_count; vid++) {
-    CHK(fwrite(&(graph->vertices[vid]), sizeof(id_t), 1, fh) == 1, err);
+  for (vid_t vid = 0; vid < graph->vertex_count; vid++) {
+    CHK(fwrite(&(graph->vertices[vid]), sizeof(eid_t), 1, fh) == 1, err);
     if (graph->valued) {
       CHK(fwrite(&(graph->values[vid]), sizeof(weight_t), 1, fh) == 1, err);
     }
   }
   CHK(fwrite(&(graph->vertices[graph->vertex_count]), 
-             sizeof(id_t), 1, fh) == 1, err);
+             sizeof(eid_t), 1, fh) == 1, err);
 
-  for (id_t vid = 0; vid < graph->edge_count; vid++) {
-    CHK(fwrite(&(graph->edges[vid]), sizeof(id_t), 1, fh) == 1, err);
+  for (eid_t eid = 0; eid < graph->edge_count; eid++) {
+    CHK(fwrite(&(graph->edges[eid]), sizeof(vid_t), 1, fh) == 1, err);
     if (graph->weighted) {
-      CHK(fwrite(&(graph->weights[vid]), sizeof(weight_t), 1, fh) == 1, err);
+      CHK(fwrite(&(graph->weights[eid]), sizeof(weight_t), 1, fh) == 1, err);
     }
   }  
   fclose(fh);

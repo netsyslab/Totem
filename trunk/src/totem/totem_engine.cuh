@@ -186,28 +186,28 @@ uint32_t engine_superstep();
 /**
  * Returns the total number of vertices in the graph
  */
-uint32_t engine_vertex_count();
+vid_t engine_vertex_count();
 
 /**
  * Returns the total number of edges in the graph
  */
-uint32_t engine_edge_count();
+eid_t engine_edge_count();
 
 /**
  * Returns the number of vertices of the largest GPU partition
  */
-uint64_t engine_largest_gpu_partition();
+vid_t engine_largest_gpu_partition();
 
 /**
  * Returns a reference to a map that maps a vertex id to its new id in the
  * corresponding partition
  */
-id_t* engine_vertex_id_in_partition();
+vid_t* engine_vertex_id_in_partition();
 
 /**
  * Returns a vertex's new id in the corresponding partition
  */
-id_t engine_vertex_id_in_partition(id_t);
+vid_t engine_vertex_id_in_partition(vid_t);
 
 /**
  * Scatters the messages in the inbox table to the corresponding vertices. The

@@ -70,7 +70,7 @@ TEST_P(StressCentralityTest, Chain100Unweighted) {
   EXPECT_EQ(SUCCESS, stress(graph, &centrality_score));
   EXPECT_EQ(centrality_score[0], (weight_t)0.0);
   EXPECT_EQ(centrality_score[99], (weight_t)0.0);
-  for (id_t i = 1; i < 50; i++) {
+  for (vid_t i = 1; i < 50; i++) {
     EXPECT_EQ((weight_t)(2 * ((99 * i) - (i * i))), centrality_score[i]);
     EXPECT_EQ((weight_t)(2 * ((99 * i) - (i * i))), centrality_score[99 - i]);
   }
@@ -87,7 +87,7 @@ TEST_P(StressCentralityTest, CompleteGraphUnweighted) {
 
   EXPECT_EQ(SUCCESS, stress(graph, &centrality_score));
   EXPECT_FALSE(centrality_score == NULL);
-  for(id_t vertex = 0; vertex < graph->vertex_count; vertex++){
+  for(vid_t vertex = 0; vertex < graph->vertex_count; vertex++){
     EXPECT_FLOAT_EQ(0.0, centrality_score[0]);
   }
   mem_free(centrality_score);

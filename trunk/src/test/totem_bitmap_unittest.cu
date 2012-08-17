@@ -27,9 +27,9 @@ class BitmapTest : public TestWithParam<int> {
 
   void BitmapGetNotSet() {
     bits_not_set_count_ = 0;
-    for (id_t i = 0; i < bitmap_len_; i++) {
+    for (vid_t i = 0; i < bitmap_len_; i++) {
       // Search for the bit in the bits_set array
-      id_t j = 0;
+      vid_t j = 0;
       for (; j < bits_set_count_; j++) {
         if (bits_set_[j] == i) {
           break;
@@ -47,39 +47,39 @@ class BitmapTest : public TestWithParam<int> {
    bits_set_[0] = 0;
    bits_set_[1] = bits_set_count_ - 1;
    srand (seed_);
-   for (id_t i = 2; i < bits_set_count_; i++) {
+   for (vid_t i = 2; i < bits_set_count_; i++) {
      bits_set_[i] = rand() % bitmap_len_;
    }   
    // Get the bits that are not set
    BitmapGetNotSet();
  }
  
- void BitmapSetVectorCPU(id_t* bits, id_t count) {
+ void BitmapSetVectorCPU(vid_t* bits, vid_t count) {
    OMP(omp parallel for)
-   for (id_t i = 0; i < count; i++) {
+   for (vid_t i = 0; i < count; i++) {
      bitmap_set_cpu(bitmap_, bits[i]);
      // Try to unset again
      EXPECT_FALSE(bitmap_set_cpu(bitmap_, bits[i]));
    }
  }
  
- void BitmapUnsetVectorCPU(id_t* bits, id_t count) {
+ void BitmapUnsetVectorCPU(vid_t* bits, vid_t count) {
    OMP(omp parallel for)
-   for (id_t i = 0; i < count; i++) {
+   for (vid_t i = 0; i < count; i++) {
      bitmap_unset_cpu(bitmap_, bits[i]);
      // Try to unset again
      EXPECT_FALSE(bitmap_unset_cpu(bitmap_, bits[i]));
    }
  }
  
- void BitmapVerifyCPU(id_t* is_set, id_t is_set_count, id_t* is_not_set, 
-                      id_t is_not_set_count) {
+ void BitmapVerifyCPU(vid_t* is_set, vid_t is_set_count, vid_t* is_not_set, 
+                      vid_t is_not_set_count) {
    OMP(omp parallel for)
-   for (id_t i = 0; i < is_set_count; i++) {
+   for (vid_t i = 0; i < is_set_count; i++) {
      EXPECT_TRUE(bitmap_is_set(bitmap_, is_set[i]));
    }
    OMP(omp parallel for)
-   for (id_t i = 0; i < is_not_set_count; i++) {
+   for (vid_t i = 0; i < is_not_set_count; i++) {
      EXPECT_FALSE(bitmap_is_set(bitmap_, is_not_set[i]));
    }
  }
@@ -88,11 +88,11 @@ class BitmapTest : public TestWithParam<int> {
   // Initialize the test
   int seed_;
   bitmap_t bitmap_;
-  static const id_t bitmap_len_ = 1006;
-  static const id_t bits_set_count_ = bitmap_len_ / 2;
-  id_t bits_set_[bits_set_count_];
-  id_t bits_not_set_[bitmap_len_];
-  id_t bits_not_set_count_;
+  static const vid_t bitmap_len_ = 1006;
+  static const vid_t bits_set_count_ = bitmap_len_ / 2;
+  vid_t bits_set_[bits_set_count_];
+  vid_t bits_not_set_[bitmap_len_];
+  vid_t bits_not_set_count_;
 };
 
 TEST_P(BitmapTest, BitmapCPU) {
@@ -115,24 +115,24 @@ TEST_P(BitmapTest, BitmapCPU) {
   bitmap_finalize_cpu(bitmap_);
 }
 
-__global__ void BitmapSetVectorGPU(id_t* bitmap, id_t* bits, id_t count) {
+__global__ void BitmapSetVectorGPU(vid_t* bitmap, vid_t* bits, vid_t count) {
   if (THREAD_GLOBAL_INDEX < count) {
     bitmap_set_gpu(bitmap, bits[THREAD_GLOBAL_INDEX]);
     KERNEL_EXPECT_TRUE(!bitmap_set_gpu(bitmap, bits[THREAD_GLOBAL_INDEX]));
   }
 }
 
-__global__ void BitmapUnsetVectorGPU(id_t* bitmap, id_t* bits, id_t count) {
+__global__ void BitmapUnsetVectorGPU(vid_t* bitmap, vid_t* bits, vid_t count) {
   if (THREAD_GLOBAL_INDEX < count) {
     bitmap_unset_gpu(bitmap, bits[THREAD_GLOBAL_INDEX]);
     KERNEL_EXPECT_TRUE(!bitmap_unset_gpu(bitmap, bits[THREAD_GLOBAL_INDEX]));
   }
 }
 
-__global__ void BitmapVerifyGPU(id_t* bitmap, id_t* bits_set, 
-                                id_t bits_set_count, id_t* bits_not_set, 
-                                id_t bits_not_set_count) {
-  id_t index = THREAD_GLOBAL_INDEX;
+__global__ void BitmapVerifyGPU(vid_t* bitmap, vid_t* bits_set, 
+                                vid_t bits_set_count, vid_t* bits_not_set, 
+                                vid_t bits_not_set_count) {
+  vid_t index = THREAD_GLOBAL_INDEX;
   if (index < bits_set_count) {
     KERNEL_EXPECT_TRUE(bitmap_is_set(bitmap, bits_set[index]));
   }
@@ -147,14 +147,16 @@ TEST_P(BitmapTest, BitmapGPU) {
   BitmapInitTest();
 
   // Move state to GPU
-  id_t* bits_set_d = NULL;
-  CALL_CU_SAFE(cudaMalloc(&bits_set_d, bits_set_count_ * sizeof(id_t)));
-  CALL_CU_SAFE(cudaMemcpy(bits_set_d, bits_set_, bits_set_count_ * sizeof(id_t),
+  vid_t* bits_set_d = NULL;
+  CALL_CU_SAFE(cudaMalloc(&bits_set_d, bits_set_count_ * sizeof(vid_t)));
+  CALL_CU_SAFE(cudaMemcpy(bits_set_d, bits_set_, 
+                          bits_set_count_ * sizeof(vid_t),
                           cudaMemcpyDefault));
-  id_t* bits_not_set_d = NULL;
-  CALL_CU_SAFE(cudaMalloc(&bits_not_set_d, bits_not_set_count_ * sizeof(id_t)));
+  vid_t* bits_not_set_d = NULL;
+  CALL_CU_SAFE(cudaMalloc(&bits_not_set_d, 
+                          bits_not_set_count_ * sizeof(vid_t)));
   CALL_CU_SAFE(cudaMemcpy(bits_not_set_d, bits_not_set_,
-                          bits_not_set_count_ * sizeof(id_t),
+                          bits_not_set_count_ * sizeof(vid_t),
                           cudaMemcpyDefault));
 
   // First set the bits in the bits_set array and verify the bitmap

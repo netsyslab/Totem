@@ -18,12 +18,12 @@ int* degree_g;
 int* degree_h;
 
 __global__ void degree_kernel(partition_t par) {
-  id_t v = THREAD_GLOBAL_INDEX;
+  vid_t v = THREAD_GLOBAL_INDEX;
   if (v >= par.subgraph.vertex_count) return;
-  for (id_t i = par.subgraph.vertices[v];
+  for (eid_t i = par.subgraph.vertices[v];
        i < par.subgraph.vertices[v + 1]; i++) {
     int* dst;
-    id_t nbr = par.subgraph.edges[i];
+    vid_t nbr = par.subgraph.edges[i];
     ENGINE_FETCH_DST(par.id, nbr, par.outbox_d, (int*)par.algo_state, dst, int);
     atomicAdd(dst, 1);
   }
@@ -38,11 +38,11 @@ void degree_gpu(partition_t* par) {
 
 void degree_cpu(partition_t* par) {
   OMP(omp parallel for)
-  for (id_t v = 0; v < par->subgraph.vertex_count; v++) {
-    for (id_t i = par->subgraph.vertices[v];
+  for (vid_t v = 0; v < par->subgraph.vertex_count; v++) {
+    for (eid_t i = par->subgraph.vertices[v];
          i < par->subgraph.vertices[v + 1]; i++) {
       int* dst;
-      id_t nbr = par->subgraph.edges[i];
+      vid_t nbr = par->subgraph.edges[i];
       ENGINE_FETCH_DST(par->id, nbr, par->outbox, (int*)par->algo_state, dst, 
                        int);
       __sync_fetch_and_add(dst, 1);
@@ -107,7 +107,7 @@ void degree_aggr(partition_t* par) {
   }
   // aggregate the results
   OMP(omp parallel for)
-  for (id_t v = 0; v < par->subgraph.vertex_count; v++) {
+  for (vid_t v = 0; v < par->subgraph.vertex_count; v++) {
     degree_g[par->map[v]] = src[v];
   }
 }
@@ -146,7 +146,7 @@ class EngineTest : public TestWithParam<totem_attr_t*> {
     EXPECT_EQ(SUCCESS, engine_execute());
     engine_finalize();
     if (engine_largest_gpu_partition()) mem_free(degree_h);
-    for (id_t v = 0; v < graph_->vertex_count; v++) {
+    for (vid_t v = 0; v < graph_->vertex_count; v++) {
       int nbr_count = graph_->vertices[v + 1] - graph_->vertices[v];
       EXPECT_EQ(nbr_count, degree_g[v]);
     }

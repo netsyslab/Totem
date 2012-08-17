@@ -41,24 +41,24 @@ error_t check_special_cases(const graph_t* graph, bool* finished,
  */
 PRIVATE
 error_t initialize_succs_gpu(const graph_t* graph, uint64_t vertex_count,
-                             graph_t** graph_d, id_t** sigma_d,
-                             int32_t** dists_d, id_t** succ_d,
-                             uint32_t** succ_count_d, id_t** stack_d,
+                             graph_t** graph_d, vid_t** sigma_d,
+                             int32_t** dists_d, vid_t** succ_d,
+                             uint32_t** succ_count_d, vid_t** stack_d,
                              uint32_t** stack_count_d, weight_t** delta_d,
                              bool** finished_d,
                              weight_t** betweenness_centrality_d) {
   // Allocate space on GPU
   CHK_SUCCESS(graph_initialize_device(graph, graph_d), err);
-  CHK_CU_SUCCESS(cudaMalloc((void**)sigma_d, vertex_count * sizeof(id_t)),
+  CHK_CU_SUCCESS(cudaMalloc((void**)sigma_d, vertex_count * sizeof(vid_t)),
                  err_free_graph_d);
   CHK_CU_SUCCESS(cudaMalloc((void**)dists_d, vertex_count * sizeof(int32_t)),
                  err_free_sigma_d);
-  CHK_CU_SUCCESS(cudaMalloc((void**)succ_d, graph->edge_count * sizeof(id_t)),
+  CHK_CU_SUCCESS(cudaMalloc((void**)succ_d, graph->edge_count * sizeof(vid_t)),
                  err_free_dists_d);
   CHK_CU_SUCCESS(cudaMalloc((void**)succ_count_d, vertex_count
                             * sizeof(uint32_t)), err_free_succ_d);
   CHK_CU_SUCCESS(cudaMalloc((void**)stack_d, vertex_count * vertex_count
-                            * sizeof(id_t)), err_free_succ_count_d);
+                            * sizeof(vid_t)), err_free_succ_count_d);
   CHK_CU_SUCCESS(cudaMalloc((void**)stack_count_d, vertex_count
                             * sizeof(uint32_t)), err_free_stack_d);
   CHK_CU_SUCCESS(cudaMalloc((void**)delta_d, vertex_count * sizeof(weight_t)),
@@ -103,17 +103,18 @@ error_t initialize_succs_gpu(const graph_t* graph, uint64_t vertex_count,
  */
 PRIVATE
 error_t initialize_preds_gpu(const graph_t* graph, uint64_t vertex_count,
-                             id_t* r_edges, graph_t** graph_d, id_t** r_edges_d,
-                             bool** preds_d, id_t** sigma_d, int32_t** dist_d,
+                             vid_t* r_edges, graph_t** graph_d, 
+                             vid_t** r_edges_d, bool** preds_d, 
+                             vid_t** sigma_d, int32_t** dist_d,
                              weight_t** delta_d, bool** finished_d,
                              weight_t** betweenness_centrality_d) {
   // Allocate space on GPU
   CHK_SUCCESS(graph_initialize_device(graph, graph_d), err);
   CHK_CU_SUCCESS(cudaMalloc((void**)r_edges_d, graph->edge_count
-                            * sizeof(id_t)), err_free_graph_d);
-  CHK_CU_SUCCESS(cudaMalloc((void**)preds_d, graph->edge_count * sizeof(id_t)),
+                            * sizeof(vid_t)), err_free_graph_d);
+  CHK_CU_SUCCESS(cudaMalloc((void**)preds_d, graph->edge_count * sizeof(vid_t)),
                  err_free_r_edges_d);
-  CHK_CU_SUCCESS(cudaMalloc((void**)sigma_d, vertex_count * sizeof(id_t)),
+  CHK_CU_SUCCESS(cudaMalloc((void**)sigma_d, vertex_count * sizeof(vid_t)),
                  err_free_preds_d);
   CHK_CU_SUCCESS(cudaMalloc((void**)dist_d, vertex_count * sizeof(int32_t)),
                  err_free_sigma_d);
@@ -127,7 +128,7 @@ error_t initialize_preds_gpu(const graph_t* graph, uint64_t vertex_count,
 
   // Setup initial parameters
   CHK_CU_SUCCESS(cudaMemcpy(*r_edges_d, r_edges, graph->edge_count
-                            * sizeof(id_t), cudaMemcpyHostToDevice),
+                            * sizeof(vid_t), cudaMemcpyHostToDevice),
                  err_free_all);
   CHK_CU_SUCCESS(cudaMemset(*betweenness_centrality_d, 0, graph->vertex_count
                             * sizeof(weight_t)), err_free_all);
@@ -159,10 +160,11 @@ error_t initialize_preds_gpu(const graph_t* graph, uint64_t vertex_count,
  * and frees up GPU resources.
  */
 PRIVATE
-error_t finalize_succs_gpu(graph_t* graph_d, id_t* sigma_d, int32_t* dist_d,
-                           id_t* succ_d, uint32_t* succ_count_d, id_t* stack_d,
-                           uint32_t* stack_count_d, weight_t* delta_d,
-                           bool* finished_d, weight_t* betweenness_centrality_d,
+error_t finalize_succs_gpu(graph_t* graph_d, vid_t* sigma_d, int32_t* dist_d,
+                           vid_t* succ_d, uint32_t* succ_count_d, 
+                           vid_t* stack_d, uint32_t* stack_count_d, 
+                           weight_t* delta_d, bool* finished_d, 
+                           weight_t* betweenness_centrality_d,
                            weight_t* betweenness_centrality) {
   // Copy back the centrality scores
   CHK_CU_SUCCESS(cudaMemcpy(betweenness_centrality, betweenness_centrality_d,
@@ -190,8 +192,8 @@ error_t finalize_succs_gpu(graph_t* graph_d, id_t* sigma_d, int32_t* dist_d,
  * and frees up GPU resources.
  */
 PRIVATE
-error_t finalize_preds_gpu(graph_t* graph_d, id_t* r_edges_d, bool* preds_d,
-                           id_t* sigma_d, int32_t* dist_d, weight_t* delta_d,
+error_t finalize_preds_gpu(graph_t* graph_d, vid_t* r_edges_d, bool* preds_d,
+                           vid_t* sigma_d, int32_t* dist_d, weight_t* delta_d,
                            bool* finished_d, weight_t* betweenness_centrality_d,
                            weight_t* betweenness_centrality) {
   // Copy back the centrality scores
@@ -218,8 +220,8 @@ error_t finalize_preds_gpu(graph_t* graph_d, id_t* r_edges_d, bool* preds_d,
  * source vertex.
  */
 __global__
-void unweighted_bc_succs_init_kernel(id_t source, id_t* sigma, int32_t* dist,
-                                     uint32_t* stack_count, id_t* stack) {
+void unweighted_bc_succs_init_kernel(vid_t source, vid_t* sigma, int32_t* dist,
+                                     uint32_t* stack_count, vid_t* stack) {
   sigma[source] = 1;
   dist[source] = 0;
   stack_count[0] = 1;
@@ -232,7 +234,8 @@ void unweighted_bc_succs_init_kernel(id_t source, id_t* sigma, int32_t* dist,
  * source vertex.
  */
 __global__
-void unweighted_bc_preds_init_kernel(id_t source, int32_t* dist, id_t* sigma) {
+void unweighted_bc_preds_init_kernel(vid_t source, int32_t* dist, 
+                                     vid_t* sigma) {
   dist[source] = 0;
   sigma[source] = 1;
 }
@@ -243,21 +246,22 @@ void unweighted_bc_preds_init_kernel(id_t source, int32_t* dist, id_t* sigma) {
  * using the new source vertex.
  */
 PRIVATE
-error_t unweighted_succs_init(const graph_t* graph, id_t source, id_t* sigma,
-                              int32_t* dist, id_t* succ, uint32_t* succ_count,
-                              id_t* stack, uint32_t* stack_count,
+error_t unweighted_succs_init(const graph_t* graph, vid_t source, vid_t* sigma,
+                              int32_t* dist, vid_t* succ, uint32_t* succ_count,
+                              vid_t* stack, uint32_t* stack_count,
                               weight_t* delta) {
   // Perform the memsets directly on the GPU
   dim3 blocks;
   dim3 threads_per_block;
-  CHK_CU_SUCCESS(cudaMemset(succ, 0, graph->edge_count * sizeof(id_t)), err);
+  CHK_CU_SUCCESS(cudaMemset(succ, 0, graph->edge_count * sizeof(vid_t)), err);
   CHK_CU_SUCCESS(cudaMemset(stack, 0, graph->vertex_count * graph->vertex_count
-                            * sizeof(id_t)), err);
+                            * sizeof(vid_t)), err);
   CHK_CU_SUCCESS(cudaMemset(succ_count, 0, graph->vertex_count
                             * sizeof(uint32_t)), err);
   CHK_CU_SUCCESS(cudaMemset(stack_count, 0, graph->vertex_count
                             * sizeof(uint32_t)), err);
-  CHK_CU_SUCCESS(cudaMemset(sigma, 0, graph->vertex_count * sizeof(id_t)), err);
+  CHK_CU_SUCCESS(cudaMemset(sigma, 0, graph->vertex_count * sizeof(vid_t)), 
+                 err);
   CHK_CU_SUCCESS(cudaMemset(dist, -1, graph->vertex_count * sizeof(int32_t)),
                  err);
   CHK_CU_SUCCESS(cudaDeviceSynchronize(), err);
@@ -279,20 +283,19 @@ error_t unweighted_succs_init(const graph_t* graph, id_t source, id_t* sigma,
  * counts of shortest paths through each node, this function calculates the
  * dependence for each node.
  */
-__global__
-void unweighted_dep_acc_kernel(graph_t graph, int64_t phase,
-                               uint32_t* stack_count, id_t* sigma, id_t* stack,
-                               id_t* succ, uint32_t* succ_count,
-                               weight_t* delta,
-                               weight_t* betweenness_centrality) {
-  const id_t thread_id = THREAD_GLOBAL_INDEX;
+__global__ void
+unweighted_dep_acc_kernel(graph_t graph, int64_t phase, uint32_t* stack_count, 
+                          vid_t* sigma, vid_t* stack, vid_t* succ, 
+                          uint32_t* succ_count, weight_t* delta, 
+                          weight_t* betweenness_centrality) {
+  const vid_t thread_id = THREAD_GLOBAL_INDEX;
 
   if(thread_id < stack_count[phase]) {
-    id_t w = stack[graph.vertex_count * phase + thread_id];
+    vid_t w = stack[graph.vertex_count * phase + thread_id];
     weight_t dsw = 0.0;
     weight_t sw = sigma[w];
-    for (id_t i = 0; i < succ_count[w]; i++) {
-      id_t v = succ[graph.vertices[w] + i];
+    for (vid_t i = 0; i < succ_count[w]; i++) {
+      vid_t v = succ[graph.vertices[w] + i];
       dsw = dsw + (sw / sigma[v]) * (1.0 + delta[v]);
     }
     delta[w] = dsw;
@@ -306,10 +309,10 @@ void unweighted_dep_acc_kernel(graph_t graph, int64_t phase,
  * score by summing dependences for each vertex.
  */
 __global__
-void unweighted_back_sum_kernel(graph_t graph, id_t source, int32_t dist,
+void unweighted_back_sum_kernel(graph_t graph, vid_t source, int32_t dist,
                                 int32_t* dists, weight_t* delta,
                                 weight_t* betweenness_centrality) {
-  const id_t thread_id = THREAD_GLOBAL_INDEX;
+  const vid_t thread_id = THREAD_GLOBAL_INDEX;
   if (thread_id < graph.vertex_count) {
     if (thread_id != source && dists[thread_id] == (dist - 1)) {
       betweenness_centrality[thread_id] += delta[thread_id];
@@ -335,11 +338,11 @@ error_t betweenness_unweighted_gpu(const graph_t* graph,
     (weight_t*)mem_alloc(graph->vertex_count * sizeof(weight_t));
   // Allocate memory and initialize state on the GPU
   graph_t* graph_d;
-  id_t* sigma_d;
+  vid_t* sigma_d;
   int32_t* dist_d;
-  id_t* succ_d;
+  vid_t* succ_d;
   uint32_t* succ_count_d;
-  id_t* stack_d;
+  vid_t* stack_d;
   uint32_t* stack_count_d;
   weight_t* delta_d;
   bool* finished_d;
@@ -360,7 +363,7 @@ error_t betweenness_unweighted_gpu(const graph_t* graph,
   // Find and count all shortest paths from every source vertex to every other
   // vertex in the graph. These paths and counts are used to determine the
   // betweenness centrality for each vertex
-  for (id_t source = 0; source < graph->vertex_count; source++) {
+  for (vid_t source = 0; source < graph->vertex_count; source++) {
     // Initializations for this iteration
     CHK_SUCCESS(unweighted_succs_init(graph, source, sigma_d, dist_d, succ_d,
                                       succ_count_d, stack_d, stack_count_d,
@@ -386,7 +389,7 @@ error_t betweenness_unweighted_gpu(const graph_t* graph,
     // Dependency accumulation stage
     phase -= 2;
     CHK_CU_SUCCESS(cudaMemset(delta_d, (weight_t)0.0,
-                              graph->vertex_count * sizeof(id_t)),
+                              graph->vertex_count * sizeof(vid_t)),
                    err_free_all);
     KERNEL_CONFIGURE(graph->vertex_count, blocks, threads_per_block);
     while (phase > 0) {
@@ -407,7 +410,7 @@ error_t betweenness_unweighted_gpu(const graph_t* graph,
 
   // If the graph is undirected, divide centrality scores by 2
   if (graph->directed == false) {
-    for (id_t v = 0; v < graph->vertex_count; v++) {
+    for (vid_t v = 0; v < graph->vertex_count; v++) {
       betweenness_centrality[v] /= 2.0;
     }
   }
@@ -449,9 +452,9 @@ error_t betweenness_unweighted_shi_gpu(const graph_t* graph,
     (weight_t*)mem_alloc(graph->vertex_count * sizeof(weight_t));
   // Construct the reverse edges list (graph->edges is a list of destination
   // vertices, r_edges is a list of source vertices, indexed by edge id)
-  id_t* r_edges = (id_t*)mem_alloc(graph->edge_count * sizeof(id_t));
-  id_t v = 0;
-  for (id_t e = 0; e < graph->edge_count; e++) {
+  vid_t* r_edges = (vid_t*)mem_alloc(graph->edge_count * sizeof(vid_t));
+  vid_t v = 0;
+  for (eid_t e = 0; e < graph->edge_count; e++) {
     while (v <= graph->vertex_count &&
            !(e >= graph->vertices[v] && e < graph->vertices[v+1])) {
       v++;
@@ -461,9 +464,9 @@ error_t betweenness_unweighted_shi_gpu(const graph_t* graph,
 
   // Allocate memory and initialize state on the GPU
   graph_t* graph_d;
-  id_t* r_edges_d;
+  vid_t* r_edges_d;
   bool* preds_d;
-  id_t* sigma_d;
+  vid_t* sigma_d;
   int32_t* dist_d;
   weight_t* delta_d;
   bool* finished_d;
@@ -484,14 +487,14 @@ error_t betweenness_unweighted_shi_gpu(const graph_t* graph,
   // Find and count all shortest paths from every source vertex to every other
   // vertex in the graph. These paths and counts are used to determine the
   // betweenness centrality for each vertex
-  for (id_t source = 0; source < graph->vertex_count; source++) {
+  for (vid_t source = 0; source < graph->vertex_count; source++) {
     // APSP
     int32_t dist = 0;
     CHK_CU_SUCCESS(cudaMemset(dist_d, -1, graph->vertex_count
                                           * sizeof(int32_t)), err_free_all);
     CHK_CU_SUCCESS(cudaMemset(preds_d, false, graph->edge_count * sizeof(bool)),
                    err_free_all);
-    CHK_CU_SUCCESS(cudaMemset(sigma_d, 0, graph->vertex_count * sizeof(id_t)),
+    CHK_CU_SUCCESS(cudaMemset(sigma_d, 0, graph->vertex_count * sizeof(vid_t)),
                    err_free_all);
     CHK_CU_SUCCESS(cudaMemset(delta_d, 0, graph->vertex_count
                               * sizeof(weight_t)), err_free_all);
@@ -530,7 +533,7 @@ error_t betweenness_unweighted_shi_gpu(const graph_t* graph,
 
   // If the graph is undirected, divide all the centrality scores by two
   if (graph->directed == false) {
-    for (id_t v = 0; v < graph->vertex_count; v++) {
+    for (vid_t v = 0; v < graph->vertex_count; v++) {
       betweenness_centrality[v] /= 2.0;
     }
   }
@@ -570,36 +573,35 @@ error_t betweenness_unweighted_cpu(const graph_t* graph,
   // Allocate memory for the shortest paths problem
   weight_t* betweenness_centrality =
     (weight_t*)mem_alloc(graph->vertex_count * sizeof(weight_t));
-  id_t* sigma = (id_t*)mem_alloc(graph->vertex_count * sizeof(id_t));
+  uint32_t* sigma = 
+    (uint32_t*)mem_alloc(graph->vertex_count * sizeof(uint32_t));
   int32_t* dist = (int32_t*)mem_alloc(graph->vertex_count * sizeof(int32_t));
-  id_t* succ = (id_t*)mem_alloc(graph->edge_count * sizeof(id_t));
-  uint32_t* succ_count =
-    (uint32_t*)mem_alloc(graph->vertex_count * sizeof(uint32_t));
-  id_t* stack = (id_t*)mem_alloc(graph->vertex_count * graph->vertex_count
-                                 * sizeof(id_t));
-  uint32_t* stack_count =
-    (uint32_t*)mem_alloc(graph->vertex_count * sizeof(uint32_t));
+  vid_t* succ = (vid_t*)mem_alloc(graph->edge_count * sizeof(vid_t));
+  vid_t* succ_count = (vid_t*)mem_alloc(graph->vertex_count * sizeof(vid_t));
+  vid_t* stack = (vid_t*)mem_alloc(graph->vertex_count * graph->vertex_count
+                                 * sizeof(vid_t));
+  vid_t* stack_count = (vid_t*)mem_alloc(graph->vertex_count * sizeof(vid_t));
   weight_t* delta =
     (weight_t*)mem_alloc(graph->vertex_count * sizeof(weight_t));
   int64_t phase = 0;
 
   // Initialization stage
   OMP(omp parallel for)
-  for (id_t v = 0; v < graph->vertex_count; v++) {
+  for (vid_t v = 0; v < graph->vertex_count; v++) {
     betweenness_centrality[v] = (weight_t)0.0;
   }
 
   // Find and count all shortest paths from every source vertex to every other
   // vertex in the graph. These paths and counts are used to determine the
   // betweenness centrality for each vertex
-  for (id_t source = 0; source < graph->vertex_count; source++) {
+  for (vid_t source = 0; source < graph->vertex_count; source++) {
     // Initializations for this iteration
-    memset(succ, 0, graph->edge_count * sizeof(id_t));
-    memset(succ_count, 0, graph->vertex_count * sizeof(uint32_t));
-    memset(stack, 0, graph->vertex_count * graph->vertex_count * sizeof(id_t));
-    memset(stack_count, 0,  graph->vertex_count * sizeof(uint32_t));
+    memset(succ, 0, graph->edge_count * sizeof(vid_t));
+    memset(succ_count, 0, graph->vertex_count * sizeof(vid_t));
+    memset(stack, 0, graph->vertex_count * graph->vertex_count * sizeof(vid_t));
+    memset(stack_count, 0,  graph->vertex_count * sizeof(vid_t));
     OMP(omp parallel for)
-    for (id_t t = 0; t < graph->vertex_count; t++) {
+    for (vid_t t = 0; t < graph->vertex_count; t++) {
       sigma[t] = 0;
       dist[t] = -1;
     }
@@ -613,22 +615,22 @@ error_t betweenness_unweighted_cpu(const graph_t* graph,
     bool finished = false;
     while (!finished) {
       finished = true;
-      for (id_t v_index = 0; v_index < stack_count[phase]; v_index++) {
-        id_t v = stack[graph->vertex_count * phase + v_index];
-        OMP(omp parallel for)
+      for (vid_t v_index = 0; v_index < stack_count[phase]; v_index++) {
+        vid_t v = stack[graph->vertex_count * phase + v_index];
         // For all neighbors of v in parallel, iterate over paths
-        for (id_t e = graph->vertices[v]; e < graph->vertices[v + 1]; e++) {
-          id_t w = graph->edges[e];
+        OMP(omp parallel for)
+        for (eid_t e = graph->vertices[v]; e < graph->vertices[v + 1]; e++) {
+          vid_t w = graph->edges[e];
           int32_t dw = __sync_val_compare_and_swap(&dist[w], (uint32_t)-1,
                                                    phase + 1);
           if (dw == -1) {
             finished = false;
-            id_t p = __sync_fetch_and_add(&stack_count[phase + 1], 1);
+            vid_t p = __sync_fetch_and_add(&stack_count[phase + 1], 1);
             stack[graph->vertex_count * (phase + 1) + p] = w;
             dw = phase + 1;
           }
           if (dw == phase + 1) {
-            id_t p = (id_t)__sync_fetch_and_add(&succ_count[v], 1);
+            vid_t p = (vid_t)__sync_fetch_and_add(&succ_count[v], 1);
             succ[graph->vertices[v] + p] = w;
             __sync_fetch_and_add(&sigma[w], sigma[v]);
           }
@@ -639,16 +641,16 @@ error_t betweenness_unweighted_cpu(const graph_t* graph,
     phase--;
 
     // Dependency accumulation stage
-    memset(delta, (weight_t)0.0, graph->vertex_count * sizeof(id_t));
+    memset(delta, (weight_t)0.0, graph->vertex_count * sizeof(vid_t));
     phase--;
     while (phase > 0) {
       OMP(omp parallel for)
-      for (id_t p = 0; p < stack_count[phase]; p++) {
-        id_t w = stack[graph->vertex_count * phase + p];
+      for (vid_t p = 0; p < stack_count[phase]; p++) {
+        vid_t w = stack[graph->vertex_count * phase + p];
         weight_t dsw = 0.0;
         weight_t sw = sigma[w];
-        for (id_t i = 0; i < succ_count[w]; i++) {
-          id_t v = succ[graph->vertices[w] + i];
+        for (vid_t i = 0; i < succ_count[w]; i++) {
+          vid_t v = succ[graph->vertices[w] + i];
           dsw = dsw + (sw / sigma[v]) * (1.0 + delta[v]);
         }
         delta[w] = dsw;
@@ -661,7 +663,7 @@ error_t betweenness_unweighted_cpu(const graph_t* graph,
   // If the graph is undirected, divide centrality scores by 2
   if (graph->directed == false) {
     OMP(omp parallel for)
-    for (id_t v = 0; v < graph->vertex_count; v++) {
+    for (vid_t v = 0; v < graph->vertex_count; v++) {
       betweenness_centrality[v] /= 2.0;
     }
   }

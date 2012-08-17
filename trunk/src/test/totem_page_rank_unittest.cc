@@ -93,7 +93,7 @@ TEST_P(PageRankTest, Chain) {
   float* rank = NULL;
   EXPECT_EQ(SUCCESS, TestGraph(graph, NULL, &rank));
   EXPECT_FALSE(rank == NULL);
-  for(id_t vertex = 0; vertex < graph->vertex_count/2; vertex++){
+  for(vid_t vertex = 0; vertex < graph->vertex_count/2; vertex++){
     EXPECT_FLOAT_EQ(rank[vertex], rank[graph->vertex_count - vertex - 1]);
   }
   mem_free(rank);
@@ -113,7 +113,7 @@ TEST_P(PageRankTest, CompleteGraph) {
   float* rank = NULL;
   EXPECT_EQ(SUCCESS, TestGraph(graph, NULL, &rank));
   EXPECT_FALSE(rank == NULL);
-  for(id_t vertex = 0; vertex < graph->vertex_count; vertex++){
+  for(vid_t vertex = 0; vertex < graph->vertex_count; vertex++){
     EXPECT_FLOAT_EQ(rank[0], rank[vertex]);
   }
   mem_free(rank);
@@ -134,7 +134,7 @@ TEST_P(PageRankTest, Star) {
   float* rank = NULL;
   EXPECT_EQ(SUCCESS, TestGraph(graph, NULL, &rank));
   EXPECT_FALSE(rank == NULL);
-  for(id_t vertex = 1; vertex < graph->vertex_count; vertex++){
+  for(vid_t vertex = 1; vertex < graph->vertex_count; vertex++){
     EXPECT_FLOAT_EQ(rank[1], rank[vertex]);
     EXPECT_GT(rank[0], rank[vertex]);
   }

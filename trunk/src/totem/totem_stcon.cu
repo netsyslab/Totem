@@ -6,9 +6,6 @@
  *      Author: Lauro Beltrão Costa
  */
 
-// system includes
-#include <cuda.h>
-
 // totem includes
 #include "totem_comdef.h"
 #include "totem_comkernel.cuh"
@@ -16,7 +13,7 @@
 #include "totem_mem.h"
 
 __host__
-error_t stcon_gpu(const graph_t* graph, id_t source_id, id_t destination_id,
+error_t stcon_gpu(const graph_t* graph, vid_t source_id, vid_t destination_id,
                   bool* connected) {
   if((graph == NULL) || (source_id >= graph->vertex_count)
      || (destination_id >= graph->vertex_count)) {
@@ -51,7 +48,7 @@ error_t stcon_gpu(const graph_t* graph, id_t source_id, id_t destination_id,
 }
 
 __host__
-error_t stcon_cpu(const graph_t* graph, id_t source_id, id_t destination_id,
+error_t stcon_cpu(const graph_t* graph, vid_t source_id, vid_t destination_id,
                   bool* connected) {
   if((graph == NULL) || (source_id >= graph->vertex_count)
      || (destination_id >= graph->vertex_count)) {

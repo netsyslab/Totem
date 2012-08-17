@@ -78,8 +78,8 @@ PRIVATE const char* PLATFORM_STR[] = {
 
 PRIVATE const char* PAR_ALGO_STR[] = {
   "RANDOM",
-  "SORTED_ASC",
-  "SORTED_DSC"
+  "HIGH",
+  "LOW"
 };
 
 /**
@@ -95,25 +95,23 @@ PRIVATE void display_help(char* exe_name, int exit_err) {
          "     %d: BFS (default)\n"
          "     %d: PageRank\n"
          "     %d: Dijkstra\n"
-         "  -tNUM Partitioning Algorithm\n"
-         "     %d: Random (default)\n"
-         "     %d: Sorted Ascending\n"
-         "     %d: Sorted Dscending\n"
          "  -pNUM Platform\n"
          "     %d: Execute on CPU only (default)\n"
          "     %d: Execute on GPUs only\n"
          "     %d: Execute on the CPU and on the GPUs\n"
          "  -gNUM [0-%d] Number of GPUs to use. This is applicable for GPU\n"
-         "              and Hybrid platforms only (default 1).\n"
-         "  -rNUM [1-%d] Number of times an experiment is repeated"
-         " (default 1)\n"
-         "  -sNUM Number sources used to benchmark a traversal algorithm"
-         " (default 5)\n"
+         "         and Hybrid platforms only (default 1).\n"
+         "  -tNUM Partitioning Algorithm\n"
+         "     %d: Random (default)\n"
+         "     %d: High degree nodes on CPU\n"
+         "     %d: Low degree nodes on CPU\n"
+         "  -rNUM [1-%d] Number of times an experiment is repeated or sources\n"
+         "         used to benchmark a traversal algorithm (default 5)\n"
          "  -v Verify benchmark result\n"
          "  -h Print this help message\n",
          exe_name, BENCHMARK_BFS, BENCHMARK_PAGERANK, BENCHMARK_DIJKSTRA, 
-         PAR_RANDOM, PAR_SORTED_ASC, PAR_SORTED_DSC, PLATFORM_CPU, 
-         PLATFORM_GPU, PLATFORM_HYBRID, max_gpu_count, REPEAT_MAX);
+         PLATFORM_CPU, PLATFORM_GPU, PLATFORM_HYBRID, max_gpu_count, 
+         PAR_RANDOM, PAR_SORTED_ASC, PAR_SORTED_DSC, REPEAT_MAX);
   exit(exit_err);
 }
 
@@ -189,14 +187,15 @@ PRIVATE void parse_command_line(int argc, char** argv) {
   options.graph_file = argv[optind++];
 }
 
-void print_timing(graph_t* graph, double time_total, bool totem_based) {
+void print_timing(graph_t* graph, double time_total, bool totem_based, 
+                  const char* str) {
   printf("time_total:%0.2f\t"
          "time_exec:%0.2f\t"
          "time_comp:%0.2f\t"
          "time_gpu_comp:%0.2f\t"
          "time_comm:%0.2f\t"
          "time_scatter:%0.2f\t"
-         "time_aggr:%0.2f\n",
+         "time_aggr:%0.2f",
          time_total,
          totem_based ? totem_time_execution() : time_total,
          totem_based ? totem_time_computation() : time_total,
@@ -204,16 +203,18 @@ void print_timing(graph_t* graph, double time_total, bool totem_based) {
          totem_based ? totem_time_communication() : 0,
          totem_based ? totem_time_scatter() : 0,
          totem_based ? totem_time_aggregation() : 0);
+  if (str) printf("\t%s", str);
+  printf("\n");
   fflush(stdout);
 }
 
 void print_header(graph_t* graph, bool totem_based) {
   const char* OMP_PROC_BIND = getenv("OMP_PROC_BIND");
-  printf("file:%s\tbenchmark:%s\tvertices:%lld\tedges:%lld\tpartitioning:%s\t"
+  printf("file:%s\tbenchmark:%s\tvertices:%llu\tedges:%llu\tpartitioning:%s\t"
          "platform:%s\talpha:%d\trepeat:%d\tverify:%s\t"
          "thread_count:%d\tthread_bind:%s", options.graph_file, 
-         BENCHMARK_STR[options.benchmark], graph->vertex_count, 
-         graph->edge_count, PAR_ALGO_STR[options.par_algo], 
+         BENCHMARK_STR[options.benchmark], (uint64_t)graph->vertex_count, 
+         (uint64_t)graph->edge_count, PAR_ALGO_STR[options.par_algo], 
          PLATFORM_STR[options.platform], options.alpha, options.repeat, 
          options.verify? "true" : "false", 
          omp_get_max_threads(), 
@@ -221,8 +222,8 @@ void print_header(graph_t* graph, bool totem_based) {
   if (totem_based) {
     printf("\t");
     // print graph and partitioning characteristics
-    id_t rv = 0; id_t re = 0;
-    for (id_t pid = 0; pid < totem_partition_count(); pid++) {
+    uint64_t rv = 0; uint64_t re = 0;
+    for (uint32_t pid = 0; pid < totem_partition_count(); pid++) {
       double v = 100.0 * ((double)totem_par_vertex_count(pid) / 
                           (double)graph->vertex_count);
       double e = 100.0 * ((double)totem_par_edge_count(pid) / 
@@ -244,21 +245,32 @@ void print_header(graph_t* graph, bool totem_based) {
 /**
  * Verfies BFS result by comparing it with bfs_cpu (assuming it is correct)
  */
-PRIVATE void verify_bfs(graph_t* graph, id_t src_id, uint32_t* cost) {
+PRIVATE void verify_bfs(graph_t* graph, vid_t src_id, uint32_t* cost) {
   uint32_t* cost_ref;
   bfs_cpu(graph, src_id, &cost_ref);
-  for (id_t v = 0; v < graph->vertex_count; v++) {
+  for (vid_t v = 0; v < graph->vertex_count; v++) {
     assert(cost[v] == cost_ref[v]);
   }
   mem_free(cost_ref);
+}
+
+PRIVATE vid_t get_traversed_edges(graph_t* graph, uint32_t* cost) {
+  eid_t trv_edges = 0;
+  OMP(omp parallel for reduction(+ : trv_edges))
+  for (vid_t vid = 0; vid < graph->vertex_count; vid++) {
+    if (cost[vid] != INFINITE) {
+      trv_edges += (graph->vertices[vid + 1] - graph->vertices[vid]);
+    }
+  }
+  return trv_edges;
 }
 
 /**
  * Randomly picks a random source vertex, and ensures that it is connected to at
  * least one other vertex.
  */
-PRIVATE id_t get_random_src(graph_t* graph) {
-  id_t src = rand() % graph->vertex_count;
+PRIVATE vid_t get_random_src(graph_t* graph) {
+  vid_t src = rand() % graph->vertex_count;
   while ((graph->vertices[src + 1] - graph->vertices[src] == 0)) {
     src = rand() % graph->vertex_count;
   }
@@ -271,7 +283,7 @@ PRIVATE id_t get_random_src(graph_t* graph) {
 PRIVATE void benchmark_bfs(graph_t* graph, totem_attr_t* attr) {
   srand(SEED);
   for (int s = 0; s < options.repeat; s++) {
-    id_t src = get_random_src(graph);
+    vid_t src = get_random_src(graph);
     stopwatch_t stopwatch;
     stopwatch_start(&stopwatch);
     uint32_t* cost = NULL;
@@ -280,8 +292,11 @@ PRIVATE void benchmark_bfs(graph_t* graph, totem_attr_t* attr) {
     } else {
       CALL_SAFE(bfs_hybrid(src, &cost));
     }
+    char buffer[100];
+    sprintf(buffer, "seed:%u\ttrv_edges:%llu", src,
+            get_traversed_edges(graph, cost));
     print_timing(graph, stopwatch_elapsed(&stopwatch), 
-                 options.platform != PLATFORM_CPU);
+                 options.platform != PLATFORM_CPU, buffer);
     if (options.verify) verify_bfs(graph, src, cost);
     mem_free(cost);
   }
@@ -301,7 +316,7 @@ PRIVATE void benchmark_pagerank(graph_t* graph, totem_attr_t* attr) {
       CALL_SAFE(page_rank_hybrid(NULL, &rank));
     }
     print_timing(graph, stopwatch_elapsed(&stopwatch), 
-                 options.platform != PLATFORM_CPU);
+                 options.platform != PLATFORM_CPU, NULL);
     mem_free(rank);
   }
 }
@@ -312,7 +327,7 @@ PRIVATE void benchmark_pagerank(graph_t* graph, totem_attr_t* attr) {
 PRIVATE void benchmark_dijkstra(graph_t* graph, totem_attr_t* attr) {
   srand(SEED);
   for (int s = 0; s < options.repeat; s++) {
-    id_t src = get_random_src(graph);
+    vid_t src = get_random_src(graph);
     stopwatch_t stopwatch;
     stopwatch_start(&stopwatch);
     weight_t* distance = NULL;
@@ -322,7 +337,7 @@ PRIVATE void benchmark_dijkstra(graph_t* graph, totem_attr_t* attr) {
       assert(false);
     }
     print_timing(graph, stopwatch_elapsed(&stopwatch),
-                 options.platform != PLATFORM_CPU);
+                 options.platform != PLATFORM_CPU, NULL);
     mem_free(distance);
   }
 }
@@ -350,7 +365,7 @@ PRIVATE void run_benchmark() {
     BENCHMARK_FUNC[options.benchmark](graph, &attr);
     totem_finalize();
   }
-  CALL_SAFE(graph_finalize(graph)); 
+  CALL_SAFE(graph_finalize(graph));
 }
 
 /**
