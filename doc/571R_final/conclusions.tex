@@ -1,9 +1,0 @@
-\section{Concluding Remarks}
-\label{sec:conclusion}
-This work presents the initial steps towards the design of {\sc Totem}: a large-scale graph processing framework tailored for massively parallel hybrid architectures. To this end, we discuss the existing studies that focus on parallel graph algorithms, in general, and graph algorithms on GPUs, in particular. Based on this literature review, we select three core graph algorithms (i.e., {\sc bfs}, Dijkstra's algorithm, and PageRank) and give their GPU implementations. These implementations helped identify commonalities among graph algorithms that are candidates to be part of the {\sc Totem} framework. 
-
-This work also shows preliminary performance results for the initial graph algorithms implementations. Besides helping in the identification of common tasks that are shared among the algorithms and can be further abstracted by {\sc Totem}, the implementations also allow us to confirm that GPUs can indeed deliver superior performance to graph processing applications when compared to CPU platforms. Also, some initial workload characterization suggests that particular aspects of graph connectivity is correlated with attainable performance of graph algorithms on GPU. 
-
-Finally, we provide a list with a brief description of candidate applications that we will focus in the next steps. The rationale is to show applicability of {\sc Totem} and to investigate additional abstractions that may be useful for graph processing that spans multiple GPUs. 
-
-That is, this work will keep grooving towards the design and implementation of a framework for massively parallel graph processing on large-scale hybrid platforms.
