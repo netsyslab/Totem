@@ -154,7 +154,9 @@ void init_get_rmt_nbrs(partition_t* par, vid_t vcount, uint32_t pcount,
 }
 
 PRIVATE void init_table_gpu(grooves_box_table_t* btable, uint32_t pcount,
-                            size_t msg_size, grooves_box_table_t** btable_d,
+                            size_t push_msg_size, 
+                            size_t pull_msg_size, 
+                            grooves_box_table_t** btable_d,
                             grooves_box_table_t** btable_h) {
   *btable_h = (grooves_box_table_t*)calloc(pcount, sizeof(grooves_box_table_t));
   memcpy(*btable_h, btable, pcount * sizeof(grooves_box_table_t));
@@ -167,8 +169,14 @@ PRIVATE void init_table_gpu(grooves_box_table_t* btable, uint32_t pcount,
       CALL_CU_SAFE(cudaMemcpy((*btable_h)[pid].rmt_nbrs,
                               btable[pid].rmt_nbrs, count * sizeof(vid_t),
                               cudaMemcpyHostToDevice));
-      CALL_CU_SAFE(cudaMalloc((void**)&((*btable_h)[pid].values),
-                              bits_to_bytes(count * msg_size)));
+      if (push_msg_size > 0) {
+        CALL_CU_SAFE(cudaMalloc((void**)&((*btable_h)[pid].push_values),
+                                bits_to_bytes(count * push_msg_size)));
+      }
+      if (pull_msg_size > 0) {
+        CALL_CU_SAFE(cudaMalloc((void**)&((*btable_h)[pid].pull_values),
+                                bits_to_bytes(count * pull_msg_size)));
+      }
     }
   }
 
@@ -182,7 +190,8 @@ PRIVATE void init_table_gpu(grooves_box_table_t* btable, uint32_t pcount,
 
 PRIVATE void init_outbox_table(partition_t* partition, uint32_t pcount,
                                vid_t** rmt_nbrs, int* count_per_par,
-                               size_t msg_size) {
+                               size_t push_msg_size,
+                               size_t pull_msg_size) {
   grooves_box_table_t* outbox = partition->outbox;
   uint32_t pid = partition->id;
   for (int rmt_pid = (pid + 1) % pcount; rmt_pid != pid;
@@ -195,8 +204,14 @@ PRIVATE void init_outbox_table(partition_t* partition, uint32_t pcount,
         // Allocate the values array for the cpu-based partitions. The gpu-based
         // partitions will have their values array allocated later when their
         // state is initialized on the gpu
-        outbox[rmt_pid].values = 
-          mem_alloc(bits_to_bytes(outbox[rmt_pid].count * msg_size));
+        if (push_msg_size > 0) {
+          outbox[rmt_pid].push_values = 
+            mem_alloc(bits_to_bytes(outbox[rmt_pid].count * push_msg_size));
+        }
+        if (pull_msg_size > 0) {
+          outbox[rmt_pid].pull_values = 
+            mem_alloc(bits_to_bytes(outbox[rmt_pid].count * pull_msg_size));
+        }
       }
     }
   }
@@ -223,7 +238,7 @@ PRIVATE void init_outbox(partition_set_t* pset) {
     if (partition->rmt_vertex_count) {
       // build the outbox tables for this partition
       init_outbox_table(partition, pcount, rmt_nbrs, count_per_par,
-                        pset->msg_size);
+                        pset->push_msg_size, pset->pull_msg_size);
     }
   }
 }
@@ -237,8 +252,7 @@ PRIVATE void init_inbox(partition_set_t* pset) {
     partition->inbox = 
       (grooves_box_table_t*)calloc(pcount, sizeof(grooves_box_table_t));
 
-    if (!partition->subgraph.vertex_count ||
-        !partition->subgraph.edge_count) continue;
+    if (!partition->subgraph.vertex_count) continue;
 
     for (int src_pid = (pid + 1) % pcount; src_pid != pid;
          src_pid = (src_pid + 1) % pcount) {
@@ -254,9 +268,16 @@ PRIVATE void init_inbox(partition_set_t* pset) {
       if (remote_par->processor.type == PROCESSOR_GPU) {
         // if the remote processor is GPU, then a values array for this inbox
         // needs to be allocated on the host
-        partition->inbox[src_pid].values =
-          mem_alloc(bits_to_bytes(partition->inbox[src_pid].count * 
-                                  pset->msg_size));
+        if (pset->push_msg_size > 0) {
+          partition->inbox[src_pid].push_values =
+            mem_alloc(bits_to_bytes(partition->inbox[src_pid].count * 
+                                    pset->push_msg_size));
+        }
+        if (pset->pull_msg_size > 0) {
+          partition->inbox[src_pid].pull_values =
+            mem_alloc(bits_to_bytes(partition->inbox[src_pid].count * 
+                                    pset->pull_msg_size));
+        }
       }
     }
   }
@@ -295,14 +316,14 @@ PRIVATE void init_gpu_state(partition_set_t* pset) {
       // set device context, create the tables for this gpu
       CALL_CU_SAFE(cudaSetDevice(partition->processor.id));
       grooves_box_table_t* outbox_h = NULL;
-      init_table_gpu(partition->outbox, pcount, pset->msg_size,
-                     &partition->outbox_d, &outbox_h);
+      init_table_gpu(partition->outbox, pcount, pset->push_msg_size, 
+                     pset->pull_msg_size, &partition->outbox_d, &outbox_h);
       host_outboxes[pid] = partition->outbox;
       partition->outbox = outbox_h;
 
       grooves_box_table_t* inbox_h = NULL;
-      init_table_gpu(partition->inbox, pcount, pset->msg_size,
-                     &partition->inbox_d, &inbox_h);
+      init_table_gpu(partition->inbox, pcount, pset->push_msg_size,
+                     pset->pull_msg_size, &partition->inbox_d, &inbox_h);
       free(partition->inbox);
       partition->inbox = inbox_h;
       init_gpu_enable_peer_access(pid, pset);
@@ -337,15 +358,20 @@ error_t grooves_initialize(partition_set_t* pset) {
   return SUCCESS;
 }
 
-PRIVATE void finalize_table_gpu(grooves_box_table_t* btable_d,
-                                grooves_box_table_t* btable_h,
-                                uint32_t pcount) {
+PRIVATE void finalize_table_gpu(partition_set_t* pset,
+                                grooves_box_table_t* btable_d,
+                                grooves_box_table_t* btable_h) {
   CALL_CU_SAFE(cudaFree(btable_d));
   // finalize the tables on the gpu
-  for (uint32_t pid = 0; pid < pcount; pid++) {
+  for (uint32_t pid = 0; pid < pset->partition_count; pid++) {
     if (btable_h[pid].count) {
       CALL_CU_SAFE(cudaFree(btable_h[pid].rmt_nbrs));
-      CALL_CU_SAFE(cudaFree(btable_h[pid].values));
+      if (pset->push_msg_size > 0) {
+        CALL_CU_SAFE(cudaFree(btable_h[pid].push_values));
+      }
+      if (pset->pull_msg_size > 0) {
+        CALL_CU_SAFE(cudaFree(btable_h[pid].pull_values));
+      }
     }
   }
   free(btable_h);
@@ -373,13 +399,18 @@ PRIVATE void finalize_outbox(partition_set_t* pset) {
     if (partition->processor.type == PROCESSOR_GPU) {
       CALL_CU_SAFE(cudaSetDevice(partition->processor.id));
       finalize_gpu_disable_peer_access(pid, pset);
-      finalize_table_gpu(partition->outbox_d, partition->outbox, pcount);
+      finalize_table_gpu(pset, partition->outbox_d, partition->outbox);
     } else {
       assert(partition->processor.type == PROCESSOR_CPU);
       for (uint32_t rmt_pid = 0; rmt_pid < pcount; rmt_pid++) {
         if (partition->outbox[rmt_pid].count) {
           free(partition->outbox[rmt_pid].rmt_nbrs);
-          mem_free(partition->outbox[rmt_pid].values);
+          if (pset->push_msg_size > 0) {
+            mem_free(partition->outbox[rmt_pid].push_values);
+          }
+          if (pset->pull_msg_size > 0) {
+            mem_free(partition->outbox[rmt_pid].pull_values);
+          }
         }
       }
       free(partition->outbox);
@@ -394,7 +425,7 @@ PRIVATE void finalize_inbox(partition_set_t* pset) {
     assert(partition->inbox);
     if (partition->processor.type == PROCESSOR_GPU) {
       CALL_CU_SAFE(cudaSetDevice(partition->processor.id));
-      finalize_table_gpu(partition->inbox_d, partition->inbox, pcount);
+      finalize_table_gpu(pset, partition->inbox_d, partition->inbox);
     } else {
       assert(partition->processor.type == PROCESSOR_CPU);
       for (int rmt_pid = 0; rmt_pid < pcount; rmt_pid++) {
@@ -405,7 +436,12 @@ PRIVATE void finalize_inbox(partition_set_t* pset) {
         if (remote_par->processor.type == PROCESSOR_GPU &&
             partition->inbox[rmt_pid].count) {
           free(partition->inbox[rmt_pid].rmt_nbrs);
-          mem_free(partition->inbox[rmt_pid].values);
+          if (pset->push_msg_size > 0) {
+            mem_free(partition->inbox[rmt_pid].push_values);
+          }
+          if (pset->pull_msg_size > 0) {
+            mem_free(partition->inbox[rmt_pid].pull_values);
+          }
         }
       }
       free(partition->inbox);
@@ -421,30 +457,57 @@ error_t grooves_finalize(partition_set_t* pset) {
   return SUCCESS;
 }
 
-error_t grooves_launch_communications(partition_set_t* pset) {
+PRIVATE void launch_communications_setup(partition_set_t* pset, 
+                                         grooves_direction_t direction,
+                                         int local_pid, int remote_pid,
+                                         void** src, void** dst, vid_t* count,
+                                         size_t* msg_size, cudaStream_t** stream
+                                         ) {
+  if (direction == GROOVES_PUSH) {
+    *msg_size = pset->push_msg_size;
+    *src = pset->partitions[local_pid].outbox[remote_pid].push_values;
+    *dst = pset->partitions[remote_pid].inbox[local_pid].push_values;
+  } else if (direction == GROOVES_PULL) {
+    *msg_size = pset->pull_msg_size;
+    *src = pset->partitions[remote_pid].inbox[local_pid].pull_values;
+    *dst = pset->partitions[local_pid].outbox[remote_pid].pull_values;
+  } else {
+    printf("Direction not supported: %s", direction); 
+    fflush(stdout);
+    exit(EXIT_FAILURE);
+  }
+  assert(pset->partitions[local_pid].outbox[remote_pid].count == 
+         pset->partitions[remote_pid].inbox[local_pid].count);
+  *count = pset->partitions[local_pid].outbox[remote_pid].count;
+  *stream = &pset->partitions[local_pid].streams[0];
+  if (pset->partitions[remote_pid].processor.type == PROCESSOR_GPU) {
+    *stream = &pset->partitions[remote_pid].streams[0];
+  }
+}
+
+error_t grooves_launch_communications(partition_set_t* pset, 
+                                      grooves_direction_t direction) {
   uint32_t pcount = pset->partition_count;
-  for (int src_pid = 0; src_pid < pcount; src_pid++) {
-    for (int dst_pid = (src_pid + 1) % pcount; dst_pid != src_pid;
-         dst_pid = (dst_pid + 1) % pcount) {
+  for (int local_pid = 0; local_pid < pcount; local_pid++) {
+    for (int remote_pid = (local_pid + 1) % pcount; remote_pid != local_pid;
+         remote_pid = (remote_pid + 1) % pcount) {
       // if both partitions are on the host, then, by design the source
       // partition's outbox is shared with the destination partition's inbox,
       // hence no need to copy data
-      if ((pset->partitions[src_pid].processor.type == PROCESSOR_CPU) &&
-          (pset->partitions[dst_pid].processor.type == PROCESSOR_CPU)) continue;
-
-      cudaStream_t* stream = &pset->partitions[src_pid].streams[0];
-      grooves_box_table_t* src_box = &pset->partitions[src_pid].outbox[dst_pid];
-      // if the two partitions share nothing, then we have nothing to do
-      if (!src_box->count) continue;
-
-      if (pset->partitions[dst_pid].processor.type == PROCESSOR_GPU) {
-        stream = &pset->partitions[dst_pid].streams[0];
+      if ((pset->partitions[local_pid].processor.type == PROCESSOR_CPU) &&
+          (pset->partitions[remote_pid].processor.type == PROCESSOR_CPU)) {
+        continue;
       }
-      grooves_box_table_t* dst_box = &pset->partitions[dst_pid].inbox[src_pid];
-      assert(src_box->count == dst_box->count);
-      CALL_CU_SAFE(cudaMemcpyAsync(dst_box->values, src_box->values,
-                                   bits_to_bytes(dst_box->count * 
-                                                 pset->msg_size),
+
+      size_t msg_size = 0;
+      void* src = NULL;
+      void* dst = NULL;
+      vid_t count = 0;
+      cudaStream_t* stream;
+      launch_communications_setup(pset, direction, local_pid, remote_pid,
+                                  &src, &dst, &count, &msg_size, &stream);
+      if (count == 0) continue;
+      CALL_CU_SAFE(cudaMemcpyAsync(dst, src, bits_to_bytes(count * msg_size),
                                    cudaMemcpyDefault, *stream));
     }
   }

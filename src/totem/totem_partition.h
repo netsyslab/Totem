@@ -73,10 +73,16 @@ typedef struct partition_s {
   vid_t*               map;          /**< maps the a vertex id in a partition
                                          to its original id in the graph. used
                                          when aggregating the final results */
-  grooves_box_table_t* outbox;       /**< table of messages to be sent to
-                                        remote nbrs */
-  grooves_box_table_t* inbox;        /**< table of messages received from
-                                        other partitions */
+  grooves_box_table_t* outbox;       /**< manages messages pushed and/or pulled
+                                        via boundary edges in the partition that
+                                        hosts the source vertex 
+                                        TODO(Abdullah): change the name to 
+                                        something more meaningful */
+  grooves_box_table_t* inbox;        /**< manages messages pushed and/or pulled
+                                        via boundary edges in the partition that
+                                        hosts the destination vertex 
+                                        TODO(Abdullah): change the name to 
+                                        something more meaningful */
   processor_t          processor;    /**< the processor this partition will be
                                         processed on. */
   void*                algo_state;   /**< algorithm-specific state (allocated
@@ -129,7 +135,8 @@ typedef struct partition_set_s {
   bool         weighted;        /**< indicates if edges have weights. */
   partition_t* partitions;      /**< the array of partitions */
   int          partition_count; /**< number of partitions in the set */
-  size_t       msg_size;        /**< the size of a communication message */
+  size_t       push_msg_size;   /**< the size of a push communication message */
+  size_t       pull_msg_size;   /**< the size of a pull communication message */
   vid_t*       id_in_partition; /**< maps a vertex id in the graph to its
                                    new id in its designated partition */
 } partition_set_t;
@@ -220,13 +227,15 @@ PRIVATE const partition_func_t PARTITION_FUNC[] = {
  * @param[in] partition_labels an array with a partition id for each vertex as
  *                   identified by the array position
  * @param[in] partition_count the number of partitions
- * @param[in] msg_size  the size of a communication element
+ * @param[in] push_msg_size  the size of a push communication element
+ * @param[in] pull_msg_size  the size of a pull communication element
  * @param[out] partition_set the set of resulting graphs
  * @return SUCCESS if the partitions are assigned, FAILURE otherwise.
  */
 error_t partition_set_initialize(graph_t* graph, vid_t* partition_labels,
                                  processor_t* partition_processor,
-                                 int partition_count, size_t msg_size,
+                                 int partition_count, size_t push_msg_size,
+                                 size_t pull_msg_size, 
                                  partition_set_t** partition_set);
 
 /**
