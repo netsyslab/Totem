@@ -122,8 +122,8 @@ class EngineTest : public TestWithParam<totem_attr_t*> {
     CUDA_CHECK_VERSION();
     graph_ = NULL;
     engine_config_t config  = {
-      NULL, degree, degree_scatter, degree_init, degree_finalize, degree_aggr
-    };
+      NULL, degree, degree_scatter, NULL, degree_init, degree_finalize, 
+      degree_aggr, GROOVES_PUSH};
     config_ = config;
     attr_ = *GetParam();
   }
@@ -179,15 +179,17 @@ TEST_P(EngineTest, InvalidGPUCount) {
 
 // Values() seems to accept only pointers, hence the possible parameters
 // are defined here, and a pointer to each of them is used.
+const float CPU_SHARE_ZERO = 0;
+const float CPU_SHARE_ONE_THIRD = 0.33;
 totem_attr_t engine_params[] = {
-  {PAR_RANDOM, PLATFORM_CPU, 1, 0, 0},
-  {PAR_RANDOM, PLATFORM_GPU, 1, 0, 0},
+  {PAR_RANDOM, PLATFORM_CPU, 1, CPU_SHARE_ZERO, MSG_SIZE_ZERO, MSG_SIZE_ZERO},
+  {PAR_RANDOM, PLATFORM_GPU, 1, CPU_SHARE_ZERO, MSG_SIZE_ZERO, MSG_SIZE_ZERO},
   {PAR_RANDOM, PLATFORM_GPU, get_gpu_count(), 
-   0, sizeof(int) * BITS_PER_BYTE},    // All GPUs
-  {PAR_RANDOM, PLATFORM_HYBRID, 1, .3, // 1 CPU + 1 GPU
-   sizeof(int) * BITS_PER_BYTE},
-  {PAR_RANDOM, PLATFORM_HYBRID, get_gpu_count(), 
-   .3, sizeof(int) * BITS_PER_BYTE}  // 1 CPU + All GPUs
+   CPU_SHARE_ZERO, MSG_SIZE_WORD, MSG_SIZE_WORD}, // All GPUs
+  {PAR_RANDOM, PLATFORM_HYBRID, 1, CPU_SHARE_ONE_THIRD, 
+   MSG_SIZE_WORD, MSG_SIZE_WORD}, // 1 CPU + 1 GPU
+  {PAR_RANDOM, PLATFORM_HYBRID, get_gpu_count(), CPU_SHARE_ONE_THIRD, 
+   MSG_SIZE_WORD, MSG_SIZE_WORD} // 1 CPU + All GPUs
 };
 
 // From Google documentation:

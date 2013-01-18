@@ -17,6 +17,7 @@
  *        algo_ss_kernel,
  *        algo_par_kernel,
  *        algo_par_scatter,
+ *        algo_par_gather,
  *        algo_par_init,
  *        algo_par_finalize,
  *        algo_par_aggr,
@@ -26,7 +27,8 @@
  *    }
  *
  * The algorithm above can be run multiple times as follows:
- *    totem_attr_t attrs = {partition_algorithm, platform, cpu_share, msg_size};
+ *    totem_attr_t attrs = {partition_algorithm, platform, cpu_share, 
+ *                          push_msg_size};
  *    engine_init(attrs);
  *    algo(par1);
  *    algo(par2);
@@ -79,6 +81,12 @@ typedef void(*engine_par_kernel_func_t)(partition_t*);
 typedef void(*engine_par_scatter_func_t)(partition_t*);
 
 /**
+ * Callback function to gather partition-specific state to be sent to the 
+ * the corresponding boundary edge's source partition.
+ */
+typedef void(*engine_par_gather_func_t)(partition_t*);
+
+/**
  * Callback function on a partition to enable algorithm-specific per-partition
  * state initialization.
  */
@@ -107,30 +115,44 @@ typedef struct engine_config_s {
   engine_ss_kernel_func_t      ss_kernel_func;   /**< per superstep init func */
   engine_par_kernel_func_t     par_kernel_func;  /**< per par. comp. func */
   engine_par_scatter_func_t    par_scatter_func; /**< per par. scatter func */
+  engine_par_gather_func_t     par_gather_func;
   engine_par_init_func_t       par_init_func;    /**< per par. init function */
   engine_par_finalize_func_t   par_finalize_func;/**< per par. finalize func */
   engine_par_aggr_func_t       par_aggr_func;    /**< per partition results
                                                       aggregation func */
+  grooves_direction_t          direction;        /**< communication direction */
 } engine_config_t;
 
 /**
  * Default configuration
  */
-#define ENGINE_DEFAULT_CONFIG {NULL, NULL, NULL, NULL, NULL, NULL}
+#define ENGINE_DEFAULT_CONFIG {NULL, NULL, NULL, NULL, NULL, \
+      NULL, NULL, GROOVES_PUSH}
 
 /**
  * Returns the address of a neighbor's state. If remote, it returns a reference
  * to its state in the outbox table. If local, it returns a reference to its
  * state in the array pstate
  */
-#define ENGINE_FETCH_DST(_pid, _nbr, _outbox, _pstate, _dst, _type) \
+#define ENGINE_FETCH_DST(_pid, _nbr, _outbox, _pstate, _dst, _type)     \
   do {                                                                  \
     int nbr_pid = GET_PARTITION_ID((_nbr));                             \
     if (nbr_pid != (_pid)) {                                            \
-      _type * values = (_type *)(_outbox)[nbr_pid].values;              \
+      _type * values = (_type *)(_outbox)[nbr_pid].push_values;         \
       (_dst) = &values[GET_VERTEX_ID((_nbr))];                          \
     } else {                                                            \
       (_dst) = &(_pstate)[GET_VERTEX_ID((_nbr))];                       \
+    }                                                                   \
+  } while(0)
+
+#define ENGINE_FETCH_SRC(_pid, _nbr, _outbox, _pstate, _src, _type)     \
+  do {                                                                  \
+    int nbr_pid = GET_PARTITION_ID((_nbr));                             \
+    if (nbr_pid != (_pid)) {                                            \
+      _type * values = (_type *)(_outbox)[nbr_pid].pull_values;         \
+      (_src) = &values[GET_VERTEX_ID((_nbr))];                          \
+    } else {                                                            \
+      (_src) = &(_pstate)[GET_VERTEX_ID((_nbr))];                       \
     }                                                                   \
   } while(0)
 

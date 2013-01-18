@@ -302,9 +302,11 @@ error_t page_rank_hybrid(float *rank_i, float** rank) {
     NULL,
     page_rank,
     page_rank_scatter,
+    NULL,
     page_rank_init,
     page_rank_finalize,
-    page_rank_aggr
+    page_rank_aggr,
+    GROOVES_PUSH,
   };
   engine_config(&config);
   if (engine_largest_gpu_partition()) {

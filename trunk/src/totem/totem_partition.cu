@@ -251,7 +251,8 @@ error_t partition_by_dsc_sorted_degree(graph_t* graph, int partition_count,
 }
 
 PRIVATE error_t init_allocate_struct_space(graph_t* graph, int pcount,
-                                           size_t msg_size,
+                                           size_t push_msg_size,
+                                           size_t pull_msg_size,
                                            partition_set_t** pset) {
   *pset = (partition_set_t*)calloc(1, sizeof(partition_set_t));
   assert(*pset);
@@ -261,7 +262,8 @@ PRIVATE error_t init_allocate_struct_space(graph_t* graph, int pcount,
   assert((*pset)->id_in_partition);
   (*pset)->graph = graph;
   (*pset)->partition_count = pcount;
-  (*pset)->msg_size = msg_size;
+  (*pset)->push_msg_size = push_msg_size;
+  (*pset)->pull_msg_size = pull_msg_size;
   (*pset)->weighted = graph->weighted;
   return SUCCESS;
 }
@@ -392,12 +394,14 @@ PRIVATE void init_build_partitions_gpu(partition_set_t* pset) {
 
 error_t partition_set_initialize(graph_t* graph, vid_t* plabels,
                                  processor_t* pproc, int pcount,
-                                 size_t msg_size, partition_set_t** pset) {
+                                 size_t push_msg_size, size_t pull_msg_size,
+                                 partition_set_t** pset) {
   assert(graph && plabels && pproc);
   if (pcount > MAX_PARTITION_COUNT) return FAILURE;
 
   // Setup space and initialize the partition set data structure
-  CHK_SUCCESS(init_allocate_struct_space(graph, pcount, msg_size, pset), err);
+  CHK_SUCCESS(init_allocate_struct_space(graph, pcount, push_msg_size, 
+                                         pull_msg_size, pset), err);
 
   // Get the partition sizes
   init_compute_partitions_sizes(*pset, plabels);

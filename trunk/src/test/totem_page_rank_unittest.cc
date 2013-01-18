@@ -42,6 +42,8 @@ class PageRankTest : public TestWithParam<page_rank_param_t*> {
   error_t TestGraph(graph_t* graph, float* rank_i, float** rank) {
     if (page_rank_param->hybrid) {
       totem_attr_t attr = TOTEM_DEFAULT_ATTR;
+      attr.pull_msg_size = 0;
+      attr.push_msg_size = sizeof(float) * BITS_PER_BYTE;
       if (totem_init(graph, &attr) == FAILURE) {
         *rank = NULL;
         return FAILURE;

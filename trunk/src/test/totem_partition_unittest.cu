@@ -163,13 +163,13 @@ class GraphPartitionTest : public TestWithParam<PartitionFunction> {
           dim3 blocks, threads_per_block;
           KERNEL_CONFIGURE(remote_outbox->count, blocks, threads_per_block);
           memset_device<<<blocks, threads_per_block>>>
-            ((int*)remote_outbox->values, (int)remote_pid,
+            ((int*)remote_outbox->push_values, (int)remote_pid,
              remote_outbox->count);
           ASSERT_EQ(cudaSuccess, cudaGetLastError());
           ASSERT_EQ(cudaSuccess, cudaThreadSynchronize());
         } else {
           ASSERT_EQ(PROCESSOR_CPU, partition->processor.type);
-          int* values = (int*)remote_outbox->values;
+          int* values = (int*)remote_outbox->push_values;
           for (int i = 0; i < remote_outbox->count; i++) {
             values[i] = remote_pid;
           }
@@ -190,13 +190,13 @@ class GraphPartitionTest : public TestWithParam<PartitionFunction> {
           dim3 blocks, threads_per_block;
           KERNEL_CONFIGURE(inbox[bindex].count, blocks, threads_per_block);
           CheckInboxValuesGPUKernel<<<blocks, threads_per_block>>>
-            (pid, (int*)inbox[bindex].values, inbox[bindex].count);
+            (pid, (int*)inbox[bindex].push_values, inbox[bindex].count);
           ASSERT_EQ(cudaSuccess, cudaGetLastError());
           ASSERT_EQ(cudaSuccess, cudaThreadSynchronize());
         } else {
           ASSERT_EQ(PROCESSOR_CPU, partition->processor.type);
           for (uint32_t bindex = 0; bindex < bcount; bindex++) {
-            int* values = (int*)inbox[bindex].values;
+            int* values = (int*)inbox[bindex].push_values;
             for (int i = 0; i < inbox[bindex].count; i++) {
               EXPECT_EQ(pid, values[i]);
             }
@@ -208,7 +208,8 @@ class GraphPartitionTest : public TestWithParam<PartitionFunction> {
 
   void TestCommunication() {
     InitOutboxValues();
-    EXPECT_EQ(SUCCESS, grooves_launch_communications(partition_set_));
+    EXPECT_EQ(SUCCESS, grooves_launch_communications(partition_set_, 
+                                                     GROOVES_PUSH));
     EXPECT_EQ(SUCCESS, grooves_synchronize(partition_set_));
     CheckInboxValues();
   }
@@ -219,8 +220,9 @@ class GraphPartitionTest : public TestWithParam<PartitionFunction> {
     EXPECT_TRUE(partition_count_ <= MAX_PARTITION_COUNT);
     EXPECT_EQ(SUCCESS, partition_set_initialize(graph_, partitions_, 
                                                 partition_processor_,
-                                                partition_count_, 
-                                                sizeof(int) * BITS_PER_BYTE, 
+                                                partition_count_,
+                                                MSG_SIZE_WORD,
+                                                MSG_SIZE_ZERO,
                                                 &partition_set_));
     TestState();
     TestCommunication();
@@ -309,7 +311,8 @@ TEST_P(GraphPartitionTest , GetPartitionsSingleNodeGraph) {
   EXPECT_EQ(SUCCESS, partition_set_initialize(graph_, partitions_,
                                               partition_processor_,
                                               partition_count_,
-                                              sizeof(int) * BITS_PER_BYTE,
+                                              MSG_SIZE_WORD,
+                                              MSG_SIZE_ZERO,
                                               &partition_set_));
   EXPECT_EQ(partition_set_->partition_count, 1);
   partition_t* partition = &partition_set_->partitions[0];
@@ -347,7 +350,8 @@ TEST_P(GraphPartitionTest, GetPartitionsImbalancedChainGraph) {
   EXPECT_EQ(SUCCESS, partition_set_initialize(graph_, partitions_,
                                               partition_processor_,
                                               partition_count_,
-                                              sizeof(int) * BITS_PER_BYTE,
+                                              MSG_SIZE_WORD,
+                                              MSG_SIZE_ZERO,
                                               &partition_set_));
   for (int pid = 0; pid < partition_set_->partition_count; pid++) {
     partition_t* partition = &partition_set_->partitions[pid];

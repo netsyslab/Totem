@@ -84,14 +84,21 @@ inline PRIVATE void superstep_compute() {
 inline PRIVATE void superstep_communicate() {
   stopwatch_t stopwatch;
   stopwatch_start(&stopwatch);
-  grooves_launch_communications(context.pset);
+  if (context.config.par_gather_func) {
+    for (int pid = 0; pid < context.pset->partition_count; pid++) {
+      set_processor(&context.pset->partitions[pid]);
+      context.config.par_gather_func(&context.pset->partitions[pid]);
+    }
+  }
+  grooves_launch_communications(context.pset, context.config.direction);
   grooves_synchronize(context.pset);
   stopwatch_t stopwatch_aggr;
   stopwatch_start(&stopwatch_aggr);
-  if (!context.config.par_scatter_func) return;
-  for (int pid = 0; pid < context.pset->partition_count; pid++) {
-    set_processor(&context.pset->partitions[pid]);
-    context.config.par_scatter_func(&context.pset->partitions[pid]);
+  if (context.config.par_scatter_func) {
+    for (int pid = 0; pid < context.pset->partition_count; pid++) {
+      set_processor(&context.pset->partitions[pid]);
+      context.config.par_scatter_func(&context.pset->partitions[pid]);
+    }
   }
   context.time_scatter += stopwatch_elapsed(&stopwatch_aggr);
   context.time_comm += stopwatch_elapsed(&stopwatch);
@@ -205,7 +212,8 @@ error_t engine_init(graph_t* graph, totem_attr_t* attr) {
   context.time_par = stopwatch_elapsed(&stopwatch_par);
   CALL_SAFE(partition_set_initialize(context.graph, par_labels,
                                      processors, pcount,
-                                     context.attr.msg_size,
+                                     context.attr.push_msg_size,
+                                     context.attr.pull_msg_size,
                                      &context.pset));
   free(processors);
   free(par_labels);

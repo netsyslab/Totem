@@ -62,7 +62,7 @@ extern engine_context_t context;
  */
 #define _FETCH_ENTRY(_box, _index, _vid, _value)    \
   do {                                              \
-    T* values = (T*)(_box)->values;                 \
+    T* values = (T*)(_box)->push_values;            \
     _value = values[(_index)];                      \
     _vid = (_box)->rmt_nbrs[(_index)];              \
   } while(0)
@@ -187,6 +187,36 @@ void engine_scatter_inbox_max(uint32_t pid, T* dst) {
 }
 
 template<typename T>
+__global__ void gather(grooves_box_table_t inbox, T* src) {
+  uint32_t index = THREAD_GLOBAL_INDEX;
+  if (index >= inbox.count) return;
+  ((T*)(inbox.pull_values))[index] = src[inbox.rmt_nbrs[index]];
+}
+
+template<typename T>
+void engine_gather_inbox(uint32_t pid, T* src) {
+  assert(pid < context.pset->partition_count);
+  partition_t* par = &context.pset->partitions[pid];
+  for (int rmt_pid = 0; rmt_pid < context.pset->partition_count; rmt_pid++) {
+    if (rmt_pid == pid) continue;
+    grooves_box_table_t* inbox = &par->inbox[rmt_pid];
+    if (!inbox->count) continue;
+    if (par->processor.type == PROCESSOR_GPU) {
+      dim3 blocks, threads;
+      KERNEL_CONFIGURE(inbox->count, blocks, threads);
+      gather<<<blocks, threads, 0, par->streams[1]>>>(*inbox, src);
+      CALL_CU_SAFE(cudaGetLastError());
+    } else {
+      assert(par->processor.type == PROCESSOR_CPU);
+      OMP(omp parallel for)
+      for (uint32_t index = 0; index < inbox->count; index++) {
+        ((T*)(inbox->pull_values))[index] = src[inbox->rmt_nbrs[index]];
+      }
+    }
+  }
+}
+
+template<typename T>
 void engine_set_outbox(uint32_t pid, T value) {
   assert(pid < context.pset->partition_count);
   partition_t* par = &context.pset->partitions[pid];
@@ -194,7 +224,7 @@ void engine_set_outbox(uint32_t pid, T value) {
     if (rmt_pid == pid) continue;
     grooves_box_table_t* outbox =  &par->outbox[rmt_pid];
     if (!outbox->count) continue;
-    T* values = (T*)outbox->values;
+    T* values = (T*)outbox->push_values;
     if (par->processor.type == PROCESSOR_GPU) {
       dim3 blocks, threads;
       KERNEL_CONFIGURE(outbox->count, blocks, threads);

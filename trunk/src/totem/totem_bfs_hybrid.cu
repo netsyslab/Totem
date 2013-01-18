@@ -148,7 +148,7 @@ PRIVATE inline void bfs_gpu(partition_t* par) {
   CALL_CU_SAFE(cudaGetLastError());
 }
 
-PRIVATE inline void bfs_cpu(partition_t* par) {
+void bfs_cpu(partition_t* par) {
   bfs_state_t* state = (bfs_state_t*)par->algo_state;
   graph_t* subgraph = &par->subgraph;
   bool finished = true;
@@ -192,7 +192,7 @@ PRIVATE void bfs_ss() {
 
 PRIVATE inline void bfs_scatter_cpu(grooves_box_table_t* inbox, 
                                     bfs_state_t* state, bitmap_t* visited) {
-  bitmap_t remotely_visited = (bitmap_t)inbox->values;
+  bitmap_t remotely_visited = (bitmap_t)inbox->push_values;
   OMP(omp parallel for)
   for (vid_t index = 0; index < inbox->count; index++) {
     vid_t vid = inbox->rmt_nbrs[index];
@@ -208,7 +208,7 @@ __global__ void bfs_scatter_kernel(grooves_box_table_t inbox, uint32_t* cost,
                                    uint32_t level, bitmap_t* visited) {
   vid_t index = THREAD_GLOBAL_INDEX;
   if (index >= inbox.count) return;
-  bitmap_t rmt_visited = (bitmap_t)inbox.values;
+  bitmap_t rmt_visited = (bitmap_t)inbox.push_values;
   vid_t vid = inbox.rmt_nbrs[index];
   if (bitmap_is_set(rmt_visited, index) &&
       !bitmap_is_set(*visited, vid)) {
@@ -291,7 +291,7 @@ PRIVATE inline void bfs_init_gpu(partition_t* par) {
   visited[par->id] = bitmap_init_gpu(vcount);
   for (int pid = 0; pid < engine_partition_count(); pid++) {
     if (pid != par->id && par->outbox[pid].count != 0) {
-      visited[pid] = (bitmap_t)par->outbox[pid].values;
+      visited[pid] = (bitmap_t)par->outbox[pid].push_values;
       bitmap_reset_gpu(visited[pid], par->outbox[pid].count);
     }
   }
@@ -324,7 +324,7 @@ PRIVATE inline void bfs_init_cpu(partition_t* par) {
   state->visited[par->id] = bitmap_init_cpu(par->subgraph.vertex_count);
   for (int pid = 0; pid < engine_partition_count(); pid++) {
     if (pid != par->id && par->outbox[pid].count != 0) {
-      state->visited[pid] = (bitmap_t)par->outbox[pid].values;
+      state->visited[pid] = (bitmap_t)par->outbox[pid].push_values;
       bitmap_reset_cpu(state->visited[pid], par->outbox[pid].count);
     }
   }
@@ -393,7 +393,8 @@ error_t bfs_hybrid(vid_t src, uint32_t** cost) {
 
   // initialize the engine
   engine_config_t config = {
-    bfs_ss, bfs, bfs_scatter, bfs_init, bfs_finalize, bfs_aggregate
+    bfs_ss, bfs, bfs_scatter, NULL, bfs_init, bfs_finalize, bfs_aggregate, 
+    GROOVES_PUSH,
   };
   src_vid_g = GET_VERTEX_ID(engine_vertex_id_in_partition(src));
   src_pid_g = GET_PARTITION_ID(engine_vertex_id_in_partition(src));

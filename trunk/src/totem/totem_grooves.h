@@ -18,24 +18,36 @@
 typedef struct partition_set_s partition_set_t;
 
 /**
+ * The communication direction. "PUSH" configures the engine to push data from 
+ * the source vertex of a boundary edge to the destination vertex. This is used,
+ * for example, in BFS to allow a vertex to set the cost of a neighbouring 
+ * remote vertex. "PULL" configures the engine to allow a boundary edge's source
+ * vertex to pull the state of the corresponding destination vertex. This is
+ * used, for example, in backward propagation procedures in centrality 
+ * algorithms. 
+ */
+typedef enum {
+  GROOVES_PUSH = 0,
+  GROOVES_PULL
+} grooves_direction_t;
+
+/**
  * Defines the basic data type that is used as communication stubs between
- * partitions. In particular, it maintains the state of remote neighbors to a
- * partition. Vertex ids (including the partition id) of the remote neighbors
- * represent the keys in the hash table. Since the hash table allows storing
- * only integer values, the corresponding value of each key in the hash table
- * is used as an index in the values array. This design enables maintaining
- * any type as a state (e.g., float for ranks in PageRank), and allows for
- * atomic update of the value by two different threads.
+ * partitions. It maintains the state of remote neighbors to a partition.
+ * TODO(abdullah): change the name to grooves_ghost_vertices_t
  */
 typedef struct grooves_box_table_s {
-  vid_t* rmt_nbrs; /**< a table of the remote neighbors' ids. */
-  void*  values;   /**< the actual state of each vertex */
-  vid_t  count;    /**< number of neighbors */
+  vid_t* rmt_nbrs;      /**< remote neighbors' ids. */
+  void*  push_values;   /**< data pushed to remote vertices */
+  void*  pull_values;   /**< data pulled from remote vertices */
+  vid_t  count;         /**< number of remote neighbors */
 } grooves_box_table_t;
 
 /**
  * Initializes the grooves layer: constructs the communication stubs for
  * each partition on its corresponding processor.
+ * @param[in] pset the partition set to operate on
+ * @return generic success or failure
  */
 error_t grooves_initialize(partition_set_t* pset);
 
@@ -45,15 +57,23 @@ error_t grooves_initialize(partition_set_t* pset);
 error_t grooves_finalize(partition_set_t* pset);
 
 /**
- * Launches outbox-->inbox communications across partitions. This is done by
- * launching asynchronous transfers of the values array of a partition's outbox
- * to its corresponding inbox in a target partition.
+ * Launches communication between partitions. Depending on the direction, data 
+ * is either pushed from the source (local) to the destination (remote), or 
+ * pulled from the source (remote) to the destination (local). This is done by 
+ * launching asynchronous transfers of the values arrays of a partition's inbox
+ * and outbox buffers.
+ * @param[in] pset the partition set to operate on
+ * @param[in] direction the direction of communication, PULL or PUSH
+ * @return generic success or failure
  */
-error_t grooves_launch_communications(partition_set_t* pset);
+error_t grooves_launch_communications(partition_set_t* pset, 
+                                      grooves_direction_t direction);
 
 /**
  * Blocks until all data transfers initiated by grooves_launch_communications
  * have finished.
+ * @param[in] pset the partition set to operate on
+ * @return generic success or failure
  */
 error_t grooves_synchronize(partition_set_t* pset);
 
