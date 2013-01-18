@@ -32,10 +32,15 @@ PRIVATE const benchmark_func_t BENCHMARK_FUNC[] = {
   benchmark_pagerank,
   benchmark_dijkstra
 };
-PRIVATE const size_t BENCHMARK_MSG_SIZE[] = {
+PRIVATE const size_t BENCHMARK_PUSH_MSG_SIZE[] = {
   1,
   sizeof(float)    * BITS_PER_BYTE,
   sizeof(weight_t) * BITS_PER_BYTE
+};
+PRIVATE const size_t BENCHMARK_PULL_MSG_SIZE[] = {
+  MSG_SIZE_ZERO,
+  MSG_SIZE_ZERO,
+  MSG_SIZE_ZERO
 };
 
 //Command line options
@@ -230,12 +235,20 @@ void print_header(graph_t* graph, bool totem_based) {
                           (double)graph->edge_count);
       rv += totem_par_rmt_vertex_count(pid);
       re += totem_par_rmt_edge_count(pid);
-      printf("pid%d:(%0.0f,%0.0f)\t", pid, v, e);
+      // print for each partition the number and percentation of 
+      // remote vertices and edges
+      printf("pid%d:(%0.0f,%0.0f)\trmt%d:(%0.0f,%0.0f)\t", pid, v, e, pid, 
+             100.0 * ((double)totem_par_rmt_vertex_count(pid) / 
+                      (double)graph->vertex_count),
+             100.0 * ((double)totem_par_rmt_edge_count(pid) / 
+                      (double)graph->edge_count));
     }
+    // print the total percentage of remote edges and vertices
     printf("rmt_vertex:%0.0f\trmt_edge:%0.0f\tbeta:%0.0f\t", 
            100.0*(double)((double)rv/(double)graph->vertex_count),
            100.0*(double)((double)re/(double)graph->edge_count),
            100.0*(double)((double)rv/(double)graph->edge_count));
+    // print the time spent on initializing Totem and partitioning the graph
     printf("time_init:%0.2f\ttime_par:%0.2f",
            totem_time_initialization(), totem_time_partitioning());
   }
@@ -359,7 +372,8 @@ PRIVATE void run_benchmark() {
     attr.cpu_par_share = (float)options.alpha / 100.0;
     attr.platform = options.platform;
     attr.gpu_count = options.gpu_count;
-    attr.msg_size = BENCHMARK_MSG_SIZE[options.benchmark];
+    attr.push_msg_size = BENCHMARK_PUSH_MSG_SIZE[options.benchmark];
+    attr.pull_msg_size = BENCHMARK_PULL_MSG_SIZE[options.benchmark];
     CALL_SAFE(totem_init(graph, &attr));
     print_header(graph, true);
     BENCHMARK_FUNC[options.benchmark](graph, &attr);
