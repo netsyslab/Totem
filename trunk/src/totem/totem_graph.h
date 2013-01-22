@@ -277,6 +277,7 @@ error_t page_rank_vwarp_gpu(graph_t* graph, float* rank_i, float** rank);
 error_t page_rank_incoming_cpu(graph_t* graph, float* rank_i, float** rank);
 error_t page_rank_incoming_gpu(graph_t* graph, float* rank_i, float** rank);
 error_t page_rank_hybrid(float* rank_i, float** rank);
+error_t page_rank_incoming_hybrid(float* rank_i, float** rank);
 
 
 /**
