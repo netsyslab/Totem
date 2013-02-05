@@ -194,6 +194,7 @@ PRIVATE void parse_command_line(int argc, char** argv) {
 
 void print_timing(graph_t* graph, double time_total, bool totem_based, 
                   const char* str) {
+  const totem_timing_t* timers = totem_timing();
   printf("time_total:%0.2f\t"
          "time_exec:%0.2f\t"
          "time_comp:%0.2f\t"
@@ -202,12 +203,12 @@ void print_timing(graph_t* graph, double time_total, bool totem_based,
          "time_scatter:%0.2f\t"
          "time_aggr:%0.2f",
          time_total,
-         totem_based ? totem_time_execution() : time_total,
-         totem_based ? totem_time_computation() : time_total,
-         totem_based ? totem_time_gpu_computation() : 0,
-         totem_based ? totem_time_communication() : 0,
-         totem_based ? totem_time_scatter() : 0,
-         totem_based ? totem_time_aggregation() : 0);
+         totem_based ? timers->alg_exec : time_total,
+         totem_based ? timers->alg_comp : time_total,
+         totem_based ? timers->alg_gpu_comp : 0,
+         totem_based ? timers->alg_comm : 0,
+         totem_based ? timers->alg_scatter : 0,
+         totem_based ? timers->alg_aggr : 0);
   if (str) printf("\t%s", str);
   printf("\n");
   fflush(stdout);
@@ -249,8 +250,9 @@ void print_header(graph_t* graph, bool totem_based) {
            100.0*(double)((double)re/(double)graph->edge_count),
            100.0*(double)((double)rv/(double)graph->edge_count));
     // print the time spent on initializing Totem and partitioning the graph
+    const totem_timing_t* timers = totem_timing();
     printf("time_init:%0.2f\ttime_par:%0.2f",
-           totem_time_initialization(), totem_time_partitioning());
+           timers->engine_init, timers->engine_par);
   }
   printf("\n"); fflush(stdout);
 }

@@ -63,6 +63,24 @@ typedef struct totem_attr_s {
       MSG_SIZE_WORD, MSG_SIZE_ZERO}
 
 /**
+ * Defines the set of timers measured internally by Totem
+ */
+typedef struct totem_timing_s {
+  double engine_init;  /**< Engine initialization  */
+  double engine_par;   /**< Partitioning (included in engine_init) */
+  double alg_exec;     /**< Algorithm execution alg_(comp + comm + aggr) */
+  double alg_comp;     /**< Compute phase */
+  double alg_comm;     /**< Communication phase (inlcudes scatter/gather) */
+  double alg_aggr;     /**< Final result aggregation */
+  double alg_scatter;  /**< The scatter step in communication (push mode) */
+  double alg_gather;   /**< The gather step in communication (pull mode) */
+  double alg_gpu_comp; /**< GPU computation (included in alg_comp) */
+  double alg_init;     /**< Algorithm initialization */
+  double alg_finalize; /**< Algorithm finalization */
+} totem_timing_t;
+
+
+/**
  * Initializes the state required for hybrid CPU-GPU processing. It creates a
  * set of partitions equal to the number of GPUs plus one for the CPU. Note that
  * this function initializes algorithm-agnostic state only. This function
@@ -79,49 +97,9 @@ error_t totem_init(graph_t* graph, totem_attr_t* attr);
 void totem_finalize();
 
 /**
- * Returns the total time spent on initializing the state (includes
- * partitioning and building the state)
- * TODO(abdullah): instead of having many function to query the internal
- * timers, we can have just one function that returns a copy of an instance
- * of timer logs data type (e.g., totem_timers_t)
+ * Returns a reference to the set of timers measured internally by the engine
  */
-double totem_time_initialization();
-
-/**
- * Returns the time spent on partitioning the graph
- */
-double totem_time_partitioning();
-
-/**
- * Returns the overall time spent on executing all the supersteps
- */
-double totem_time_execution();
-
-/**
- * Returns the total time spent on the computation phase
- */
-double totem_time_computation();
-
-/**
- * Returns the total time spent computing on the GPU
- */
-double totem_time_gpu_computation();
-
-/**
- * Returns the total time spent on the communication phase
- */
-double totem_time_communication();
-
-/**
- * Returns the time spent on scattering the data received in the inbox buffers
- * to the local state of the destination vertices during the communication phase
- */
-double totem_time_scatter();
-
-/**
- * Returns the time spent on aggregating the final result
- */
-double totem_time_aggregation();
+const totem_timing_t* totem_timing();
 
 /**
  * Returns the number of partitions
