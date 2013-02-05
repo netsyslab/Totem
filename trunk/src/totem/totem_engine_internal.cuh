@@ -35,14 +35,7 @@ typedef struct engine_context_s {
   bool*            finished;
   vid_t            largest_gpu_par;
   uint32_t         partition_count;
-  double           time_init;
-  double           time_par;
-  double           time_exec;
-  double           time_comm;
-  double           time_scatter;
-  double           time_comp;
-  double           time_gpu_comp;
-  double           time_aggr;
+  totem_timing_t  timing;
   vid_t            vertex_count[MAX_PARTITION_COUNT];
   eid_t            edge_count[MAX_PARTITION_COUNT];
   vid_t            rmt_vertex_count[MAX_PARTITION_COUNT];

@@ -16,13 +16,16 @@ inline PRIVATE void set_processor(partition_t* par) {
   }
 }
 
-inline PRIVATE void reset_exec_timers() {
-    context.time_exec     = 0;
-    context.time_comm     = 0;
-    context.time_scatter  = 0;
-    context.time_comp     = 0;
-    context.time_gpu_comp = 0;
-    context.time_aggr     = 0;
+inline PRIVATE void reset_algorithm_timers() {
+  context.timing.alg_exec     = 0;
+  context.timing.alg_comp     = 0;
+  context.timing.alg_comm     = 0;
+  context.timing.alg_aggr     = 0;
+  context.timing.alg_scatter  = 0;
+  context.timing.alg_gather   = 0;
+  context.timing.alg_gpu_comp = 0;
+  context.timing.alg_init     = 0;
+  context.timing.alg_finalize = 0;
 }
 
 /**
@@ -40,14 +43,17 @@ inline PRIVATE bool superstep_check_finished() {
  * Blocks until all kernels initiated by the client have finished.
  */
 inline PRIVATE void superstep_compute_synchronize() {
+  float max_gpu_time = 0;
   for (int pid = 0; pid < context.pset->partition_count; pid++) {
     partition_t* par = &context.pset->partitions[pid];
     if (par->processor.type == PROCESSOR_CPU) continue;
     CALL_CU_SAFE(cudaStreamSynchronize(par->streams[1]));
     float time;
     cudaEventElapsedTime(&time, par->event_start, par->event_end);
-    context.time_gpu_comp += time;
+    // in a multi-gpu setup, we time the slowest one
+    max_gpu_time = time > max_gpu_time ? time : max_gpu_time;
   }
+  context.timing.alg_gpu_comp += max_gpu_time;
 }
 
 /**
@@ -75,7 +81,7 @@ inline PRIVATE void superstep_compute() {
     }
   }
   superstep_compute_synchronize();
-  context.time_comp += stopwatch_elapsed(&stopwatch);
+  context.timing.alg_comp += stopwatch_elapsed(&stopwatch);
 }
 
 /**
@@ -90,18 +96,19 @@ inline PRIVATE void superstep_communicate() {
       context.config.par_gather_func(&context.pset->partitions[pid]);
     }
   }
+  context.timing.alg_gather += stopwatch_elapsed(&stopwatch);
   grooves_launch_communications(context.pset, context.config.direction);
   grooves_synchronize(context.pset);
-  stopwatch_t stopwatch_aggr;
-  stopwatch_start(&stopwatch_aggr);
+  stopwatch_t stopwatch_scatter;
+  stopwatch_start(&stopwatch_scatter);
   if (context.config.par_scatter_func) {
     for (int pid = 0; pid < context.pset->partition_count; pid++) {
       set_processor(&context.pset->partitions[pid]);
       context.config.par_scatter_func(&context.pset->partitions[pid]);
     }
   }
-  context.time_scatter += stopwatch_elapsed(&stopwatch_aggr);
-  context.time_comm += stopwatch_elapsed(&stopwatch);
+  context.timing.alg_scatter += stopwatch_elapsed(&stopwatch_scatter);
+  context.timing.alg_comm += stopwatch_elapsed(&stopwatch);
 }
 
 /**
@@ -121,7 +128,7 @@ PRIVATE void engine_aggregate() {
       context.config.par_aggr_func(&context.pset->partitions[pid]);
     }
   }
-  context.time_aggr = stopwatch_elapsed(&stopwatch); 
+  context.timing.alg_aggr = stopwatch_elapsed(&stopwatch); 
 }
 
 error_t engine_execute() {
@@ -135,13 +142,15 @@ error_t engine_execute() {
     if (superstep_check_finished()) break; // check for termination
   }
   engine_aggregate();
-  context.time_exec = stopwatch_elapsed(&stopwatch); 
+  context.timing.alg_exec = stopwatch_elapsed(&stopwatch);
+  stopwatch_start(&stopwatch);
   if (context.config.par_finalize_func) {
     for (int pid = 0; pid < context.pset->partition_count; pid++) {
       set_processor(&context.pset->partitions[pid]);
       context.config.par_finalize_func(&context.pset->partitions[pid]);
     }
   }
+  context.timing.alg_finalize = stopwatch_elapsed(&stopwatch); 
   return SUCCESS;
 }
 
@@ -209,7 +218,7 @@ error_t engine_init(graph_t* graph, totem_attr_t* attr) {
   assert(context.attr.par_algo < PAR_MAX);
   CALL_SAFE(PARTITION_FUNC[context.attr.par_algo](context.graph, pcount, 
                                                   par_share, &par_labels));
-  context.time_par = stopwatch_elapsed(&stopwatch_par);
+  context.timing.engine_par = stopwatch_elapsed(&stopwatch_par);
   CALL_SAFE(partition_set_initialize(context.graph, par_labels,
                                      processors, pcount,
                                      context.attr.push_msg_size,
@@ -237,15 +246,16 @@ error_t engine_init(graph_t* graph, totem_attr_t* attr) {
 
   context.finished = (bool*)calloc(pcount, sizeof(bool));
   context.initialized = true;
-  context.time_init = stopwatch_elapsed(&stopwatch);
+  context.timing.engine_init = stopwatch_elapsed(&stopwatch);
   return SUCCESS;
 }
 
 error_t engine_config(engine_config_t* config) {
   if (!context.initialized || !config->par_kernel_func) return FAILURE;
-
   context.config = *config;
-  reset_exec_timers();
+  reset_algorithm_timers();
+  stopwatch_t stopwatch;
+  stopwatch_start(&stopwatch);
   context.superstep = 0;
   memset(context.finished, 0, context.pset->partition_count * sizeof(bool));
   // callback the per-partition initialization function
@@ -255,6 +265,7 @@ error_t engine_config(engine_config_t* config) {
       context.config.par_init_func(&context.pset->partitions[pid]);
     }
   }
+  context.timing.alg_init = stopwatch_elapsed(&stopwatch);
   return SUCCESS;
 }
 
