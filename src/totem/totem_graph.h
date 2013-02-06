@@ -385,6 +385,17 @@ error_t betweenness_unweighted_gpu(const graph_t* graph,
  */
 error_t betweenness_unweighted_shi_gpu(const graph_t* graph,
                                        weight_t** centrality_score);
+
+/**
+ * Calculate betweenness centrality scores for graphs using the algorithm
+ * described in Chapter 2 of GPU Computing Gems (Algorithm 1)
+ * @param[in] graph the graph for which the centrality measure is calculated
+ * @param[out] centrality_score the output list of betweenness centrality
+ *             scores per vertex
+ * @return generic success or failure
+ */
+error_t betweenness_cpu(const graph_t* graph, weight_t** centrality_score);
+
 /**
  * Implements the parallel Brandes closeness centrality algorithm using
  * predecessor maps as described in "Fast Network Centrality Analysis Using

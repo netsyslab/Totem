@@ -107,7 +107,8 @@ TEST_P(BetweennessCentralityTest, CompleteGraphUnweighted) {
 INSTANTIATE_TEST_CASE_P(BetwCentralityGPUAndCPUTest, BetweennessCentralityTest,
                         Values(&betweenness_unweighted_cpu,
                                &betweenness_unweighted_gpu,
-                               &betweenness_unweighted_shi_gpu));
+                               &betweenness_unweighted_shi_gpu,
+                               &betweenness_cpu));
 
 #else
 
