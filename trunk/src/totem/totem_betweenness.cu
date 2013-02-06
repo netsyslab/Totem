@@ -290,7 +290,7 @@ unweighted_dep_acc_kernel(graph_t graph, int64_t phase, uint32_t* stack_count,
                           weight_t* betweenness_centrality) {
   const vid_t thread_id = THREAD_GLOBAL_INDEX;
 
-  if(thread_id < stack_count[phase]) {
+  if (thread_id < stack_count[phase]) {
     vid_t w = stack[graph.vertex_count * phase + thread_id];
     weight_t dsw = 0.0;
     weight_t sw = sigma[w];
@@ -681,3 +681,153 @@ error_t betweenness_unweighted_cpu(const graph_t* graph,
   *centrality_score = betweenness_centrality;
   return SUCCESS;
 }
+
+/**
+ * Implements the forward propagation phase of the Betweenness Centrality
+ * Algorithm described in Chapter 2 of GPU Computing Gems. Utilized by:
+ * error_t betweenness_cpu(const graph_t* graph, weight_t** centrality_score)
+ * @param[in] graph the graph for which the centrality measure is calculated
+ * @param[in] source the source node for the shortest paths
+ * @param[in] level the shared level variable between backward and forward
+ *            propagations
+ * @param[in] numSPs an array which counts the number of shortest paths in
+ *            which each node is involved 
+ * @param[in] distance an array which stores the distance of the shortest
+ *            path for each node
+ * @return void
+ */
+PRIVATE void betweenness_cpu_forward_propagation(const graph_t* graph, 
+                                        vid_t source, int64_t& level,
+                                        uint32_t* numSPs, int32_t* distance) {
+  // Initialize the shortest path count to 0 and distance to infinity given
+  // this source node
+  OMP(omp parallel for)
+  for (vid_t v = 0; v < graph->vertex_count; v++) {
+    numSPs[v] = 0;
+    distance[v] = -1;
+  }
+  // Set the distance from source to itself to 0
+  distance[source] = 0;
+  // Set the shortest path count to 1 (from source to itself)
+  numSPs[source] = 1;
+
+  bool done = false;
+  while (!done) {
+    done = true;
+    // In parallel, iterate over vertices which are at the current level
+    OMP(omp parallel for)
+    for (vid_t v = 0; v < graph->vertex_count; v++) {
+      if (distance[v] == level) {
+        // For all neighbors of v, iterate over paths
+        for (eid_t e = graph->vertices[v]; e < graph->vertices[v + 1]; e++) {
+          vid_t w = graph->edges[e];
+          if (distance[w] == -1) {
+            distance[w] = level + 1;
+            done = false;
+          }
+          if (distance[w] == level + 1) {
+            __sync_fetch_and_add(&numSPs[w], numSPs[v]);
+          }
+        }
+      }
+    }
+    level++;
+  }
+}
+
+/**
+ * Implements the backward propagation phase of the Betweenness Centrality
+ * Algorithm described in Chapter 2 of GPU Computing Gems. Utilized by:
+ * error_t betweenness_cpu(const graph_t* graph, weight_t** centrality_score)
+ * @param[in] graph the graph for which the centrality measure is calculated
+ * @param[in] source the source node for the shortest paths
+ * @param[in] level the shared level variable between backward and forward
+ *            propagations
+ * @param[in] numSPs an array which counts the number of shortest paths in
+ *            which each node is involved 
+ * @param[in] distance an array which stores the distance of the shortest
+ *            path for each node
+ * @param[in] delta an array of the dependencies for each node, which are used
+ *            to compute the betweenness centrality measure
+ * @param[out] betweenness_centrality the output list which contains the
+ *             betweenness centrality values computed for each node
+ * @return void
+ */
+PRIVATE void betweenness_cpu_backward_propagation(const graph_t* graph,
+                                          vid_t source, int64_t& level, 
+                                          uint32_t* numSPs, int32_t* distance,
+                                          weight_t* delta, 
+                                          weight_t* betweenness_centrality) {
+  // Set deltas to 0 for every input node
+  memset(delta, 0, graph->vertex_count * sizeof(vid_t));
+  while (level > 1) {
+    level--;
+    // In parallel, iterate over vertices which are at the current level
+    OMP(omp parallel for)
+    for (vid_t v = 0; v < graph->vertex_count; v++) {
+      if (distance[v] == level) {
+        // For all neighbors of v, iterate over paths
+        for (eid_t e = graph->vertices[v]; e < graph->vertices[v + 1]; e++) {
+          vid_t w = graph->edges[e];
+          if (distance[w] == level + 1) {
+            delta[v] = (delta[v] + ((((weight_t)numSPs[v]) /
+                       ((weight_t)numSPs[w]))*(delta[w] + 1)));
+          }
+        }
+        // Add the dependency to the BC sum
+        betweenness_centrality[v] = betweenness_centrality[v] + delta[v];
+      }
+    }
+  }
+}
+
+/**
+ * Parallel CPU implementation of  Bewteenness Centrality algorithm described
+ * in Chapter 2 of GPU Computing Gems (Algorithm 1 - Sequential BC Computation)
+ * @param[in] graph the graph for which the centrality measure is calculated
+ * @param[out] centrality_score the output list of betweenness centrality scores
+ *             per vertex
+ * @return generic success or failure
+ */
+error_t betweenness_cpu(const graph_t* graph, weight_t** centrality_score) {
+  // Sanity check on input
+  bool finished = true;
+  error_t rc = check_special_cases(graph, &finished, centrality_score);
+  if (finished) return rc;
+
+  // Allocate memory for the shortest paths problem
+  int32_t* distance = (int32_t*)malloc(graph->vertex_count * sizeof(int32_t));
+  uint32_t* numSPs = (uint32_t*)malloc(graph->vertex_count * sizeof(uint32_t));
+  weight_t* delta = (weight_t*)malloc(graph->vertex_count * sizeof(weight_t));
+  weight_t* betweenness_centrality = (weight_t*)mem_alloc(graph->vertex_count
+                                                          * sizeof(weight_t));
+
+  // Initialization stage
+  // Set BC(v) to 0 for every input node
+  memset(betweenness_centrality, 0, graph->vertex_count * sizeof(vid_t));
+
+  // Main loop - iterate over every node and perform both forward propagation
+  // and backward propagation for that node, which in turn computes the
+  // Betweenness Centrality, as described by the reference algorithm
+  for (vid_t source = 0; source < graph->vertex_count; source++) {
+    // Initialize variable to keep track of level
+    int64_t level = 0;
+
+    // Perform the forward propagation phase for this source node
+    betweenness_cpu_forward_propagation(graph, source, level, numSPs, distance);
+
+    // Perform the backward propagation phase for this source node
+    betweenness_cpu_backward_propagation(graph, source, level, numSPs, distance,
+                                         delta, betweenness_centrality);
+  }
+
+  // Cleanup the allocated memory
+  free(numSPs);
+  free(distance);
+  free(delta);
+
+  // Return the centrality
+  *centrality_score = betweenness_centrality;
+  return SUCCESS;
+}
+
