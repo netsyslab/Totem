@@ -261,12 +261,13 @@ void print_header(graph_t* graph, bool totem_based) {
  * Verfies BFS result by comparing it with bfs_cpu (assuming it is correct)
  */
 PRIVATE void verify_bfs(graph_t* graph, vid_t src_id, uint32_t* cost) {
-  uint32_t* cost_ref;
-  bfs_cpu(graph, src_id, &cost_ref);
+  uint32_t* cost_ref = (uint32_t*)malloc(graph->vertex_count * 
+                                         sizeof(uint32_t));
+  bfs_cpu(graph, src_id, cost_ref);
   for (vid_t v = 0; v < graph->vertex_count; v++) {
     assert(cost[v] == cost_ref[v]);
   }
-  mem_free(cost_ref);
+  free(cost_ref);
 }
 
 PRIVATE vid_t get_traversed_edges(graph_t* graph, uint32_t* cost) {
@@ -297,24 +298,25 @@ PRIVATE vid_t get_random_src(graph_t* graph) {
  */
 PRIVATE void benchmark_bfs(graph_t* graph, totem_attr_t* attr) {
   srand(SEED);
+  uint32_t* cost = (uint32_t*)mem_alloc(graph->vertex_count * sizeof(uint32_t));
+  assert(cost);
   for (int s = 0; s < options.repeat; s++) {
     vid_t src = get_random_src(graph);
     stopwatch_t stopwatch;
     stopwatch_start(&stopwatch);
-    uint32_t* cost = NULL;
     if (options.platform == PLATFORM_CPU) {
-      bfs_cpu(graph, src, &cost);
+      bfs_cpu(graph, src, cost);
     } else {
-      CALL_SAFE(bfs_hybrid(src, &cost));
+      CALL_SAFE(bfs_hybrid(src, cost));
     }
+    double total_time = stopwatch_elapsed(&stopwatch);
+    if (options.verify) verify_bfs(graph, src, cost);
     char buffer[100];
     sprintf(buffer, "seed:%u\ttrv_edges:%llu", src,
             get_traversed_edges(graph, cost));
-    print_timing(graph, stopwatch_elapsed(&stopwatch), 
-                 options.platform != PLATFORM_CPU, buffer);
-    if (options.verify) verify_bfs(graph, src, cost);
-    mem_free(cost);
+    print_timing(graph, total_time, options.platform != PLATFORM_CPU, buffer);
   }
+  mem_free(cost);
 }
 
 /**

@@ -225,10 +225,10 @@ graph_t* graph_create_bidirectional(graph_t* graph, eid_t** reverse_indices);
  * ownership of the array and, thus, the client is responsible for freeing the
  * memory area.
 */
-error_t bfs_cpu(graph_t* graph, vid_t src_id, uint32_t** cost);
-error_t bfs_gpu(graph_t* graph, vid_t src_id, uint32_t** cost);
-error_t bfs_vwarp_gpu(graph_t* graph, vid_t src_id, uint32_t** cost);
-error_t bfs_hybrid(vid_t src_id, uint32_t** cost);
+error_t bfs_cpu(graph_t* graph, vid_t src_id, uint32_t* cost);
+error_t bfs_gpu(graph_t* graph, vid_t src_id, uint32_t* cost);
+error_t bfs_vwarp_gpu(graph_t* graph, vid_t src_id, uint32_t* cost);
+error_t bfs_hybrid(vid_t src_id, uint32_t* cost);
 
 /**
  * Given a weighted graph \f$G = (V, E, w)\f$ and a source vertex \f$v\inV\f$,
