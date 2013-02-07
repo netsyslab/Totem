@@ -15,22 +15,26 @@ typedef enum {
   BENCHMARK_BFS = 0,
   BENCHMARK_PAGERANK,
   BENCHMARK_DIJKSTRA,
+  BENCHMARK_BETWEENNESS,
   BENCHMARK_MAX
 } benchmark_t;
 PRIVATE const char* BENCHMARK_STR[] = {
   "BFS",
   "PAGERANK",
-  "DIJKSTRA"
+  "DIJKSTRA",
+  "BETWEENNESS"
 };
 // forward declaration of benchmark functions
 typedef void(*benchmark_func_t)(graph_t*, totem_attr_t*);
 PRIVATE void benchmark_bfs(graph_t* graph, totem_attr_t* attr);
 PRIVATE void benchmark_pagerank(graph_t* graph, totem_attr_t* attr);
 PRIVATE void benchmark_dijkstra(graph_t* graph, totem_attr_t* attr);
+PRIVATE void benchmark_betweenness(graph_t* graph, totem_attr_t* attr);
 PRIVATE const benchmark_func_t BENCHMARK_FUNC[] = {
   benchmark_bfs,
   benchmark_pagerank,
-  benchmark_dijkstra
+  benchmark_dijkstra,
+  benchmark_betweenness
 };
 PRIVATE const size_t BENCHMARK_PUSH_MSG_SIZE[] = {
   1,
@@ -100,6 +104,7 @@ PRIVATE void display_help(char* exe_name, int exit_err) {
          "     %d: BFS (default)\n"
          "     %d: PageRank\n"
          "     %d: Dijkstra\n"
+         "     %d: Betweenness\n"
          "  -pNUM Platform\n"
          "     %d: Execute on CPU only (default)\n"
          "     %d: Execute on GPUs only\n"
@@ -115,8 +120,8 @@ PRIVATE void display_help(char* exe_name, int exit_err) {
          "  -v Verify benchmark result\n"
          "  -h Print this help message\n",
          exe_name, BENCHMARK_BFS, BENCHMARK_PAGERANK, BENCHMARK_DIJKSTRA, 
-         PLATFORM_CPU, PLATFORM_GPU, PLATFORM_HYBRID, max_gpu_count, 
-         PAR_RANDOM, PAR_SORTED_ASC, PAR_SORTED_DSC, REPEAT_MAX);
+         BENCHMARK_BETWEENNESS, PLATFORM_CPU, PLATFORM_GPU, PLATFORM_HYBRID,
+         max_gpu_count, PAR_RANDOM, PAR_SORTED_ASC, PAR_SORTED_DSC, REPEAT_MAX);
   exit(exit_err);
 }
 
@@ -356,6 +361,25 @@ PRIVATE void benchmark_dijkstra(graph_t* graph, totem_attr_t* attr) {
     print_timing(graph, stopwatch_elapsed(&stopwatch),
                  options.platform != PLATFORM_CPU, NULL);
     mem_free(distance);
+  }
+}
+
+/**
+ * Runs Betweenness Centrality benchmark
+ */
+PRIVATE void benchmark_betweenness(graph_t* graph, totem_attr_t* attr) {
+  for (int s = 0; s < options.repeat; s++) {
+    stopwatch_t stopwatch;
+    stopwatch_start(&stopwatch);
+    weight_t* centrality_score = NULL;
+    if (options.platform == PLATFORM_CPU) {
+      betweenness_cpu(graph, &centrality_score);
+    } else {
+      assert(false);
+    }
+    print_timing(graph, stopwatch_elapsed(&stopwatch),
+                 options.platform != PLATFORM_CPU, NULL);
+    mem_free(centrality_score);
   }
 }
 
