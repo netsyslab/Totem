@@ -53,21 +53,17 @@ int  src_pid_g;
  * Checks for input parameters and special cases. This is invoked at the
  * beginning of public interfaces (GPU and CPU)
 */
-PRIVATE error_t check_special_cases(vid_t src, uint32_t** cost, 
-                                    bool* finished) {
+PRIVATE error_t check_special_cases(vid_t src, uint32_t* cost, bool* finished) {
   *finished = true;
-  if(src >= engine_vertex_count()) {
-    *cost = NULL;
+  if((src >= engine_vertex_count()) || (cost == NULL)) {
     return FAILURE;
   } else if(engine_vertex_count() == 1) {
-    *cost = (uint32_t*)mem_alloc(sizeof(uint32_t));
-    *(cost)[0] = 0;
+    cost[0] = 0;
     return SUCCESS;
   } else if(engine_edge_count() == 0) {
     // Initialize cost to INFINITE.
-    *cost = (uint32_t*) mem_alloc(engine_vertex_count() * sizeof(uint32_t));
-    memset(*cost, 0xFF, engine_vertex_count() * sizeof(uint32_t));
-    (*cost)[src] = 0;
+    memset(cost, 0xFF, engine_vertex_count() * sizeof(uint32_t));
+    cost[src] = 0;
     return SUCCESS;
   }
   *finished = false;
@@ -375,13 +371,13 @@ PRIVATE void bfs_finalize(partition_t* par) {
   par->algo_state = NULL;
 }
 
-error_t bfs_hybrid(vid_t src, uint32_t** cost) {
+error_t bfs_hybrid(vid_t src, uint32_t* cost) {
   // check for special cases
   bool finished = false;
   error_t rc = check_special_cases(src, cost, &finished);
   if (finished) return rc;
 
-  cost_g = (uint32_t*)mem_alloc(engine_vertex_count() * sizeof(uint32_t));
+  cost_g = cost;
   // The global finish flag is allocated on the host using the
   // cudaHostAllocMapped option which allows GPU kernels to access it directly
   // from within the GPU. This flag is initialized to true in the algo_ss_kernel
@@ -406,7 +402,6 @@ error_t bfs_hybrid(vid_t src, uint32_t** cost) {
   engine_execute();
 
   // clean up and return
-  *cost = cost_g;
   if (engine_largest_gpu_partition()) mem_free(cost_h);
   CALL_CU_SAFE(cudaFreeHost(finished_g));
   cost_g = NULL; cost_h = NULL; finished_g = NULL;

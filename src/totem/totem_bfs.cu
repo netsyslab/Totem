@@ -1,5 +1,4 @@
-/* TODO(lauro,abdullah,elizeu): Add license.
- *
+/*
  * This file contains an implementation of the breadth-first search (BFS) graph
  * search algorithm based on the algorithms in [Hong2011PPoPP, Hong2011PACT].
  * [Hong2011PPoPP] S. Hong,  S.K. Kim, T. Oguntebi and K. Olukotun, 
@@ -33,22 +32,18 @@ typedef struct {
   uint32_t cost[VWARP_BATCH_SIZE];
 } vwarp_mem_t;
 
-PRIVATE 
-error_t check_special_cases(graph_t* graph, vid_t src_id, uint32_t** cost,
-                            bool* finished) {
+PRIVATE error_t check_special_cases(graph_t* graph, vid_t src_id, 
+                                    uint32_t* cost, bool* finished) {
   *finished = true;
-  if((graph == NULL) || (src_id >= graph->vertex_count)) {
-    *cost = NULL;
+  if((graph == NULL) || (src_id >= graph->vertex_count) || (cost == NULL)) {
     return FAILURE;
   } else if(graph->vertex_count == 1) {
-    *cost = (uint32_t*)mem_alloc(sizeof(uint32_t));
-    *cost[0] = 0;
+    cost[0] = 0;
     return SUCCESS;
   } else if(graph->edge_count == 0) {
-  // Initialize cost to INFINITE.
-    *cost = (uint32_t*) mem_alloc(graph->vertex_count * sizeof(uint32_t));
-    memset(*cost, 0xFF, graph->vertex_count * sizeof(uint32_t));
-    (*cost)[src_id] = 0;
+    // Initialize cost to INFINITE and zero to the source node
+    memset(cost, 0xFF, graph->vertex_count * sizeof(uint32_t));
+    cost[src_id] = 0;
     return SUCCESS;
   }
   *finished = false;
@@ -63,8 +58,6 @@ PRIVATE
 error_t initialize_gpu(const graph_t* graph, vid_t source_id, vid_t cost_len, 
                        graph_t** graph_d, uint32_t** cost_d, 
                        bool** finished_d) {
-  // TODO(lauro) Next four lines are not directly related to this function and
-  // should have a better location.
   dim3 blocks;
   dim3 threads_per_block;
 
@@ -96,10 +89,9 @@ error_t initialize_gpu(const graph_t* graph, vid_t source_id, vid_t cost_len,
  * output buffer, moves the final results from GPU to the host buffers and
  * frees up some resources.
 */
-PRIVATE
-error_t finalize_gpu(graph_t* graph_d, uint32_t* cost_d, uint32_t** cost) {
-  *cost = (uint32_t*)mem_alloc(graph_d->vertex_count * sizeof(uint32_t));
-  CHK_CU_SUCCESS(cudaMemcpy(*cost, cost_d, graph_d->vertex_count *
+PRIVATE 
+error_t finalize_gpu(graph_t* graph_d, uint32_t* cost_d, uint32_t* cost) {
+  CHK_CU_SUCCESS(cudaMemcpy(cost, cost_d, graph_d->vertex_count *
                             sizeof(uint32_t), cudaMemcpyDeviceToHost), err);
   graph_finalize_device(graph_d);
   cudaFree(cost_d);
@@ -198,7 +190,7 @@ void vwarp_bfs_kernel(graph_t graph, uint32_t level, bool* finished,
 }
 
 __host__
-error_t bfs_vwarp_gpu(graph_t* graph, vid_t source_id, uint32_t** cost) {
+error_t bfs_vwarp_gpu(graph_t* graph, vid_t source_id, uint32_t* cost) {
   // Check for special cases
   bool finished = false;
   error_t rc = check_special_cases(graph, source_id, cost, &finished);
@@ -242,12 +234,11 @@ error_t bfs_vwarp_gpu(graph_t* graph, vid_t source_id, uint32_t** cost) {
     cudaFree(finished_d);
     cudaFree(cost_d);
     graph_finalize_device(graph_d);
-    *cost = NULL;
     return FAILURE;
 }
 
 __host__
-error_t bfs_gpu(graph_t* graph, vid_t source_id, uint32_t** cost) {
+error_t bfs_gpu(graph_t* graph, vid_t source_id, uint32_t* cost) {
   // Check for special cases
   bool finished = false;
   error_t rc = check_special_cases(graph, source_id, cost, &finished);
@@ -286,25 +277,21 @@ error_t bfs_gpu(graph_t* graph, vid_t source_id, uint32_t** cost) {
     cudaFree(finished_d);
     cudaFree(cost_d);
     graph_finalize_device(graph_d);
-    *cost = NULL;
     return FAILURE;
 }
 
 __host__
-error_t bfs_cpu(graph_t* graph, vid_t source_id, uint32_t** cost_ret) {
+error_t bfs_cpu(graph_t* graph, vid_t source_id, uint32_t* cost) {
   // Check for special cases
   bool finished = false;
-  error_t rc = check_special_cases(graph, source_id, cost_ret, &finished);
+  error_t rc = check_special_cases(graph, source_id, cost, &finished);
   if (finished) return rc;
 
-  // Initialize cost to INFINITE.
-  uint32_t* cost = (uint32_t*) mem_alloc(graph->vertex_count *
-                                         sizeof(uint32_t));
+  // Initialize cost to INFINITE and create the vertices bitmap
   memset(cost, 0xFF, graph->vertex_count * sizeof(uint32_t));
-  // Initialize the visited bitmap
   bitmap_t visited = bitmap_init_cpu(graph->vertex_count);
 
-  // Initialize the cost of the source vertex
+  // Initialize the state of the source vertex
   cost[source_id] = 0;
   bitmap_set_cpu(visited, source_id);
 
@@ -355,6 +342,5 @@ error_t bfs_cpu(graph_t* graph, vid_t source_id, uint32_t** cost_ret) {
     }
   } // omp parallel
   bitmap_finalize_cpu(visited);
-  *cost_ret = cost;
   return SUCCESS;
 }
