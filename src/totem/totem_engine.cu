@@ -154,54 +154,57 @@ error_t engine_execute() {
   return SUCCESS;
 }
 
-error_t engine_init(graph_t* graph, totem_attr_t* attr) {
-  stopwatch_t stopwatch;
-  stopwatch_start(&stopwatch);
-  if (context.initialized || !graph->vertex_count) return FAILURE;
-  memset(&context, 0, sizeof(engine_context_t));
-  context.graph = graph;
-  context.attr = *attr;
+PRIVATE error_t init_check(graph_t* graph, totem_attr_t* attr) {
+  if (context.initialized || !graph->vertex_count || 
+      attr->gpu_count > get_gpu_count()) {
+    return FAILURE;
+  }
+  return SUCCESS;
+}
 
+PRIVATE void init_get_platform(int &pcount, int &gpu_count, bool &use_cpu) {
   // identify the execution platform
-  int gpu_count = attr->gpu_count;
-  bool use_cpu = true;
+  gpu_count = context.attr.gpu_count;
+  use_cpu = true;
   switch(context.attr.platform) {
     case PLATFORM_CPU:
       gpu_count = 0;
       break;
     case PLATFORM_GPU:
       use_cpu = false;
+      break;
     case PLATFORM_HYBRID:
-      if (gpu_count > get_gpu_count()) {
-        return FAILURE;
-      }
       break;
     default:
       assert(false);
   }
+  pcount = use_cpu ? gpu_count + 1 : gpu_count;
+}
 
+PRIVATE void init_get_shares(int pcount, int gpu_count, bool use_cpu, 
+                             double* shares) {
+  assert(shares);
   // identify the share of each partition
   // TODO(abdullah): ideally, we would like to split the graph among processors
   // with different shares (e.g., a system with GPUs with different
   // memory capacities).
-  int pcount = use_cpu ? gpu_count + 1 : gpu_count;
-  double* par_share = NULL;
   if (context.attr.platform == PLATFORM_HYBRID) {
-    par_share = (double*)calloc(pcount, sizeof(double));
-    par_share[pcount - 1] = context.attr.cpu_par_share;
+    shares[pcount - 1] = context.attr.cpu_par_share;
     // the rest is divided equally among the GPUs
     double gpu_par_share = 
       (1.0 - context.attr.cpu_par_share) / (double)gpu_count;
     double total_share = context.attr.cpu_par_share;
     for (int gpu_id = 0; gpu_id < gpu_count - 1; gpu_id++) {
-      par_share[gpu_id] = gpu_par_share;
+      shares[gpu_id] = gpu_par_share;
       total_share += gpu_par_share;
     }
-    par_share[gpu_count - 1] = 1.0 - total_share;
+    shares[gpu_count - 1] = 1.0 - total_share;
   }
+}
 
+PRIVATE void init_get_processors(int pcount, int gpu_count, bool use_cpu,
+                                 processor_t* processors) {
   // setup the processors' types and ids
-  processor_t* processors = (processor_t*)calloc(pcount, sizeof(processor_t));
   assert(processors);
   for (int gpu_id = 0; gpu_id < gpu_count; gpu_id++) {
     processors[gpu_id].type = PROCESSOR_GPU;
@@ -210,28 +213,39 @@ error_t engine_init(graph_t* graph, totem_attr_t* attr) {
   if (use_cpu) {
     processors[pcount - 1].type = PROCESSOR_CPU;
   }
+}
 
-  // partition the graph
+PRIVATE void init_partition(int pcount, double* shares, 
+                            processor_t* processors) {
   stopwatch_t stopwatch_par;
   stopwatch_start(&stopwatch_par);
   vid_t* par_labels;
   assert(context.attr.par_algo < PAR_MAX);
   CALL_SAFE(PARTITION_FUNC[context.attr.par_algo](context.graph, pcount, 
-                                                  par_share, &par_labels));
+                                                  context.attr.platform == PLATFORM_HYBRID ? 
+                                                  shares : NULL, &par_labels));
   context.timing.engine_par = stopwatch_elapsed(&stopwatch_par);
   CALL_SAFE(partition_set_initialize(context.graph, par_labels,
                                      processors, pcount,
                                      context.attr.push_msg_size,
                                      context.attr.pull_msg_size,
                                      &context.pset));
-  free(processors);
   free(par_labels);
-  if (par_share) free(par_share);
+}
 
+PRIVATE void init_context(graph_t* graph, totem_attr_t* attr) {
+  memset(&context, 0, sizeof(engine_context_t));
+  context.graph = graph;
+  context.attr = *attr;
+  memset(context.finished, false,  MAX_PARTITION_COUNT * sizeof(bool));
+  context.initialized = true;
+}
+
+PRIVATE void init_context_partitions_state() {
   // get largest gpu partition and initialize the stat information
   // stored in the context
   context.partition_count = context.pset->partition_count;
-  uint64_t largest = 0;
+  context.largest_gpu_par = 0;
   for (int pid = 0; pid < context.pset->partition_count; pid++) {
     partition_t* par = &context.pset->partitions[pid];
     context.vertex_count[pid]     = par->subgraph.vertex_count;
@@ -240,12 +254,28 @@ error_t engine_init(graph_t* graph, totem_attr_t* attr) {
     context.rmt_edge_count[pid]   = par->rmt_edge_count;
     if (par->processor.type == PROCESSOR_CPU) continue;
     uint64_t vcount = context.pset->partitions[pid].subgraph.vertex_count;
-    largest = vcount > largest ? vcount : largest;
+    context.largest_gpu_par = vcount > context.largest_gpu_par ? vcount : 
+      context.largest_gpu_par;
   }
-  context.largest_gpu_par = largest;
+}
 
-  context.finished = (bool*)calloc(pcount, sizeof(bool));
-  context.initialized = true;
+error_t engine_init(graph_t* graph, totem_attr_t* attr) {
+  stopwatch_t stopwatch;
+  stopwatch_start(&stopwatch);
+  if (init_check(graph, attr) == FAILURE) return FAILURE;
+
+  init_context(graph, attr);
+  int pcount = 0;
+  int gpu_count = 0;
+  bool use_cpu = true;
+  init_get_platform(pcount, gpu_count, use_cpu);
+  double shares[MAX_PARTITION_COUNT];
+  init_get_shares(pcount, gpu_count, use_cpu, shares);
+  processor_t processors[MAX_PARTITION_COUNT];
+  init_get_processors(pcount, gpu_count, use_cpu, processors);
+  init_partition(pcount, shares, processors);
+  init_context_partitions_state();
+
   context.timing.engine_init = stopwatch_elapsed(&stopwatch);
   return SUCCESS;
 }
@@ -273,5 +303,4 @@ void engine_finalize() {
   assert(context.initialized);
   context.initialized = false;
   CALL_SAFE(partition_set_finalize(context.pset));
-  free(context.finished);
 }

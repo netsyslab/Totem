@@ -32,10 +32,10 @@ typedef struct engine_context_s {
   uint32_t         superstep;
   engine_config_t  config;
   totem_attr_t     attr;
-  bool*            finished;
   vid_t            largest_gpu_par;
   uint32_t         partition_count;
-  totem_timing_t  timing;
+  totem_timing_t   timing;
+  bool             finished[MAX_PARTITION_COUNT];
   vid_t            vertex_count[MAX_PARTITION_COUNT];
   eid_t            edge_count[MAX_PARTITION_COUNT];
   vid_t            rmt_vertex_count[MAX_PARTITION_COUNT];
@@ -46,7 +46,7 @@ typedef struct engine_context_s {
  * Default context values
  */
 #define ENGINE_DEFAULT_CONTEXT {false, NULL, NULL, 0, ENGINE_DEFAULT_CONFIG, \
-      TOTEM_DEFAULT_ATTR, NULL, 0, 0, 0, 0, 0, 0, 0, 0};
+                                TOTEM_DEFAULT_ATTR, 0, 0};
 
 extern engine_context_t context;
 
