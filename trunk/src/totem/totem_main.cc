@@ -38,12 +38,12 @@ PRIVATE const benchmark_func_t BENCHMARK_FUNC[] = {
 };
 PRIVATE const size_t BENCHMARK_PUSH_MSG_SIZE[] = {
   1,
-  sizeof(float)    * BITS_PER_BYTE,
+  MSG_SIZE_ZERO,
   sizeof(weight_t) * BITS_PER_BYTE
 };
 PRIVATE const size_t BENCHMARK_PULL_MSG_SIZE[] = {
   MSG_SIZE_ZERO,
-  MSG_SIZE_ZERO,
+  sizeof(float)    * BITS_PER_BYTE,
   MSG_SIZE_ZERO
 };
 
@@ -328,19 +328,20 @@ PRIVATE void benchmark_bfs(graph_t* graph, totem_attr_t* attr) {
  * Runs PageRank benchmark
  */
 PRIVATE void benchmark_pagerank(graph_t* graph, totem_attr_t* attr) {
+  float* rank = (float*)mem_alloc(graph->vertex_count * sizeof(float));
+  assert(rank);
   for (int round = 0; round < options.repeat; round++) {
     stopwatch_t stopwatch;
     stopwatch_start(&stopwatch);
-    float* rank = NULL;
     if (options.platform == PLATFORM_CPU) {
-      page_rank_cpu(graph, NULL, &rank);
+      page_rank_incoming_cpu(graph, NULL, rank);
     } else {
-      CALL_SAFE(page_rank_hybrid(NULL, &rank));
+      CALL_SAFE(page_rank_incoming_hybrid(NULL, rank));
     }
     print_timing(graph, stopwatch_elapsed(&stopwatch), 
-                 options.platform != PLATFORM_CPU, NULL);
-    mem_free(rank);
+                 options.platform != PLATFORM_CPU, NULL);  
   }
+  mem_free(rank);
 }
 
 /**

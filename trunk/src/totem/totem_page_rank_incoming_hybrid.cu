@@ -22,7 +22,7 @@ PRIVATE int const PAGE_RANK_ROUNDS = 31;
  * behavior of the random surfer when she moves from one page to another
  * without following the links on the current page.
  */
-PRIVATE int const DAMPING_FACTOR = 0.85;
+PRIVATE double const DAMPING_FACTOR = 0.85;
 
 typedef float rank_t;
 
@@ -52,13 +52,12 @@ PRIVATE rank_t* rank_host = NULL;
  * beginning of public interfaces (GPU and CPU)
 */
 PRIVATE
-error_t check_special_cases(float** rank, bool* finished) {
+error_t check_special_cases(float* rank, bool* finished) {
   *finished = true;
   if (engine_vertex_count() == 0) {
     return FAILURE;
   } else if (engine_vertex_count() == 1) {
-    *rank = (float*)mem_alloc(sizeof(float));
-    (*rank)[0] = (float)1.0;
+    rank[0] = 1.0;
     return SUCCESS;
   }
   *finished = false;
@@ -237,14 +236,14 @@ PRIVATE void page_rank_incoming_finalize(partition_t* partition) {
   partition->algo_state = NULL;
 }
 
-error_t page_rank_incoming_hybrid(float *rank_i, float** rank) {
+error_t page_rank_incoming_hybrid(float *rank_i, float* rank) {
   // check for special cases
   bool finished = false;
   error_t rc = check_special_cases(rank, &finished);
   if (finished) return rc;
 
   // initialize global state
-  rank_final = (float*)mem_alloc(engine_vertex_count() * sizeof(float));
+  rank_final = rank;
 
   // initialize the engine
   engine_config_t config = {
@@ -260,9 +259,6 @@ error_t page_rank_incoming_hybrid(float *rank_i, float** rank) {
   engine_execute();
 
   // clean up and return
-  *rank = rank_final;
   if (engine_largest_gpu_partition()) mem_free(rank_host);
-  rank_final = NULL;
-  rank_host = NULL;
   return SUCCESS;
 }

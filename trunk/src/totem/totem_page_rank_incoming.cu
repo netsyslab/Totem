@@ -42,15 +42,14 @@
  * beginning of public interfaces (GPU and CPU)
 */
 PRIVATE
-error_t check_special_cases(graph_t* graph, float** rank, bool* finished) {
+error_t check_special_cases(graph_t* graph, float* rank, bool* finished) {
   *finished = true;
   if (graph == NULL) {
     return FAILURE;
   } else if (graph->vertex_count == 0) {
     return FAILURE;
   } else if (graph->vertex_count == 1) {
-    *rank = (float*)mem_alloc(sizeof(float));
-    (*rank)[0] = (float)1.0;
+    rank[0] = 1.0;
     return SUCCESS;
   }
   *finished = false;
@@ -123,7 +122,7 @@ void page_rank_final_kernel(graph_t graph, float* inbox, float* outbox) {
     ((1 - DAMPING_FACTOR) / graph.vertex_count) + (DAMPING_FACTOR * sum);
 }
 
-error_t page_rank_incoming_gpu(graph_t* graph, float *rank_i, float** rank) {
+error_t page_rank_incoming_gpu(graph_t* graph, float *rank_i, float* rank) {
   // Check for special cases
   bool finished = false;
   error_t rc = check_special_cases(graph, rank, &finished);
@@ -182,10 +181,8 @@ error_t page_rank_incoming_gpu(graph_t* graph, float *rank_i, float** rank) {
   cudaThreadSynchronize();
 
   // copy back the final result from the outbox
-  *rank = (float*)mem_alloc(graph->vertex_count * sizeof(float));
-  CHK_CU_SUCCESS(cudaMemcpy(*rank, outbox_d, graph->vertex_count *
-                            sizeof(float), cudaMemcpyDeviceToHost),
-                 err_free_all);
+  CHK_CU_SUCCESS(cudaMemcpy(rank, outbox_d, graph->vertex_count * sizeof(float),
+                            cudaMemcpyDeviceToHost), err_free_all);
 
   // we are done! set the output and clean up
   cudaFree(outbox_d);
@@ -205,15 +202,15 @@ error_t page_rank_incoming_gpu(graph_t* graph, float *rank_i, float** rank) {
   return FAILURE;
 }
 
-error_t page_rank_incoming_cpu(graph_t* graph, float *rank_i, float** rank) {
+error_t page_rank_incoming_cpu(graph_t* graph, float *rank_i, float* rank) {
   // Check for special cases
   bool finished = false;
   error_t rc = check_special_cases(graph, rank, &finished);
   if (finished) return rc;
 
   // allocate buffers
-  float* inbox = (float*)mem_alloc(graph->vertex_count * sizeof(float));
-  float* outbox = (float*)mem_alloc(graph->vertex_count * sizeof(float));
+  float* inbox = (float*)malloc(graph->vertex_count * sizeof(float));
+  float* outbox = (float*)malloc(graph->vertex_count * sizeof(float));
 
   // initialize the rank of each vertex
   if (rank_i == NULL) {
@@ -255,8 +252,8 @@ error_t page_rank_incoming_cpu(graph_t* graph, float *rank_i, float** rank) {
     }
   }
 
-  // we are done! set the output and clean up.
-  *rank = outbox;
-  mem_free(inbox);
+  memcpy(rank, outbox, graph->vertex_count * sizeof(float));
+  free(inbox);
+  free(outbox);
   return SUCCESS;
 }
