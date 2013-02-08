@@ -1,5 +1,4 @@
-/* TODO(lauro,abdullah,elizeu): Add license.
- *
+/*
  * Contains unit tests for an implementation of the PageRank graph algorithm.
  *
  *  Created on: 2011-03-22
@@ -20,7 +19,7 @@ using ::testing::Values;
 // totem_bfs_unittest.cc and
 // http://code.google.com/p/googletest/source/browse/trunk/samples/sample7_unittest.cc
 
-typedef error_t(*PageRankFunction)(graph_t*, float*, float**);
+typedef error_t(*PageRankFunction)(graph_t*, float*, float*);
 
 // This is to allow testing the vanilla bfs functions and the hybrid one
 // that is based on the framework. Note that have a different signature
@@ -39,13 +38,11 @@ class PageRankTest : public TestWithParam<page_rank_param_t*> {
     page_rank_param = GetParam();
   }
 
-  error_t TestGraph(graph_t* graph, float* rank_i, float** rank) {
+  error_t TestGraph(graph_t* graph, float* rank_i, float* rank) {
     if (page_rank_param->hybrid) {
       totem_attr_t attr = TOTEM_DEFAULT_ATTR;
-      attr.pull_msg_size = 0;
       attr.push_msg_size = sizeof(float) * BITS_PER_BYTE;
       if (totem_init(graph, &attr) == FAILURE) {
-        *rank = NULL;
         return FAILURE;
       }
       error_t err = page_rank_hybrid(rank_i, rank);
@@ -64,8 +61,7 @@ TEST_P(PageRankTest, Empty) {
   graph.directed = false;
   graph.vertex_count = 0;
   graph.edge_count = 0;
-  float* rank = NULL;
-  EXPECT_EQ(FAILURE, TestGraph(&graph, NULL, &rank));
+  EXPECT_EQ(FAILURE, TestGraph(&graph, NULL, NULL));
 }
 
 // Tests PageRank for single node graphs.
@@ -73,10 +69,8 @@ TEST_P(PageRankTest, SingleNode) {
   graph_t* graph;
   EXPECT_EQ(SUCCESS, graph_initialize(DATA_FOLDER("single_node.totem"),
                                       false, &graph));
-
-  float* rank = NULL;
-  EXPECT_EQ(SUCCESS, TestGraph(graph, NULL, &rank));
-  EXPECT_FALSE(rank == NULL);
+  float* rank = (float*)mem_alloc(graph->vertex_count * sizeof(float));
+  EXPECT_EQ(SUCCESS, TestGraph(graph, NULL, rank));
   EXPECT_EQ(1, rank[0]);
   mem_free(rank);
   EXPECT_EQ(SUCCESS, graph_finalize(graph));
@@ -87,14 +81,13 @@ TEST_P(PageRankTest, Chain) {
   graph_t* graph;
   EXPECT_EQ(SUCCESS, graph_initialize(DATA_FOLDER("chain_1000_nodes.totem"),
                                       false, &graph));
+  float* rank = (float*)mem_alloc(graph->vertex_count * sizeof(float));
 
   // the graph should be undirected because the test is shared between the
   // two versions of the PageRank algorithm: incoming- and outgoing- based.
   EXPECT_FALSE(graph->directed);
 
-  float* rank = NULL;
-  EXPECT_EQ(SUCCESS, TestGraph(graph, NULL, &rank));
-  EXPECT_FALSE(rank == NULL);
+  EXPECT_EQ(SUCCESS, TestGraph(graph, NULL, rank));
   for(vid_t vertex = 0; vertex < graph->vertex_count/2; vertex++){
     EXPECT_FLOAT_EQ(rank[vertex], rank[graph->vertex_count - vertex - 1]);
   }
@@ -108,13 +101,12 @@ TEST_P(PageRankTest, CompleteGraph) {
   EXPECT_EQ(SUCCESS,
             graph_initialize(DATA_FOLDER("complete_graph_300_nodes.totem"),
                              false, &graph));
+  float* rank = (float*)mem_alloc(graph->vertex_count * sizeof(float));
   // the graph should be undirected because the test is shared between the
   // two versions of the PageRank algorithm: incoming- and outgoing- based.
   EXPECT_FALSE(graph->directed);
 
-  float* rank = NULL;
-  EXPECT_EQ(SUCCESS, TestGraph(graph, NULL, &rank));
-  EXPECT_FALSE(rank == NULL);
+  EXPECT_EQ(SUCCESS, TestGraph(graph, NULL, rank));
   for(vid_t vertex = 0; vertex < graph->vertex_count; vertex++){
     EXPECT_FLOAT_EQ(rank[0], rank[vertex]);
   }
@@ -128,14 +120,13 @@ TEST_P(PageRankTest, Star) {
   EXPECT_EQ(SUCCESS,
             graph_initialize(DATA_FOLDER("star_1000_nodes.totem"),
                              false, &graph));
+  float* rank = (float*)mem_alloc(graph->vertex_count * sizeof(float));
 
   // the graph should be undirected because the test is shared between the
   // two versions of the PageRank algorithm: incoming- and outgoing- based.
   EXPECT_FALSE(graph->directed);
 
-  float* rank = NULL;
-  EXPECT_EQ(SUCCESS, TestGraph(graph, NULL, &rank));
-  EXPECT_FALSE(rank == NULL);
+  EXPECT_EQ(SUCCESS, TestGraph(graph, NULL, rank));
   for(vid_t vertex = 1; vertex < graph->vertex_count; vertex++){
     EXPECT_FLOAT_EQ(rank[1], rank[vertex]);
     EXPECT_GT(rank[0], rank[vertex]);

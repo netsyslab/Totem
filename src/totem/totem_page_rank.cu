@@ -57,16 +57,14 @@ typedef struct {
  * beginning of public interfaces (GPU and CPU)
 */
 PRIVATE
-error_t check_special_cases(const graph_t* graph, float** rank,
-                            bool* finished) {
+error_t check_special_cases(const graph_t* graph, float* rank, bool* finished) {
   *finished = true;
   if (graph == NULL) {
     return FAILURE;
   } else if (graph->vertex_count == 0) {
     return FAILURE;
   } else if (graph->vertex_count == 1) {
-    *rank = (float*)mem_alloc(sizeof(float));
-    (*rank)[0] = (float)1.0;
+    rank[0] = 1.0;
     return SUCCESS;
   }
   *finished = false;
@@ -128,21 +126,17 @@ error_t initialize_gpu(const graph_t* graph, float* rank_i, vid_t rank_length,
  * frees up some resources.
 */
 PRIVATE
-error_t finalize_gpu(graph_t* graph_d, float* rank_d, float* mailbox_d,
-                     float** rank) {
-  // Copy back the final result from the rank
-  *rank = (float*)mem_alloc(graph_d->vertex_count * sizeof(float));
-  CHK_CU_SUCCESS(cudaMemcpy(*rank, rank_d, graph_d->vertex_count *
+error_t finalize_gpu(graph_t* graph_d, float* rank_d, float* mailbox_d, 
+                     float* rank) {
+  // Copy back the final result
+  CHK_CU_SUCCESS(cudaMemcpy(rank, rank_d, graph_d->vertex_count *
                             sizeof(float), cudaMemcpyDeviceToHost), err);
-  // We are done! clean up
   cudaFree(rank_d);
   cudaFree(mailbox_d);
   graph_finalize_device(graph_d);
   return SUCCESS;
 
  err:
-  mem_free(rank);
-  *rank = NULL;
   return FAILURE;
 }
 
@@ -294,7 +288,7 @@ void vwarp_compute_unnormalized_rank_kernel(graph_t graph, float* rank,
 }
 
 __host__
-error_t page_rank_vwarp_gpu(graph_t* graph, float* rank_i, float** rank) {
+error_t page_rank_vwarp_gpu(graph_t* graph, float* rank_i, float* rank) {
   // Check for special cases
   bool finished = false;
   error_t rc = check_special_cases(graph, rank, &finished);
@@ -351,7 +345,7 @@ error_t page_rank_vwarp_gpu(graph_t* graph, float* rank_i, float** rank) {
 }
 
 __host__
-error_t page_rank_gpu(graph_t* graph, float* rank_i, float** rank) {
+error_t page_rank_gpu(graph_t* graph, float* rank_i, float* rank) {
   // Check for special cases
   bool finished = false;
   error_t rc = check_special_cases(graph, rank, &finished);
@@ -400,15 +394,14 @@ error_t page_rank_gpu(graph_t* graph, float* rank_i, float** rank) {
   return FAILURE;
 }
 
-error_t page_rank_cpu(graph_t* graph, float* rank_i, float** rank_ret) {
+error_t page_rank_cpu(graph_t* graph, float* rank_i, float* rank) {
   // Check for special cases
   bool finished = false;
-  error_t rc = check_special_cases(graph, rank_ret, &finished);
+  error_t rc = check_special_cases(graph, rank, &finished);
   if (finished) return rc;
 
   // allocate buffers
-  float* rank    = (float*)mem_alloc(graph->vertex_count * sizeof(float));
-  float* mailbox = (float*)mem_alloc(graph->vertex_count * sizeof(float));
+  float* mailbox = (float*)malloc(graph->vertex_count * sizeof(float));
 
   // initialize the rank of each vertex
   if (rank_i == NULL) {
@@ -453,7 +446,6 @@ error_t page_rank_cpu(graph_t* graph, float* rank_i, float** rank_ret) {
   }
 
   // we are done! set the output and clean up.
-  *rank_ret = rank;
-  mem_free(mailbox);
+  free(mailbox);
   return SUCCESS;
 }
