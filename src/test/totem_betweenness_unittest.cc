@@ -20,7 +20,7 @@ using ::testing::Values;
 // can be found at:
 // http://code.google.com/p/googletest/source/browse/trunk/samples/sample7_unittest.cc
 
-typedef error_t(*BetwCentralityFunction)(const graph_t*, weight_t**);
+typedef error_t(*BetwCentralityFunction)(const graph_t*, weight_t*);
 
 class BetweennessCentralityTest : public TestWithParam<BetwCentralityFunction> {
  public:
@@ -28,6 +28,13 @@ class BetweennessCentralityTest : public TestWithParam<BetwCentralityFunction> {
     // Ensure the minimum CUDA architecture is supported
     CUDA_CHECK_VERSION();
     betweenness = GetParam();
+    graph = NULL;
+    centrality_score = NULL;
+  }
+
+  virtual void TearDown() {
+    if (graph) graph_finalize(graph);
+    if (centrality_score) mem_free(centrality_score);
   }
 
  protected:
@@ -38,38 +45,36 @@ class BetweennessCentralityTest : public TestWithParam<BetwCentralityFunction> {
 
 // Tests BetwCentrality for empty graphs.
 TEST_P(BetweennessCentralityTest, Empty) {
-  graph = (graph_t*) mem_alloc(sizeof(graph_t));
-  graph->directed = false;
-  graph->vertex_count = 0;
-  graph->edge_count = 0;
+  graph_t graph;
+  graph.directed = false;
+  graph.vertex_count = 0;
+  graph.edge_count = 0;
 
-  EXPECT_EQ(FAILURE, betweenness(graph, &centrality_score));
-  EXPECT_EQ(FAILURE, betweenness(graph, &centrality_score));
-  EXPECT_EQ(FAILURE, betweenness(graph, &centrality_score));
-
-  mem_free(graph);
+  EXPECT_EQ(FAILURE, betweenness(&graph, centrality_score));
+  EXPECT_EQ(FAILURE, betweenness(&graph, centrality_score));
+  EXPECT_EQ(FAILURE, betweenness(&graph, centrality_score));
 }
 
 // Tests BetwCentrality for single node graphs.
 TEST_P(BetweennessCentralityTest, SingleNodeUnweighted) {
-  graph_t* graph;
   EXPECT_EQ(SUCCESS, graph_initialize(DATA_FOLDER("single_node.totem"),
                                       false, &graph));
+  centrality_score = (weight_t*)mem_alloc(graph->vertex_count * 
+                                          sizeof(weight_t));
 
-  EXPECT_EQ(SUCCESS, betweenness(graph, &centrality_score));
-  EXPECT_FALSE(centrality_score == NULL);
+  EXPECT_EQ(SUCCESS, betweenness(graph, centrality_score));
   EXPECT_EQ((weight_t)0.0, centrality_score[0]);
-  mem_free(centrality_score);
-  EXPECT_EQ(SUCCESS, graph_finalize(graph));
 }
 
 // Tests BetwCentrality for a chain of 100 nodes.
 TEST_P(BetweennessCentralityTest, Chain100Unweighted) {
   graph_initialize(DATA_FOLDER("chain_100_nodes_weight_directed.totem"), false,
                    &graph);
+  centrality_score = (weight_t*)mem_alloc(graph->vertex_count * 
+                                          sizeof(weight_t));
 
   // First vertex as source
-  EXPECT_EQ(SUCCESS, betweenness(graph, &centrality_score));
+  EXPECT_EQ(SUCCESS, betweenness(graph, centrality_score));
   weight_t centrality[50];
   for (vid_t i = 0; i < 50; i++) {
     centrality[i] = (99 - i) * (i);
@@ -78,9 +83,6 @@ TEST_P(BetweennessCentralityTest, Chain100Unweighted) {
     EXPECT_EQ(centrality[i], centrality_score[i]);
     EXPECT_EQ(centrality[i], centrality_score[99 - i]);
   }
-
-  mem_free(centrality_score);
-  graph_finalize(graph);
 }
 
 // Tests BetwCentrality for a complete graph of 300 nodes.
@@ -88,14 +90,13 @@ TEST_P(BetweennessCentralityTest, CompleteGraphUnweighted) {
   EXPECT_EQ(SUCCESS,
             graph_initialize(DATA_FOLDER("complete_graph_300_nodes.totem"),
                              false, &graph));
+  centrality_score = (weight_t*)mem_alloc(graph->vertex_count * 
+                                          sizeof(weight_t));
 
-  EXPECT_EQ(SUCCESS, betweenness(graph, &centrality_score));
-  EXPECT_FALSE(centrality_score == NULL);
+  EXPECT_EQ(SUCCESS, betweenness(graph, centrality_score));
   for(vid_t vertex = 0; vertex < graph->vertex_count; vertex++){
     EXPECT_FLOAT_EQ(0.0, centrality_score[0]);
   }
-  mem_free(centrality_score);
-  EXPECT_EQ(SUCCESS, graph_finalize(graph));
 }
 
 // From Google documentation:

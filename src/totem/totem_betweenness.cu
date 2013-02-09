@@ -18,15 +18,13 @@
 */
 PRIVATE
 error_t check_special_cases(const graph_t* graph, bool* finished,
-                            weight_t** centrality_score) {
-  if (graph == NULL || graph->vertex_count == 0 || centrality_score == NULL) {
+                            weight_t* betweenness_score) {
+  if (graph == NULL || graph->vertex_count == 0 || betweenness_score == NULL) {
     return FAILURE;
   }
 
   if (graph->edge_count == 0) {
-    *centrality_score = (weight_t*)mem_alloc(graph->vertex_count
-                                             * sizeof(weight_t));
-    memset(*centrality_score, (weight_t)0.0, graph->vertex_count
+    memset(betweenness_score, (weight_t)0.0, graph->vertex_count
            * sizeof(weight_t));
     return SUCCESS;
   }
@@ -327,15 +325,12 @@ void unweighted_back_sum_kernel(graph_t graph, vid_t source, int32_t dist,
  * Massive Datasets" [Madduri09]
  */
 error_t betweenness_unweighted_gpu(const graph_t* graph,
-                                   weight_t** centrality_score) {
+                                   weight_t* betweenness_centrality) {
   // Sanity check on input
   bool finished = true;
-  error_t rc = check_special_cases(graph, &finished, centrality_score);
+  error_t rc = check_special_cases(graph, &finished, betweenness_centrality);
   if (finished) return rc;
 
-  // Allocate space for the results
-  weight_t* betweenness_centrality =
-    (weight_t*)mem_alloc(graph->vertex_count * sizeof(weight_t));
   // Allocate memory and initialize state on the GPU
   graph_t* graph_d;
   vid_t* sigma_d;
@@ -353,7 +348,7 @@ error_t betweenness_unweighted_gpu(const graph_t* graph,
                                    &sigma_d, &dist_d, &succ_d, &succ_count_d,
                                    &stack_d, &stack_count_d, &delta_d,
                                    &finished_d, &betweenness_centrality_d),
-              err_free_betweenness);
+              err);
 
   // {} used to limit scope and avoid problems with error handles.
   {
@@ -415,8 +410,6 @@ error_t betweenness_unweighted_gpu(const graph_t* graph,
     }
   }
 
-  // Return the centrality
-  *centrality_score = betweenness_centrality;
   return SUCCESS;
 
  err_free_all:
@@ -430,8 +423,7 @@ error_t betweenness_unweighted_gpu(const graph_t* graph,
   cudaFree(delta_d);
   cudaFree(finished_d);
   cudaFree(betweenness_centrality_d);
- err_free_betweenness:
-  mem_free(betweenness_centrality);
+ err:
   return FAILURE;
 }
 
@@ -441,15 +433,12 @@ error_t betweenness_unweighted_gpu(const graph_t* graph,
  * GPUs" [Shi11]
  */
 error_t betweenness_unweighted_shi_gpu(const graph_t* graph,
-                                       weight_t** centrality_score) {
+                                       weight_t* betweenness_centrality) {
   // Sanity check on input
   bool finished = true;
-  error_t rc = check_special_cases(graph, &finished, centrality_score);
+  error_t rc = check_special_cases(graph, &finished, betweenness_centrality);
   if (finished) return rc;
 
-  // Allocate space for the results
-  weight_t* betweenness_centrality =
-    (weight_t*)mem_alloc(graph->vertex_count * sizeof(weight_t));
   // Construct the reverse edges list (graph->edges is a list of destination
   // vertices, r_edges is a list of source vertices, indexed by edge id)
   vid_t* r_edges = (vid_t*)mem_alloc(graph->edge_count * sizeof(vid_t));
@@ -538,8 +527,6 @@ error_t betweenness_unweighted_shi_gpu(const graph_t* graph,
     }
   }
 
-  // Return the centrality
-  *centrality_score = betweenness_centrality;
   return SUCCESS;
 
  err_free_all:
@@ -552,7 +539,6 @@ error_t betweenness_unweighted_shi_gpu(const graph_t* graph,
   cudaFree(finished_d);
   cudaFree(betweenness_centrality_d);
  err_free_betweenness:
-  mem_free(betweenness_centrality);
   mem_free(r_edges);
   return FAILURE;
 }
@@ -563,26 +549,24 @@ error_t betweenness_unweighted_shi_gpu(const graph_t* graph,
  * Multithreaded Implementations for Evaluating Betweenness Centrality on
  * Massive Datasets" [Madduri09]
  */
-error_t betweenness_unweighted_cpu(const graph_t* graph,
-                                   weight_t** centrality_score) {
+error_t betweenness_unweighted_cpu(const graph_t* graph, 
+                                   weight_t* betweenness_centrality) {
   // Sanity check on input
   bool finished = true;
-  error_t rc = check_special_cases(graph, &finished, centrality_score);
+  error_t rc = check_special_cases(graph, &finished, betweenness_centrality);
   if (finished) return rc;
 
   // Allocate memory for the shortest paths problem
-  weight_t* betweenness_centrality =
-    (weight_t*)mem_alloc(graph->vertex_count * sizeof(weight_t));
   uint32_t* sigma = 
-    (uint32_t*)mem_alloc(graph->vertex_count * sizeof(uint32_t));
-  int32_t* dist = (int32_t*)mem_alloc(graph->vertex_count * sizeof(int32_t));
-  vid_t* succ = (vid_t*)mem_alloc(graph->edge_count * sizeof(vid_t));
-  vid_t* succ_count = (vid_t*)mem_alloc(graph->vertex_count * sizeof(vid_t));
-  vid_t* stack = (vid_t*)mem_alloc(graph->vertex_count * graph->vertex_count
+    (uint32_t*)malloc(graph->vertex_count * sizeof(uint32_t));
+  int32_t* dist = (int32_t*)malloc(graph->vertex_count * sizeof(int32_t));
+  vid_t* succ = (vid_t*)malloc(graph->edge_count * sizeof(vid_t));
+  vid_t* succ_count = (vid_t*)malloc(graph->vertex_count * sizeof(vid_t));
+  vid_t* stack = (vid_t*)malloc(graph->vertex_count * graph->vertex_count
                                  * sizeof(vid_t));
-  vid_t* stack_count = (vid_t*)mem_alloc(graph->vertex_count * sizeof(vid_t));
+  vid_t* stack_count = (vid_t*)malloc(graph->vertex_count * sizeof(vid_t));
   weight_t* delta =
-    (weight_t*)mem_alloc(graph->vertex_count * sizeof(weight_t));
+    (weight_t*)malloc(graph->vertex_count * sizeof(weight_t));
   int64_t phase = 0;
 
   // Initialization stage
@@ -669,23 +653,20 @@ error_t betweenness_unweighted_cpu(const graph_t* graph,
   }
 
   // Cleanup phase
-  mem_free(sigma);
-  mem_free(dist);
-  mem_free(delta);
-  mem_free(stack_count);
-  mem_free(succ);
-  mem_free(succ_count);
-  mem_free(stack);
-
-  // Return the centrality
-  *centrality_score = betweenness_centrality;
+  free(sigma);
+  free(dist);
+  free(delta);
+  free(stack_count);
+  free(succ);
+  free(succ_count);
+  free(stack);
   return SUCCESS;
 }
 
 /**
  * Implements the forward propagation phase of the Betweenness Centrality
  * Algorithm described in Chapter 2 of GPU Computing Gems. Utilized by:
- * error_t betweenness_cpu(const graph_t* graph, weight_t** centrality_score)
+ * error_t betweenness_cpu(const graph_t* graph, weight_t** betweenness_score)
  * @param[in] graph the graph for which the centrality measure is calculated
  * @param[in] source the source node for the shortest paths
  * @param[in] level the shared level variable between backward and forward
@@ -738,7 +719,7 @@ PRIVATE void betweenness_cpu_forward_propagation(const graph_t* graph,
 /**
  * Implements the backward propagation phase of the Betweenness Centrality
  * Algorithm described in Chapter 2 of GPU Computing Gems. Utilized by:
- * error_t betweenness_cpu(const graph_t* graph, weight_t** centrality_score)
+ * error_t betweenness_cpu(const graph_t* graph, weight_t** betweenness_score)
  * @param[in] graph the graph for which the centrality measure is calculated
  * @param[in] source the source node for the shortest paths
  * @param[in] level the shared level variable between backward and forward
@@ -785,26 +766,24 @@ PRIVATE void betweenness_cpu_backward_propagation(const graph_t* graph,
  * Parallel CPU implementation of  Bewteenness Centrality algorithm described
  * in Chapter 2 of GPU Computing Gems (Algorithm 1 - Sequential BC Computation)
  * @param[in] graph the graph for which the centrality measure is calculated
- * @param[out] centrality_score the output list of betweenness centrality scores
+ * @param[out] betweenness_score the output list of betweenness centrality scores
  *             per vertex
  * @return generic success or failure
  */
-error_t betweenness_cpu(const graph_t* graph, weight_t** centrality_score) {
+error_t betweenness_cpu(const graph_t* graph, weight_t* betweenness_score) {
   // Sanity check on input
   bool finished = true;
-  error_t rc = check_special_cases(graph, &finished, centrality_score);
+  error_t rc = check_special_cases(graph, &finished, betweenness_score);
   if (finished) return rc;
 
   // Allocate memory for the shortest paths problem
   int32_t* distance = (int32_t*)malloc(graph->vertex_count * sizeof(int32_t));
   uint32_t* numSPs = (uint32_t*)malloc(graph->vertex_count * sizeof(uint32_t));
   weight_t* delta = (weight_t*)malloc(graph->vertex_count * sizeof(weight_t));
-  weight_t* betweenness_centrality = (weight_t*)mem_alloc(graph->vertex_count
-                                                          * sizeof(weight_t));
 
   // Initialization stage
   // Set BC(v) to 0 for every input node
-  memset(betweenness_centrality, 0, graph->vertex_count * sizeof(vid_t));
+  memset(betweenness_score, 0, graph->vertex_count * sizeof(vid_t));
 
   // Main loop - iterate over every node and perform both forward propagation
   // and backward propagation for that node, which in turn computes the
@@ -818,16 +797,13 @@ error_t betweenness_cpu(const graph_t* graph, weight_t** centrality_score) {
 
     // Perform the backward propagation phase for this source node
     betweenness_cpu_backward_propagation(graph, source, level, numSPs, distance,
-                                         delta, betweenness_centrality);
+                                         delta, betweenness_score);
   }
 
   // Cleanup the allocated memory
   free(numSPs);
   free(distance);
   free(delta);
-
-  // Return the centrality
-  *centrality_score = betweenness_centrality;
   return SUCCESS;
 }
 

@@ -370,19 +370,21 @@ PRIVATE void benchmark_dijkstra(graph_t* graph, totem_attr_t* attr) {
  * Runs Betweenness Centrality benchmark
  */
 PRIVATE void benchmark_betweenness(graph_t* graph, totem_attr_t* attr) {
+  weight_t* centrality_score = (weight_t*)mem_alloc(graph->vertex_count * 
+                                                    sizeof(weight_t));
+  assert(centrality_score);
   for (int s = 0; s < options.repeat; s++) {
     stopwatch_t stopwatch;
-    stopwatch_start(&stopwatch);
-    weight_t* centrality_score = NULL;
+    stopwatch_start(&stopwatch);    
     if (options.platform == PLATFORM_CPU) {
-      betweenness_cpu(graph, &centrality_score);
+      betweenness_cpu(graph, centrality_score);
     } else {
       assert(false);
     }
     print_timing(graph, stopwatch_elapsed(&stopwatch),
                  options.platform != PLATFORM_CPU, NULL);
-    mem_free(centrality_score);
   }
+  mem_free(centrality_score);
 }
 
 /**

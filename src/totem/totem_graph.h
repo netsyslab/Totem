@@ -371,9 +371,9 @@ error_t get_components_cpu(graph_t* graph, component_set_t** comp_set_ret);
  * @return generic success or failure
  */
 error_t betweenness_unweighted_cpu(const graph_t* graph,
-                                   weight_t** centrality_score);
+                                   weight_t* centrality_score);
 error_t betweenness_unweighted_gpu(const graph_t* graph,
-                                   weight_t** centrality_score);
+                                   weight_t* centrality_score);
 
 /**
  * Calculate betweenness centrality scores for unweighted graphs using the
@@ -384,7 +384,7 @@ error_t betweenness_unweighted_gpu(const graph_t* graph,
  * @return generic success or failure
  */
 error_t betweenness_unweighted_shi_gpu(const graph_t* graph,
-                                       weight_t** centrality_score);
+                                       weight_t* centrality_score);
 
 /**
  * Calculate betweenness centrality scores for graphs using the algorithm
@@ -394,7 +394,7 @@ error_t betweenness_unweighted_shi_gpu(const graph_t* graph,
  *             scores per vertex
  * @return generic success or failure
  */
-error_t betweenness_cpu(const graph_t* graph, weight_t** centrality_score);
+error_t betweenness_cpu(const graph_t* graph, weight_t* centrality_score);
 
 /**
  * Implements the parallel Brandes closeness centrality algorithm using
