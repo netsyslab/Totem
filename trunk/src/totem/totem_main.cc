@@ -349,20 +349,21 @@ PRIVATE void benchmark_pagerank(graph_t* graph, totem_attr_t* attr) {
  */
 PRIVATE void benchmark_dijkstra(graph_t* graph, totem_attr_t* attr) {
   srand(SEED);
+  weight_t* distance = (weight_t*)mem_alloc(graph->vertex_count * sizeof(weight_t));
+  assert(distance);
   for (int s = 0; s < options.repeat; s++) {
     vid_t src = get_random_src(graph);
     stopwatch_t stopwatch;
     stopwatch_start(&stopwatch);
-    weight_t* distance = NULL;
     if (options.platform == PLATFORM_CPU) {
-      dijkstra_cpu(graph, src, &distance);
+      dijkstra_cpu(graph, src, distance);
     } else {
       assert(false);
     }
     print_timing(graph, stopwatch_elapsed(&stopwatch),
                  options.platform != PLATFORM_CPU, NULL);
-    mem_free(distance);
   }
+  mem_free(distance);
 }
 
 /**
