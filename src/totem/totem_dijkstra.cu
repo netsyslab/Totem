@@ -1,5 +1,4 @@
 /**
- * // TODO(elizeu): Add license.
  *
  * Implements Dijkstra's single source shortest path algorithm. This
  * implementation is based on the algorithms presented by [Harish07]
@@ -43,26 +42,24 @@ typedef struct {
 */
 PRIVATE
 error_t check_special_cases(const graph_t* graph, vid_t source_id,
-                            weight_t **shortest_distances, bool* finished) {
+                            weight_t *shortest_distances, bool* finished) {
   *finished = true;
   if ((graph == NULL) || !graph->weighted
       || (source_id >= graph->vertex_count)) {
-    *shortest_distances = NULL;
+    return FAILURE;
+  } else if ((graph->vertex_count >= 1) && (shortest_distances == NULL)) {
     return FAILURE;
   } else if (graph->vertex_count == 1) {
-    *shortest_distances = (weight_t*)mem_alloc(sizeof(weight_t));
-    (*shortest_distances)[0] = 0;
+    shortest_distances[0] = 0;
     return SUCCESS;
   }
 
-  // Check whether the graph has vertices, but an empty edge set.
+  // Check whether the graph has vertices, but an empty edge set
   if ((graph->vertex_count > 0) && (graph->edge_count == 0)) {
-    *shortest_distances =
-      (weight_t*)mem_alloc(graph->vertex_count * sizeof(weight_t));
     for (vid_t node_id = 0; node_id < graph->vertex_count; node_id++) {
-      (*shortest_distances)[node_id] = WEIGHT_MAX;
+      shortest_distances[node_id] = WEIGHT_MAX;
     }
-    (*shortest_distances)[source_id] =  (weight_t)0.0;
+    shortest_distances[source_id] =  0.0;
     return SUCCESS;
   }
 
@@ -149,12 +146,10 @@ error_t initialize_gpu(const graph_t* graph, vid_t source_id,
 */
 PRIVATE
 error_t finalize_gpu(graph_t* graph_d, weight_t* distances_d, bool* changed_d,
-                     weight_t* new_distances_d, weight_t** shortest_distances) {
+                     weight_t* new_distances_d, weight_t* shortest_distances) {
 
   // Copy the pointer to the output parameter
-  *shortest_distances =
-      (weight_t*)mem_alloc(graph_d->vertex_count * sizeof(weight_t));
-  CHK_CU_SUCCESS(cudaMemcpy(*shortest_distances, distances_d,
+  CHK_CU_SUCCESS(cudaMemcpy(shortest_distances, distances_d,
                             graph_d->vertex_count * sizeof(weight_t),
                             cudaMemcpyDeviceToHost), err);
 
@@ -166,8 +161,6 @@ error_t finalize_gpu(graph_t* graph_d, weight_t* distances_d, bool* changed_d,
   return SUCCESS;
 
  err:
-  mem_free(shortest_distances);
-  *shortest_distances = NULL;
   return FAILURE;
 }
 
@@ -280,7 +273,7 @@ void dijkstra_final_kernel(graph_t graph, bool* to_update, weight_t* distances,
 }
 
 error_t dijkstra_gpu(const graph_t* graph, vid_t source_id,
-                     weight_t** shortest_distances) {
+                     weight_t* shortest_distances) {
   // Check for special cases
   bool finished = false;
   error_t rc = check_special_cases(graph, source_id, shortest_distances,
@@ -332,7 +325,7 @@ error_t dijkstra_gpu(const graph_t* graph, vid_t source_id,
 }
 
 error_t dijkstra_vwarp_gpu(const graph_t* graph, vid_t source_id,
-                           weight_t** shortest_distances) {
+                           weight_t* shortest_distances) {
 
   // Check for special cases
   bool finished = false;
@@ -392,7 +385,7 @@ error_t dijkstra_vwarp_gpu(const graph_t* graph, vid_t source_id,
 }
 
 __host__ error_t dijkstra_cpu(const graph_t* graph, vid_t source_id,
-                              weight_t** shortest_distances) {
+                              weight_t* shortest_distances) {
   // Check for special cases
   bool finished = false;
   error_t rc = check_special_cases(graph, source_id, shortest_distances,
@@ -400,11 +393,9 @@ __host__ error_t dijkstra_cpu(const graph_t* graph, vid_t source_id,
   if (finished) return rc;
 
   // Initialize the shortest_distances to infinite
-  *shortest_distances = 
-    (weight_t*)mem_alloc(graph->vertex_count * sizeof(weight_t));
   OMP(omp parallel for)
   for (vid_t vertex_id = 0; vertex_id < graph->vertex_count; vertex_id++) {
-    (*shortest_distances)[vertex_id] = WEIGHT_MAX;
+    shortest_distances[vertex_id] = WEIGHT_MAX;
   }
 
   // An entry in this bitmap indicates whether the corresponding vertex is
@@ -412,7 +403,7 @@ __host__ error_t dijkstra_cpu(const graph_t* graph, vid_t source_id,
   bitmap_t active = bitmap_init_cpu(graph->vertex_count);
 
   // Initialize the distance of the source vertex
-  (*shortest_distances)[source_id] =  (weight_t)0.0;
+  shortest_distances[source_id] =  (weight_t)0.0;
   bitmap_set_cpu(active, source_id);
 
   finished = false;
@@ -428,10 +419,10 @@ __host__ error_t dijkstra_cpu(const graph_t* graph, vid_t source_id,
       for (eid_t i = graph->vertices[vertex_id]; 
            i < graph->vertices[vertex_id + 1]; i++) {
         const vid_t neighbor_id = graph->edges[i];
-        weight_t new_distance = (*shortest_distances)[vertex_id] + 
+        weight_t new_distance = shortest_distances[vertex_id] + 
           graph->weights[i];
         weight_t old_distance =
-          __sync_fetch_and_min_float(&((*shortest_distances)[neighbor_id]),
+          __sync_fetch_and_min_float(&(shortest_distances[neighbor_id]),
                                        new_distance);
         if (new_distance < old_distance) {
           bitmap_set_cpu(active, neighbor_id);
