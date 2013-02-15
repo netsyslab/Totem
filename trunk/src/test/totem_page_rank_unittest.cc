@@ -19,7 +19,7 @@ using ::testing::Values;
 // totem_bfs_unittest.cc and
 // http://code.google.com/p/googletest/source/browse/trunk/samples/sample7_unittest.cc
 
-typedef error_t(*PageRankFunction)(graph_t*, float*, float*);
+typedef error_t(*PageRankFunction)(graph_t*, rank_t*, rank_t*);
 
 // This is to allow testing the vanilla bfs functions and the hybrid one
 // that is based on the framework. Note that have a different signature
@@ -38,10 +38,10 @@ class PageRankTest : public TestWithParam<page_rank_param_t*> {
     page_rank_param = GetParam();
   }
 
-  error_t TestGraph(graph_t* graph, float* rank_i, float* rank) {
+  error_t TestGraph(graph_t* graph, rank_t* rank_i, rank_t* rank) {
     if (page_rank_param->hybrid) {
       totem_attr_t attr = TOTEM_DEFAULT_ATTR;
-      attr.push_msg_size = sizeof(float) * BITS_PER_BYTE;
+      attr.push_msg_size = sizeof(rank_t) * BITS_PER_BYTE;
       if (totem_init(graph, &attr) == FAILURE) {
         return FAILURE;
       }
@@ -69,7 +69,7 @@ TEST_P(PageRankTest, SingleNode) {
   graph_t* graph;
   EXPECT_EQ(SUCCESS, graph_initialize(DATA_FOLDER("single_node.totem"),
                                       false, &graph));
-  float* rank = (float*)mem_alloc(graph->vertex_count * sizeof(float));
+  rank_t* rank = (rank_t*)mem_alloc(graph->vertex_count * sizeof(rank_t));
   EXPECT_EQ(SUCCESS, TestGraph(graph, NULL, rank));
   EXPECT_EQ(1, rank[0]);
   mem_free(rank);
@@ -81,7 +81,7 @@ TEST_P(PageRankTest, Chain) {
   graph_t* graph;
   EXPECT_EQ(SUCCESS, graph_initialize(DATA_FOLDER("chain_1000_nodes.totem"),
                                       false, &graph));
-  float* rank = (float*)mem_alloc(graph->vertex_count * sizeof(float));
+  rank_t* rank = (rank_t*)mem_alloc(graph->vertex_count * sizeof(rank_t));
 
   // the graph should be undirected because the test is shared between the
   // two versions of the PageRank algorithm: incoming- and outgoing- based.
@@ -101,7 +101,7 @@ TEST_P(PageRankTest, CompleteGraph) {
   EXPECT_EQ(SUCCESS,
             graph_initialize(DATA_FOLDER("complete_graph_300_nodes.totem"),
                              false, &graph));
-  float* rank = (float*)mem_alloc(graph->vertex_count * sizeof(float));
+  rank_t* rank = (rank_t*)mem_alloc(graph->vertex_count * sizeof(rank_t));
   // the graph should be undirected because the test is shared between the
   // two versions of the PageRank algorithm: incoming- and outgoing- based.
   EXPECT_FALSE(graph->directed);
@@ -120,7 +120,7 @@ TEST_P(PageRankTest, Star) {
   EXPECT_EQ(SUCCESS,
             graph_initialize(DATA_FOLDER("star_1000_nodes.totem"),
                              false, &graph));
-  float* rank = (float*)mem_alloc(graph->vertex_count * sizeof(float));
+  rank_t* rank = (rank_t*)mem_alloc(graph->vertex_count * sizeof(rank_t));
 
   // the graph should be undirected because the test is shared between the
   // two versions of the PageRank algorithm: incoming- and outgoing- based.

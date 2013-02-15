@@ -22,27 +22,12 @@
 #include "totem_graph.h"
 #include "totem_mem.h"
 
-// TODO(abdullah): The following two values should be a parameter in the entry
-//                 function to enable more flexibility and experimentation.
-/**
- * Used to define the number of rounds: a static convergance condition
- * for PageRank
- */
-#define PAGE_RANK_ROUNDS 30
-
-/**
- * A probability used in the PageRank algorithm. A probability that models the
- * behavior of the random surfer when she moves from one page to another
- * without following the links on the current page.
- */
-#define DAMPING_FACTOR 0.85
-
 /**
  * Checks for input parameters and special cases. This is invoked at the
  * beginning of public interfaces (GPU and CPU)
 */
 PRIVATE
-error_t check_special_cases(graph_t* graph, float* rank, bool* finished) {
+error_t check_special_cases(graph_t* graph, rank_t* rank, bool* finished) {
   *finished = true;
   if (graph == NULL) {
     return FAILURE;
@@ -63,7 +48,7 @@ error_t check_special_cases(graph_t* graph, float* rank, bool* finished) {
  * @return sum of neighbors' ranks
  */
 inline __device__
-double sum_neighbors_ranks(graph_t* graph, vid_t vertex_id, float* ranks) {
+double sum_neighbors_ranks(graph_t* graph, vid_t vertex_id, rank_t* ranks) {
   double sum = 0;
   for (eid_t i = graph->vertices[vertex_id];
        i < graph->vertices[vertex_id + 1]; i++) {
@@ -92,15 +77,15 @@ double sum_neighbors_ranks(graph_t* graph, vid_t vertex_id, float* ranks) {
  * @param[in] outbox messages to be broadcasted in the next round
  */
 __global__
-void page_rank_kernel(graph_t graph, float* inbox, float* outbox) {
+void page_rank_kernel(graph_t graph, rank_t* inbox, rank_t* outbox) {
   // get the thread's linear index
   vid_t vertex_id = THREAD_GLOBAL_INDEX;
   if (vertex_id >= graph.vertex_count) return;
   // get sum of neighbors' ranks
   double sum = sum_neighbors_ranks(&graph, vertex_id, inbox);
   // calculate my normalized rank
-  float my_rank =
-    ((1 - DAMPING_FACTOR) / graph.vertex_count) + (DAMPING_FACTOR * sum);
+  rank_t my_rank = ((1 - PAGE_RANK_DAMPING_FACTOR) / graph.vertex_count) + 
+    (PAGE_RANK_DAMPING_FACTOR * sum);
   outbox[vertex_id] =  my_rank /
     (graph.vertices[vertex_id + 1] - graph.vertices[vertex_id]);
 }
@@ -111,18 +96,18 @@ void page_rank_kernel(graph_t graph, float* inbox, float* outbox) {
  * is invoked in the end to get the final, un-normalized, rank of each vertex.
  */
 __global__
-void page_rank_final_kernel(graph_t graph, float* inbox, float* outbox) {
+void page_rank_final_kernel(graph_t graph, rank_t* inbox, rank_t* outbox) {
   // get the thread's linear index
   vid_t vertex_id = THREAD_GLOBAL_INDEX;
   if (vertex_id >= graph.vertex_count) return;
   // get sum of neighbors' ranks
   double sum = sum_neighbors_ranks(&graph, vertex_id, inbox);
   // calculate my rank
-  outbox[vertex_id] =
-    ((1 - DAMPING_FACTOR) / graph.vertex_count) + (DAMPING_FACTOR * sum);
+  outbox[vertex_id] = ((1 - PAGE_RANK_DAMPING_FACTOR) / graph.vertex_count) + 
+    (PAGE_RANK_DAMPING_FACTOR * sum);
 }
 
-error_t page_rank_incoming_gpu(graph_t* graph, float *rank_i, float* rank) {
+error_t page_rank_incoming_gpu(graph_t* graph, rank_t *rank_i, rank_t* rank) {
   // Check for special cases
   bool finished = false;
   error_t rc = check_special_cases(graph, rank, &finished);
@@ -138,12 +123,12 @@ error_t page_rank_incoming_gpu(graph_t* graph, float *rank_i, float* rank) {
   CHK_SUCCESS(graph_initialize_device(graph, &graph_d), err);
 
   // allocate inbox and outbox device buffers
-  float *inbox_d;
+  rank_t *inbox_d;
   CHK_CU_SUCCESS(cudaMalloc((void**)&inbox_d, graph->vertex_count *
-                       sizeof(float)), err_free_graph_d);
-  float *outbox_d;
+                       sizeof(rank_t)), err_free_graph_d);
+  rank_t *outbox_d;
   CHK_CU_SUCCESS(cudaMalloc((void**)&outbox_d, graph->vertex_count *
-                       sizeof(float)), err_free_inbox);
+                       sizeof(rank_t)), err_free_inbox);
 
   /* set the number of blocks, TODO(abdullah) handle the case when
      vertex_count is larger than number of threads. */
@@ -153,14 +138,14 @@ error_t page_rank_incoming_gpu(graph_t* graph, float *rank_i, float* rank) {
   // Initialize the intial state of the random walk (i.e., the initial
   // probabilities that the random walker will stop at a given node)
   if (rank_i == NULL) {
-    float initial_value;
-    initial_value = 1 / (float)graph->vertex_count;
+    rank_t initial_value;
+    initial_value = 1 / (rank_t)graph->vertex_count;
     memset_device<<<blocks, threads_per_block>>>
         (inbox_d, initial_value, graph->vertex_count);
     CHK_CU_SUCCESS(cudaGetLastError(), err_free_outbox);
   } else {
     CHK_CU_SUCCESS(cudaMemcpy(inbox_d, rank_i,
-        graph->vertex_count * sizeof(float), cudaMemcpyHostToDevice),
+        graph->vertex_count * sizeof(rank_t), cudaMemcpyHostToDevice),
         err_free_outbox);
   }
 
@@ -171,7 +156,7 @@ error_t page_rank_incoming_gpu(graph_t* graph, float *rank_i, float* rank) {
     CHK_CU_SUCCESS(cudaGetLastError(), err_free_outbox);
 
     // swap the inbox and outbox pointers (simulates passing messages)
-    float* tmp = inbox_d;
+    rank_t* tmp = inbox_d;
     inbox_d = outbox_d;
     outbox_d = tmp;
   }
@@ -181,8 +166,9 @@ error_t page_rank_incoming_gpu(graph_t* graph, float *rank_i, float* rank) {
   cudaThreadSynchronize();
 
   // copy back the final result from the outbox
-  CHK_CU_SUCCESS(cudaMemcpy(rank, outbox_d, graph->vertex_count * sizeof(float),
-                            cudaMemcpyDeviceToHost), err_free_all);
+  CHK_CU_SUCCESS(cudaMemcpy(rank, outbox_d, graph->vertex_count * 
+                            sizeof(rank_t), cudaMemcpyDeviceToHost), 
+                 err_free_all);
 
   // we are done! set the output and clean up
   cudaFree(outbox_d);
@@ -202,20 +188,20 @@ error_t page_rank_incoming_gpu(graph_t* graph, float *rank_i, float* rank) {
   return FAILURE;
 }
 
-error_t page_rank_incoming_cpu(graph_t* graph, float *rank_i, float* rank) {
+error_t page_rank_incoming_cpu(graph_t* graph, rank_t *rank_i, rank_t* rank) {
   // Check for special cases
   bool finished = false;
   error_t rc = check_special_cases(graph, rank, &finished);
   if (finished) return rc;
 
   // allocate buffers
-  float* inbox = (float*)malloc(graph->vertex_count * sizeof(float));
-  float* outbox = (float*)malloc(graph->vertex_count * sizeof(float));
+  rank_t* inbox = (rank_t*)malloc(graph->vertex_count * sizeof(rank_t));
+  rank_t* outbox = (rank_t*)malloc(graph->vertex_count * sizeof(rank_t));
 
   // initialize the rank of each vertex
   if (rank_i == NULL) {
-    float initial_value;
-    initial_value = 1 / (float)graph->vertex_count;
+    rank_t initial_value;
+    initial_value = 1 / (rank_t)graph->vertex_count;
     for (vid_t vertex_id = 0; vertex_id < graph->vertex_count; vertex_id++) {
       outbox[vertex_id] = initial_value;
     }
@@ -227,7 +213,7 @@ error_t page_rank_incoming_cpu(graph_t* graph, float *rank_i, float* rank) {
 
   for (int round = 0; round < PAGE_RANK_ROUNDS; round++) {
     // swap the inbox and outbox pointers (simulates passing messages!)
-    float* tmp = inbox;
+    rank_t* tmp = inbox;
     inbox      = outbox;
     outbox     = tmp;
 
@@ -245,14 +231,14 @@ error_t page_rank_incoming_cpu(graph_t* graph, float *rank_i, float* rank) {
       // calculate my rank
       vid_t neighbors_count = 
         graph->vertices[vertex_id + 1] - graph->vertices[vertex_id];
-      float my_rank =
-        ((1 - DAMPING_FACTOR) / graph->vertex_count) + (DAMPING_FACTOR * sum);
+      rank_t my_rank = ((1 - PAGE_RANK_DAMPING_FACTOR) / graph->vertex_count) + 
+        (PAGE_RANK_DAMPING_FACTOR * sum);
       outbox[vertex_id] =
         (round == (PAGE_RANK_ROUNDS - 1)) ? my_rank : my_rank / neighbors_count;
     }
   }
 
-  memcpy(rank, outbox, graph->vertex_count * sizeof(float));
+  memcpy(rank, outbox, graph->vertex_count * sizeof(rank_t));
   free(inbox);
   free(outbox);
   return SUCCESS;
