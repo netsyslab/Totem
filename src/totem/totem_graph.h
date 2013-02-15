@@ -101,6 +101,28 @@ const weight_t DEFAULT_EDGE_WEIGHT =  1;
 const weight_t DEFAULT_VERTEX_VALUE = 0;
 
 /**
+ * Used to define the number of rounds: a static convergance condition
+ * for PageRank
+ */
+const int PAGE_RANK_ROUNDS = 30;
+
+/**
+ * A probability used in the PageRank algorithm that models the behavior of the 
+ * random surfer when she moves from one page to another without following the 
+ * links on the current page.
+ * TODO(abdullah): The variable could be passed as a parameter in the entry
+ * function to enable more flexibility and experimentation. This however 
+ * increases register usage and may affect performance
+ */
+const double PAGE_RANK_DAMPING_FACTOR = 0.85;
+
+/**
+ * A type for page rank. This is useful to allow future changes in precision.
+ */
+typedef float rank_t;
+
+
+/**
  * A graph type based on adjacency list representation.
  * Modified from [Harish07]:
  * A graph G(V,E) is represented as adjacency list, with adjacency lists packed

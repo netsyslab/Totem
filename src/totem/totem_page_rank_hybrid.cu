@@ -24,24 +24,11 @@
 #include "totem_mem.h"
 
 /**
- * Used to define the number of rounds: a static convergance condition
- * for PageRank
- */
-#define PAGE_RANK_ROUNDS 30
-
-/**
- * A probability used in the PageRank algorithm. A probability that models the
- * behavior of the random surfer when she moves from one page to another
- * without following the links on the current page.
- */
-#define DAMPING_FACTOR 0.85
-
-/**
  * PageRank specific state
  */
 typedef struct page_rank_state_s {
-  float* rank;
-  float* rank_s;
+  rank_t* rank;
+  rank_t* rank_s;
   dim3 blocks_rank;
   dim3 threads_rank;
   dim3 blocks_sum;
@@ -51,20 +38,20 @@ typedef struct page_rank_state_s {
 /**
  * Stores the final result
  */
-float* rank_g = NULL;
+rank_t* rank_g = NULL;
 
 /**
  * Used as a temporary buffer to host the final result produced by
  * GPU partitions
  */
-float* rank_h = NULL;
+rank_t* rank_h = NULL;
 
 /**
  * Checks for input parameters and special cases. This is invoked at the
  * beginning of public interfaces (GPU and CPU)
 */
 PRIVATE
-error_t check_special_cases(float* rank, bool* finished) {
+error_t check_special_cases(rank_t* rank, bool* finished) {
   *finished = true;
   if (engine_vertex_count() == 0) {
     return FAILURE;
@@ -83,7 +70,7 @@ error_t check_special_cases(float* rank, bool* finished) {
  */
 typedef struct {
   eid_t vertices[VWARP_BATCH_SIZE + 2];
-  float rank[VWARP_BATCH_SIZE];
+  rank_t rank[VWARP_BATCH_SIZE];
 } vwarp_mem_t;
 
 /**
@@ -92,8 +79,8 @@ typedef struct {
  * the temporary rank (rank_s) of the destination neighbor vertex.
  */
 __global__
-void vwarp_sum_neighbors_rank_kernel(partition_t par, float* rank, 
-                                     float* rank_s, vid_t thread_count) {
+void vwarp_sum_neighbors_rank_kernel(partition_t par, rank_t* rank, 
+                                     rank_t* rank_s, vid_t thread_count) {
   if (THREAD_GLOBAL_INDEX >= thread_count) return;
   vid_t warp_offset = THREAD_GLOBAL_INDEX % VWARP_WARP_SIZE;
   vid_t warp_id     = THREAD_GLOBAL_INDEX / VWARP_WARP_SIZE;
@@ -115,29 +102,31 @@ void vwarp_sum_neighbors_rank_kernel(partition_t par, float* rank,
     vid_t nbr_count = my_space->vertices[v + 1] - my_space->vertices[v];
     vid_t* nbrs = &(par.subgraph.edges[my_space->vertices[v]]);
     for(vid_t i = warp_offset; i < nbr_count; i += VWARP_WARP_SIZE) {
-      float* dst; const vid_t nbr = nbrs[i];
-      ENGINE_FETCH_DST(par.id, nbr, par.outbox_d, rank_s, dst, float);
+      rank_t* dst; const vid_t nbr = nbrs[i];
+      ENGINE_FETCH_DST(par.id, nbr, par.outbox_d, rank_s, dst, rank_t);
       atomicAdd(dst, my_space->rank[v]);
     }
   }
 }
 
 __global__
-void compute_normalized_rank_kernel(partition_t par, vid_t vc, float* rank, 
-                                    float* rank_s) {
+void compute_normalized_rank_kernel(partition_t par, vid_t vc, rank_t* rank, 
+                                    rank_t* rank_s) {
   vid_t v = THREAD_GLOBAL_INDEX;
   if (v >= par.subgraph.vertex_count) return;
-  float r = ((1 - DAMPING_FACTOR) / vc) + (DAMPING_FACTOR * rank_s[v]);
+  rank_t r = ((1 - PAGE_RANK_DAMPING_FACTOR) / vc) + 
+    (PAGE_RANK_DAMPING_FACTOR * rank_s[v]);
   rank[v] = r / (par.subgraph.vertices[v + 1] - par.subgraph.vertices[v]);
   rank_s[v] = 0;
 }
 
 __global__
-void compute_unnormalized_rank_kernel(partition_t par, vid_t vc, float* rank,
-                                      float* rank_s) {
+void compute_unnormalized_rank_kernel(partition_t par, vid_t vc, rank_t* rank,
+                                      rank_t* rank_s) {
   vid_t v = THREAD_GLOBAL_INDEX;
   if (v >= par.subgraph.vertex_count) return;
-  rank[v] = ((1 - DAMPING_FACTOR) / vc) + (DAMPING_FACTOR * rank_s[v]);
+  rank[v] = ((1 - PAGE_RANK_DAMPING_FACTOR) / vc) + 
+    (PAGE_RANK_DAMPING_FACTOR * rank_s[v]);
 }
 
 PRIVATE void page_rank_gpu(partition_t* par) {
@@ -174,8 +163,8 @@ PRIVATE void page_rank_cpu(partition_t* par) {
     OMP(omp parallel for)
     for(vid_t v = 0; v < subgraph->vertex_count; v++) {
       vid_t nbrs = subgraph->vertices[v + 1] - subgraph->vertices[v];
-      float rank = ((1 - DAMPING_FACTOR) / vcount) +
-        (DAMPING_FACTOR * ps->rank_s[v]);
+      rank_t rank = ((1 - PAGE_RANK_DAMPING_FACTOR) / vcount) +
+        (PAGE_RANK_DAMPING_FACTOR * ps->rank_s[v]);
       ps->rank[v] = (round == (PAGE_RANK_ROUNDS)) ? rank : rank / nbrs;
       ps->rank_s[v] = 0;
     }
@@ -185,10 +174,10 @@ PRIVATE void page_rank_cpu(partition_t* par) {
   engine_set_outbox(par->id, 0);
   OMP(omp parallel for)
   for(vid_t v = 0; v < subgraph->vertex_count; v++) {
-    float my_rank = ps->rank[v];
+    rank_t my_rank = ps->rank[v];
     for (eid_t i = subgraph->vertices[v]; i < subgraph->vertices[v + 1]; i++) {
-      float* dst; vid_t nbr = subgraph->edges[i];
-      ENGINE_FETCH_DST(par->id, nbr, par->outbox, ps->rank_s, dst, float);
+      rank_t* dst; vid_t nbr = subgraph->edges[i];
+      ENGINE_FETCH_DST(par->id, nbr, par->outbox, ps->rank_s, dst, rank_t);
       __sync_fetch_and_add_float(dst, my_rank);
     }
   }
@@ -215,10 +204,10 @@ PRIVATE void page_rank_aggr(partition_t* partition) {
   if (!partition->subgraph.vertex_count) return;
   page_rank_state_t* ps = (page_rank_state_t*)partition->algo_state;
   graph_t* subgraph = &partition->subgraph;
-  float* src_rank = NULL;
+  rank_t* src_rank = NULL;
   if (partition->processor.type == PROCESSOR_GPU) {
     CALL_CU_SAFE(cudaMemcpy(rank_h, ps->rank,
-                            subgraph->vertex_count * sizeof(float),
+                            subgraph->vertex_count * sizeof(rank_t),
                             cudaMemcpyDefault));
     src_rank = rank_h;
   } else {
@@ -232,10 +221,10 @@ PRIVATE void page_rank_aggr(partition_t* partition) {
 }
 
 PRIVATE void page_rank_init_gpu(partition_t* par, page_rank_state_t* ps,
-                                float init_value) {
+                                rank_t init_value) {
   vid_t vcount = par->subgraph.vertex_count;
-  CALL_CU_SAFE(cudaMalloc((void**)&(ps->rank), vcount * sizeof(float)));
-  CALL_CU_SAFE(cudaMalloc((void**)&(ps->rank_s), vcount * sizeof(float)));
+  CALL_CU_SAFE(cudaMalloc((void**)&(ps->rank), vcount * sizeof(rank_t)));
+  CALL_CU_SAFE(cudaMalloc((void**)&(ps->rank_s), vcount * sizeof(rank_t)));
   KERNEL_CONFIGURE(VWARP_WARP_SIZE * VWARP_BATCH_COUNT(vcount),
                    ps->blocks_sum, ps->threads_sum);
   KERNEL_CONFIGURE(vcount, ps->blocks_rank, ps->threads_rank);
@@ -244,16 +233,16 @@ PRIVATE void page_rank_init_gpu(partition_t* par, page_rank_state_t* ps,
     par->streams[1]>>>(ps->rank, init_value, vcount);
   CALL_CU_SAFE(cudaGetLastError());
   memset_device<<<ps->blocks_rank, ps->threads_rank, 0,
-    par->streams[1]>>>(ps->rank_s, (float)0.0, vcount);
+    par->streams[1]>>>(ps->rank_s, (rank_t)0.0, vcount);
   CALL_CU_SAFE(cudaGetLastError());
 }
 
 PRIVATE void page_rank_init_cpu(partition_t* par, page_rank_state_t* ps,
-                                float init_value) {
+                                rank_t init_value) {
   vid_t vcount = par->subgraph.vertex_count;
   assert(par->processor.type == PROCESSOR_CPU);
-  ps->rank = (float*)calloc(vcount, sizeof(float));
-  ps->rank_s = (float*)calloc(vcount, sizeof(float));
+  ps->rank = (rank_t*)calloc(vcount, sizeof(rank_t));
+  ps->rank_s = (rank_t*)calloc(vcount, sizeof(rank_t));
   assert(ps->rank && ps->rank_s);
   for (vid_t v = 0; v < vcount; v++) ps->rank[v] = init_value;
 }
@@ -262,7 +251,7 @@ PRIVATE void page_rank_init(partition_t* par) {
   if (!par->subgraph.vertex_count) return;
   page_rank_state_t* ps = (page_rank_state_t*)malloc(sizeof(page_rank_state_t));
   assert(ps);
-  float init_value = 1 / (float)engine_vertex_count();
+  rank_t init_value = 1 / (rank_t)engine_vertex_count();
   if (par->processor.type == PROCESSOR_GPU) {
     page_rank_init_gpu(par, ps, init_value);
   } else {
@@ -287,7 +276,7 @@ PRIVATE void page_rank_finalize(partition_t* partition) {
   partition->algo_state = NULL;
 }
 
-error_t page_rank_hybrid(float *rank_i, float* rank) {
+error_t page_rank_hybrid(rank_t *rank_i, rank_t* rank) {
   // check for special cases
   bool finished = false;
   error_t rc = check_special_cases(rank, &finished);
@@ -309,7 +298,8 @@ error_t page_rank_hybrid(float *rank_i, float* rank) {
   };
   engine_config(&config);
   if (engine_largest_gpu_partition()) {
-    rank_h = (float*)mem_alloc(engine_largest_gpu_partition() * sizeof(float));
+    rank_h = (rank_t*)mem_alloc(engine_largest_gpu_partition() * 
+                                sizeof(rank_t));
   }
   engine_execute();
 

@@ -12,21 +12,6 @@
 #include "totem_mem.h"
 
 /**
- * Used to define the number of rounds: a static convergance condition
- * for PageRank
- */
-PRIVATE int const PAGE_RANK_ROUNDS = 31;
-
-/**
- * A probability used in the PageRank algorithm. A probability that models the
- * behavior of the random surfer when she moves from one page to another
- * without following the links on the current page.
- */
-PRIVATE double const DAMPING_FACTOR = 0.85;
-
-typedef float rank_t;
-
-/**
  * PageRank specific state
  */
 typedef struct pagestate_s {
@@ -109,8 +94,8 @@ void page_rank_incoming_kernel(partition_t par, vid_t vcount, rank_t* rank,
   if (vid >= par.subgraph.vertex_count) return;
   double sum = sum_neighbors_ranks(par.id, par.outbox_d, &par.subgraph, vid, 
                                    rank_s);
-  double my_rank =
-    ((1 - DAMPING_FACTOR) / vcount) + (DAMPING_FACTOR * sum);
+  double my_rank = ((1 - PAGE_RANK_DAMPING_FACTOR) / vcount) + 
+    (PAGE_RANK_DAMPING_FACTOR * sum);
   rank[vid] =  my_rank /
     (par.subgraph.vertices[vid + 1] - par.subgraph.vertices[vid]);
 }
@@ -132,8 +117,8 @@ PRIVATE void page_rank_incoming_cpu(partition_t* par) {
     for(vid_t vid = 0; vid < par->subgraph.vertex_count; vid++) {
       double sum = sum_neighbors_ranks(par->id, par->outbox, &par->subgraph, 
                                        vid, ps->rank_s);
-      double my_rank =
-        ((1 - DAMPING_FACTOR) / vcount) + (DAMPING_FACTOR * sum);
+      double my_rank = ((1 - PAGE_RANK_DAMPING_FACTOR) / vcount) + 
+        (PAGE_RANK_DAMPING_FACTOR * sum);
       ps->rank[vid] =  my_rank /
         (par->subgraph.vertices[vid + 1] - par->subgraph.vertices[vid]);
     }
@@ -147,7 +132,7 @@ PRIVATE void page_rank_incoming(partition_t* par) {
     assert(par->processor.type == PROCESSOR_CPU);
     page_rank_incoming_cpu(par);
   }
-  if (engine_superstep() == PAGE_RANK_ROUNDS) {
+  if (engine_superstep() == (PAGE_RANK_ROUNDS + 1)) {
     engine_report_finished(par->id);
   } else {
     page_rank_state_t* ps = (page_rank_state_t*)par->algo_state;
