@@ -21,9 +21,9 @@ GEST_LIB   = -L$(GTEST_PATH)/lib
 
 TOTEM_PATH   = ../totem
 TOTEM_INC    = -I$(TOTEM_PATH)
-TOTEM_CCSRC  = $(filter-out %_main.cc, $(wildcard $(TOTEM_PATH)/*.cc))
+TOTEM_CCSRC  = $(filter-out %_benchmark.cc, $(wildcard $(TOTEM_PATH)/*.cc))
 TOTEM_CCOBJS = $(TOTEM_CCSRC:$(TOTEM_PATH)/%.cc=$(TOTEM_PATH)/$(OBJDIR)/%.o)
-TOTEM_CUSRC  = $(filter-out %_main.cu, $(wildcard $(TOTEM_PATH)/*.cu))
+TOTEM_CUSRC  = $(filter-out %_benchmark.cu, $(wildcard $(TOTEM_PATH)/*.cu))
 TOTEM_CUOBJS = $(TOTEM_CUSRC:$(TOTEM_PATH)/%.cu=$(TOTEM_PATH)/$(OBJDIR)/%.cu_o)
 
 ifdef TEST
@@ -48,8 +48,10 @@ ifndef TEST
 	@printf "\nBuilding all unit tests ...\n"
 	$(CC) $(BUILD_LINE) -o all$(EXE_EXT)
 else
-	@if test ! -f $(TEST_FILE); then echo $(TEST) \
-	    "unit test does not exist"; exit 2; fi
+	@if test ! $(TEST_FILE); then \
+	  printf "\n%s unit test does not exist\n" $(TEST); \
+	  exit 2; \
+	fi
 	@printf "\nBuilding %s unit test ...\n" $(TEST_FILE)
 	$(CC) $(BUILD_LINE) -o $(TEST)$(EXE_EXT)
 endif
