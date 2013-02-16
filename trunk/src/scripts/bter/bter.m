@@ -1,4 +1,4 @@
-function [G,G1,G2,blksize,blkrho,blklist,deglist] = bter(ddist,varargin)
+function G = bter(ddist,varargin)
 %BTER Block Two-Level Erdos-Renyi Graph Generation
 %
 %   G = BTER(D) generates a block two-level Erdos-Renyi (BTER) graph with
@@ -78,6 +78,10 @@ function [G,G1,G2,blksize,blkrho,blklist,deglist] = bter(ddist,varargin)
 %   - 'verbose'    - Print information. Default is true.
 %   - 'debug'      - Extra error checking is turned on. Default is false.
 %
+%   Abdullah: I changed the function to return only the final graph "G". Doing
+%             this allowed to generate larger graphs by getting rid of some 
+%             out-of-memory errors. The following is the original signature of
+%             the function:
 %   [G, G1, G2, csz, crho, cid, d] = BTER(D,...) returns additional
 %   information as follows:
 %      G1 = Graph from Phase 1
@@ -488,4 +492,3 @@ if nnz(idx) > 0
     warning('%s has some non-binary entries',name);
 end
     
-
