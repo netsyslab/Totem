@@ -77,7 +77,7 @@ const vid_t VERTEX_ID_MAX = UINT32_MAX;
 /**
  * Specifies the infinite quantity used by several algorithms (e.g., edge cost).
  */
-const vid_t INFINITE = UINT32_MAX;
+const uint32_t INFINITE = UINT32_MAX;
 
 /**
  * Specifies a type for edge weights. This is useful to allow future changes in
@@ -117,10 +117,15 @@ const int PAGE_RANK_ROUNDS = 30;
 const double PAGE_RANK_DAMPING_FACTOR = 0.85;
 
 /**
- * A type for page rank. This is useful to allow future changes in precision.
+ * A type for page rank. This is useful to allow changes in precision.
  */
 typedef float rank_t;
 
+/**
+ * A type for bfs cost. This is useful to allow changes in size.
+ */
+typedef uint16_t cost_t;
+const cost_t INF_COST = (cost_t)INFINITE;
 
 /**
  * A graph type based on adjacency list representation.
@@ -247,10 +252,10 @@ graph_t* graph_create_bidirectional(graph_t* graph, eid_t** reverse_indices);
  * ownership of the array and, thus, the client is responsible for freeing the
  * memory area.
 */
-error_t bfs_cpu(graph_t* graph, vid_t src_id, uint32_t* cost);
-error_t bfs_gpu(graph_t* graph, vid_t src_id, uint32_t* cost);
-error_t bfs_vwarp_gpu(graph_t* graph, vid_t src_id, uint32_t* cost);
-error_t bfs_hybrid(vid_t src_id, uint32_t* cost);
+error_t bfs_cpu(graph_t* graph, vid_t src_id, cost_t* cost);
+error_t bfs_gpu(graph_t* graph, vid_t src_id, cost_t* cost);
+error_t bfs_vwarp_gpu(graph_t* graph, vid_t src_id, cost_t* cost);
+error_t bfs_hybrid(vid_t src_id, cost_t* cost);
 
 /**
  * Given a weighted graph \f$G = (V, E, w)\f$ and a source vertex \f$v\inV\f$,
