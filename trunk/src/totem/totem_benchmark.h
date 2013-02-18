@@ -39,17 +39,18 @@ typedef struct benchmark_attr_s {
  *  Benchmark command line options type
  */
 typedef struct benchmark_options_s {
-  char*                 graph_file; /**<  The file to run the benchmark on */
-  benchmark_t           benchmark;  /**<  Benchmark to run */
-  platform_t            platform;   /**<  Execution platform */
-  int                   gpu_count;  /**<  Number of GPUs to use for hybrid and 
-                                          GPU-only platforms */
-  int                   repeat;     /**<  Number of times to repeat an
-                                          execution (for traversal algorithms,
-                                          number of sources used) */
-  int                   alpha;      /**< Percentage of edges left on the CPU
-                                         for hybrid platforms */
-  partition_algorithm_t par_algo;   /**< Partitioning algorithm */
+  char*                 graph_file;   /**< The file to run the benchmark on */
+  benchmark_t           benchmark;    /**< Benchmark to run */
+  platform_t            platform;     /**< Execution platform */
+  int                   gpu_count;    /**< Number of GPUs to use for hybrid
+                                           and GPU-only platforms */
+  int                   thread_count; /**< Number of CPU threads */
+  int                   repeat;       /**< Number of times to repeat an
+                                           execution (for traversal algorithms,
+                                           number of sources used) */
+  int                   alpha;        /**< Percentage of edges left on the CPU
+                                           for hybrid platforms */
+  partition_algorithm_t par_algo;     /**< Partitioning algorithm */
 } benchmark_options_t;
 
 /**
