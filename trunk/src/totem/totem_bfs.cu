@@ -29,11 +29,11 @@ typedef struct {
   // whether sizeof(eid_t) is 4 or 8. Alignment is enforced for performance 
   // reasons.
   eid_t vertices[VWARP_BATCH_SIZE + 2];
-  uint32_t cost[VWARP_BATCH_SIZE];
+  cost_t cost[VWARP_BATCH_SIZE];
 } vwarp_mem_t;
 
 PRIVATE error_t check_special_cases(graph_t* graph, vid_t src_id, 
-                                    uint32_t* cost, bool* finished) {
+                                    cost_t* cost, bool* finished) {
   *finished = true;
   if((graph == NULL) || (src_id >= graph->vertex_count) || (cost == NULL)) {
     return FAILURE;
@@ -42,7 +42,7 @@ PRIVATE error_t check_special_cases(graph_t* graph, vid_t src_id,
     return SUCCESS;
   } else if(graph->edge_count == 0) {
     // Initialize cost to INFINITE and zero to the source node
-    memset(cost, 0xFF, graph->vertex_count * sizeof(uint32_t));
+    memset(cost, 0xFF, graph->vertex_count * sizeof(cost_t));
     cost[src_id] = 0;
     return SUCCESS;
   }
@@ -56,20 +56,20 @@ PRIVATE error_t check_special_cases(graph_t* graph, vid_t src_id,
 */
 PRIVATE
 error_t initialize_gpu(const graph_t* graph, vid_t source_id, vid_t cost_len, 
-                       graph_t** graph_d, uint32_t** cost_d, 
+                       graph_t** graph_d, cost_t** cost_d, 
                        bool** finished_d) {
   dim3 blocks;
   dim3 threads_per_block;
 
   // Allocate space on GPU
   CHK_SUCCESS(graph_initialize_device(graph, graph_d), err);
-  CHK_CU_SUCCESS(cudaMalloc((void**) cost_d, cost_len * sizeof(uint32_t)),
+  CHK_CU_SUCCESS(cudaMalloc((void**) cost_d, cost_len * sizeof(cost_t)),
                  err_free_graph_d);
   // Initialize cost to INFINITE.
   KERNEL_CONFIGURE(cost_len, blocks, threads_per_block);
-  memset_device<<<blocks, threads_per_block>>>((*cost_d), INFINITE, cost_len);
+  memset_device<<<blocks, threads_per_block>>>((*cost_d), INF_COST, cost_len);
   // For the source vertex, initialize cost.
-  CHK_CU_SUCCESS(cudaMemset(&((*cost_d)[source_id]), 0, sizeof(uint32_t)),
+  CHK_CU_SUCCESS(cudaMemset(&((*cost_d)[source_id]), 0, sizeof(cost_t)),
                  err_free_cost_d_graph_d);
   // Allocate the termination flag
   CHK_CU_SUCCESS(cudaMalloc((void**) finished_d, sizeof(bool)),
@@ -90,9 +90,9 @@ error_t initialize_gpu(const graph_t* graph, vid_t source_id, vid_t cost_len,
  * frees up some resources.
 */
 PRIVATE 
-error_t finalize_gpu(graph_t* graph_d, uint32_t* cost_d, uint32_t* cost) {
+error_t finalize_gpu(graph_t* graph_d, cost_t* cost_d, cost_t* cost) {
   CHK_CU_SUCCESS(cudaMemcpy(cost, cost_d, graph_d->vertex_count *
-                            sizeof(uint32_t), cudaMemcpyDeviceToHost), err);
+                            sizeof(cost_t), cudaMemcpyDeviceToHost), err);
   graph_finalize_device(graph_d);
   cudaFree(cost_d);
   return SUCCESS;
@@ -116,14 +116,14 @@ error_t finalize_gpu(graph_t* graph_d, uint32_t* cost_d, uint32_t* cost) {
  * iteration.
  */
 __global__
-void bfs_kernel(graph_t graph, uint32_t level, bool* finished, uint32_t* cost) {
+void bfs_kernel(graph_t graph, cost_t level, bool* finished, cost_t* cost) {
   const vid_t vertex_id = THREAD_GLOBAL_INDEX;
   if (vertex_id >= graph.vertex_count) return;
   if (cost[vertex_id] != level) return;
   for (eid_t i = graph.vertices[vertex_id]; 
        i < graph.vertices[vertex_id + 1]; i++) {
     const vid_t neighbor_id = graph.edges[i];
-    if (cost[neighbor_id] == INFINITE) {
+    if (cost[neighbor_id] == INF_COST) {
       // Threads may update finished and the same position in the cost array
       // concurrently. It does not affect correctness since all
       // threads would update with the same value.
@@ -145,11 +145,11 @@ void bfs_kernel(graph_t graph, uint32_t level, bool* finished, uint32_t* cost) {
 */
 __device__
 void vwarp_process_neighbors(vid_t warp_offset, vid_t neighbor_count, 
-                             vid_t* neighbors, uint32_t* cost, uint32_t level,
+                             vid_t* neighbors, cost_t* cost, cost_t level,
                              bool* finished) {
   for(vid_t i = warp_offset; i < neighbor_count; i += VWARP_WARP_SIZE) {
     vid_t neighbor_id = neighbors[i];
-    if (cost[neighbor_id] == INFINITE) {
+    if (cost[neighbor_id] == INF_COST) {
       cost[neighbor_id] = level + 1;
       *finished = false;
     }
@@ -162,8 +162,8 @@ void vwarp_process_neighbors(vid_t warp_offset, vid_t neighbor_count,
  * bfs_kernel for details on the BFS implementation.
  */
 __global__
-void vwarp_bfs_kernel(graph_t graph, uint32_t level, bool* finished,
-                      uint32_t* cost, uint32_t thread_count) {
+void vwarp_bfs_kernel(graph_t graph, cost_t level, bool* finished,
+                      cost_t* cost, uint32_t thread_count) {
   if (THREAD_GLOBAL_INDEX >= thread_count) return;
   vid_t warp_offset = THREAD_GLOBAL_INDEX % VWARP_WARP_SIZE;
   vid_t warp_id     = THREAD_GLOBAL_INDEX / VWARP_WARP_SIZE;
@@ -190,7 +190,7 @@ void vwarp_bfs_kernel(graph_t graph, uint32_t level, bool* finished,
 }
 
 __host__
-error_t bfs_vwarp_gpu(graph_t* graph, vid_t source_id, uint32_t* cost) {
+error_t bfs_vwarp_gpu(graph_t* graph, vid_t source_id, cost_t* cost) {
   // Check for special cases
   bool finished = false;
   error_t rc = check_special_cases(graph, source_id, cost, &finished);
@@ -198,7 +198,7 @@ error_t bfs_vwarp_gpu(graph_t* graph, vid_t source_id, uint32_t* cost) {
 
   // Create and initialize state on GPU
   graph_t* graph_d;
-  uint32_t* cost_d;
+  cost_t* cost_d;
   vid_t cost_length;
   bool* finished_d;
   cost_length = VWARP_BATCH_SIZE * VWARP_BATCH_COUNT(graph->vertex_count);
@@ -216,7 +216,7 @@ error_t bfs_vwarp_gpu(graph_t* graph, vid_t source_id, uint32_t* cost) {
   cudaFuncSetCacheConfig(vwarp_bfs_kernel, cudaFuncCachePreferShared);
   bool finished = false;
   // while the current level has vertices to be processed.
-  for (uint32_t level = 0; !finished; level++) {
+  for (cost_t level = 0; !finished; level++) {
     CHK_CU_SUCCESS(cudaMemset(finished_d, true, 1), err_free_all);
     vwarp_bfs_kernel<<<blocks, threads_per_block>>>(*graph_d, level, finished_d,
                                                     cost_d, thread_count);
@@ -238,7 +238,7 @@ error_t bfs_vwarp_gpu(graph_t* graph, vid_t source_id, uint32_t* cost) {
 }
 
 __host__
-error_t bfs_gpu(graph_t* graph, vid_t source_id, uint32_t* cost) {
+error_t bfs_gpu(graph_t* graph, vid_t source_id, cost_t* cost) {
   // Check for special cases
   bool finished = false;
   error_t rc = check_special_cases(graph, source_id, cost, &finished);
@@ -246,7 +246,7 @@ error_t bfs_gpu(graph_t* graph, vid_t source_id, uint32_t* cost) {
 
   // Create and initialize state on GPU
   graph_t* graph_d;
-  uint32_t* cost_d;
+  cost_t* cost_d;
   bool* finished_d;
   CHK_SUCCESS(initialize_gpu(graph, source_id, graph->vertex_count,
                              &graph_d, &cost_d, &finished_d), err_free_all);
@@ -258,7 +258,7 @@ error_t bfs_gpu(graph_t* graph, vid_t source_id, uint32_t* cost) {
   KERNEL_CONFIGURE(graph->vertex_count, blocks, threads_per_block);
   bool finished = false;
   // while the current level has vertices to be processed.
-  for (uint32_t level = 0; !finished; level++) {
+  for (cost_t level = 0; !finished; level++) {
     CHK_CU_SUCCESS(cudaMemset(finished_d, true, 1), err_free_all);
     // for each vertex V in parallel do
     bfs_kernel<<<blocks, threads_per_block>>>(*graph_d, level, finished_d,
@@ -281,14 +281,14 @@ error_t bfs_gpu(graph_t* graph, vid_t source_id, uint32_t* cost) {
 }
 
 __host__
-error_t bfs_cpu(graph_t* graph, vid_t source_id, uint32_t* cost) {
+error_t bfs_cpu(graph_t* graph, vid_t source_id, cost_t* cost) {
   // Check for special cases
   bool finished = false;
   error_t rc = check_special_cases(graph, source_id, cost, &finished);
   if (finished) return rc;
 
   // Initialize cost to INFINITE and create the vertices bitmap
-  memset(cost, 0xFF, graph->vertex_count * sizeof(uint32_t));
+  memset(cost, 0xFF, graph->vertex_count * sizeof(cost_t));
   bitmap_t visited = bitmap_init_cpu(graph->vertex_count);
 
   // Initialize the state of the source vertex
@@ -303,7 +303,7 @@ error_t bfs_cpu(graph_t* graph, vid_t source_id, uint32_t* cost) {
     // level is a local variable to each thread, having a separate copy per
     // thread reduces the overhead of cache coherency protocol compared to
     // the case where level is shared
-    uint32_t level = 0;
+    cost_t level = 0;
     // while the current level has vertices to be processed.
     while (!finished) {
       // The following barrier is necessary to ensure that all threads have

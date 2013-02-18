@@ -19,7 +19,7 @@ using ::testing::Values;
 // Details on how to use TestWithParam<T> can be found at:
 // http://code.google.com/p/googletest/source/browse/trunk/samples/sample7_unittest.cc
 
-typedef error_t(*BFSFunction)(graph_t*, vid_t, uint32_t*);
+typedef error_t(*BFSFunction)(graph_t*, vid_t, cost_t*);
 
 // This is to allow testing the vanilla bfs functions and the hybrid one
 // that is based on the framework. Note that have a different signature
@@ -37,7 +37,7 @@ class BFSTest : public TestWithParam<bfs_param_t*> {
     bfs_param = GetParam();
   }
 
-  error_t TestGraph(graph_t* graph, vid_t src, uint32_t* cost) {
+  error_t TestGraph(graph_t* graph, vid_t src, cost_t* cost) {
     if (bfs_param->hybrid) {
       totem_attr_t attr = TOTEM_DEFAULT_ATTR;
       attr.push_msg_size = 1;
@@ -69,17 +69,17 @@ TEST_P(BFSTest, Empty) {
 TEST_P(BFSTest, SingleNode) {
   graph_t* graph;
   graph_initialize(DATA_FOLDER("single_node.totem"), false, &graph);
-  uint32_t* cost = (uint32_t*)mem_alloc(graph->vertex_count * sizeof(uint32_t));
+  cost_t* cost = (cost_t*)mem_alloc(graph->vertex_count * sizeof(cost_t));
   EXPECT_EQ(SUCCESS, TestGraph(graph, 0, cost));
-  EXPECT_EQ((uint32_t)0, cost[0]);
+  EXPECT_EQ((cost_t)0, cost[0]);
   EXPECT_EQ(FAILURE, TestGraph(graph, 1, cost));
   graph_finalize(graph);
   mem_free(cost);
 
   graph_initialize(DATA_FOLDER("single_node_loop.totem"), false, &graph);
-  cost = (uint32_t*)mem_alloc(graph->vertex_count * sizeof(uint32_t));
+  cost = (cost_t*)mem_alloc(graph->vertex_count * sizeof(cost_t));
   EXPECT_EQ(SUCCESS, TestGraph(graph, 0, cost));
-  EXPECT_EQ((uint32_t)0, cost[0]);
+  EXPECT_EQ((cost_t)0, cost[0]);
   EXPECT_EQ(FAILURE, TestGraph(graph, 1, cost));
   mem_free(cost);
   graph_finalize(graph);
@@ -89,29 +89,29 @@ TEST_P(BFSTest, SingleNode) {
 TEST_P(BFSTest, EmptyEdges) {
   graph_t* graph;
   graph_initialize(DATA_FOLDER("disconnected_1000_nodes.totem"), false, &graph);
-  uint32_t* cost = (uint32_t*)mem_alloc(graph->vertex_count * sizeof(uint32_t));
+  cost_t* cost = (cost_t*)mem_alloc(graph->vertex_count * sizeof(cost_t));
 
   // First vertex as source
   vid_t source = 0;
   EXPECT_EQ(SUCCESS, TestGraph(graph, source, cost));
-  EXPECT_EQ((uint32_t)0, cost[source]);
+  EXPECT_EQ((cost_t)0, cost[source]);
   for(vid_t vertex = source + 1; vertex < graph->vertex_count; vertex++) {
-    EXPECT_EQ(INFINITE, cost[vertex]);
+    EXPECT_EQ(INF_COST, cost[vertex]);
   }
 
   // Last vertex as source
   source = graph->vertex_count - 1;
   EXPECT_EQ(SUCCESS, TestGraph(graph, source, cost));
-  EXPECT_EQ((uint32_t)0, cost[source]);
+  EXPECT_EQ((cost_t)0, cost[source]);
   for(vid_t vertex = source; vertex < graph->vertex_count - 1; vertex++){
-    EXPECT_EQ(INFINITE, cost[vertex]);
+    EXPECT_EQ(INF_COST, cost[vertex]);
   }
 
   // A vertex in the middle as source
   source = 199;
   EXPECT_EQ(SUCCESS, TestGraph(graph, source, cost));
   for(vid_t vertex = 0; vertex < graph->vertex_count; vertex++) {
-    EXPECT_EQ((vertex == source) ? (uint32_t)0 : INFINITE, cost[vertex]);
+    EXPECT_EQ((vertex == source) ? (cost_t)0 : INF_COST, cost[vertex]);
   }
 
   // Non existent vertex source
@@ -125,7 +125,7 @@ TEST_P(BFSTest, EmptyEdges) {
 TEST_P(BFSTest, Chain) {
   graph_t* graph;
   graph_initialize(DATA_FOLDER("chain_1000_nodes.totem"), false, &graph);
-  uint32_t* cost = (uint32_t*)mem_alloc(graph->vertex_count * sizeof(uint32_t));
+  cost_t* cost = (cost_t*)mem_alloc(graph->vertex_count * sizeof(cost_t));
 
   // First vertex as source
   vid_t source = 0;
@@ -146,7 +146,7 @@ TEST_P(BFSTest, Chain) {
   source = 199;
   EXPECT_EQ(SUCCESS, TestGraph(graph, source, cost));
   for(vid_t vertex = 0; vertex < graph->vertex_count; vertex++) {
-    EXPECT_EQ((uint32_t)abs(source - vertex), cost[vertex]);
+    EXPECT_EQ((cost_t)abs(source - vertex), cost[vertex]);
   }
 
   // Non existent vertex source
@@ -161,29 +161,29 @@ TEST_P(BFSTest, CompleteGraph) {
   graph_t* graph;
   graph_initialize(DATA_FOLDER("complete_graph_300_nodes.totem"), false,
                    &graph);
-  uint32_t* cost = (uint32_t*)mem_alloc(graph->vertex_count * sizeof(uint32_t));
+  cost_t* cost = (cost_t*)mem_alloc(graph->vertex_count * sizeof(cost_t));
 
   // First vertex as source
   vid_t source = 0;
   EXPECT_EQ(SUCCESS, TestGraph(graph, source, cost));
-  EXPECT_EQ((uint32_t)0, cost[source]);
+  EXPECT_EQ((cost_t)0, cost[source]);
   for(vid_t vertex = source + 1; vertex < graph->vertex_count; vertex++){
-    EXPECT_EQ((uint32_t)1, cost[vertex]);
+    EXPECT_EQ((cost_t)1, cost[vertex]);
   }
 
   // Last vertex as source
   source = graph->vertex_count - 1;
   EXPECT_EQ(SUCCESS, TestGraph(graph, source, cost));
-  EXPECT_EQ((uint32_t)0, cost[source]);
+  EXPECT_EQ((cost_t)0, cost[source]);
   for(vid_t vertex = 0; vertex < source; vertex++) {
-    EXPECT_EQ((uint32_t)1, cost[vertex]);
+    EXPECT_EQ((cost_t)1, cost[vertex]);
   }
 
   // A vertex source in the middle
   source = 199;
   EXPECT_EQ(SUCCESS, TestGraph(graph, source, cost));
   for(vid_t vertex = 0; vertex < graph->vertex_count; vertex++) {
-    EXPECT_EQ((uint32_t)((source == vertex) ? 0 : 1), cost[vertex]);
+    EXPECT_EQ((cost_t)((source == vertex) ? 0 : 1), cost[vertex]);
   }
 
   // Non existent vertex source
@@ -197,31 +197,31 @@ TEST_P(BFSTest, CompleteGraph) {
 TEST_P(BFSTest, Star) {
   graph_t* graph;
   graph_initialize(DATA_FOLDER("star_1000_nodes.totem"), false, &graph);
-  uint32_t* cost = (uint32_t*)mem_alloc(graph->vertex_count * sizeof(uint32_t));
+  cost_t* cost = (cost_t*)mem_alloc(graph->vertex_count * sizeof(cost_t));
 
   // First vertex as source
   vid_t source = 0;
   EXPECT_EQ(SUCCESS, TestGraph(graph, source, cost));
-  EXPECT_EQ((uint32_t)0, cost[source]);
+  EXPECT_EQ((cost_t)0, cost[source]);
   for(vid_t vertex = source + 1; vertex < graph->vertex_count; vertex++){
-    EXPECT_EQ((uint32_t)1, cost[vertex]);
+    EXPECT_EQ((cost_t)1, cost[vertex]);
   }
 
   // Last vertex as source
   source = graph->vertex_count - 1;
   EXPECT_EQ(SUCCESS, TestGraph(graph, source, cost));
-  EXPECT_EQ((uint32_t)0, cost[source]);
-  EXPECT_EQ((uint32_t)1, cost[0]);
+  EXPECT_EQ((cost_t)0, cost[source]);
+  EXPECT_EQ((cost_t)1, cost[0]);
   for(vid_t vertex = 1; vertex < source - 1; vertex++) {
-    EXPECT_EQ((uint32_t)2, cost[vertex]);
+    EXPECT_EQ((cost_t)2, cost[vertex]);
   }
 
   // A vertex source in the middle
   source = 199;
   EXPECT_EQ(SUCCESS, TestGraph(graph, source, cost));
-  EXPECT_EQ((uint32_t)1, cost[0]);
+  EXPECT_EQ((cost_t)1, cost[0]);
   for(vid_t vertex = 1; vertex < graph->vertex_count; vertex++) {
-    EXPECT_EQ((uint32_t)((source == vertex) ? 0 : 2), cost[vertex]);
+    EXPECT_EQ((cost_t)((source == vertex) ? 0 : 2), cost[vertex]);
   }
 
   // Non existent vertex source

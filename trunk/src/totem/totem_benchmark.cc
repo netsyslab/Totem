@@ -20,7 +20,7 @@ const benchmark_attr_t BENCHMARKS[] = {
    "BFS", 
    1, 
    MSG_SIZE_ZERO, 
-   sizeof(uint32_t)
+   sizeof(cost_t)
   },
   {
     benchmark_pagerank, 
@@ -140,8 +140,8 @@ PRIVATE eid_t get_traversed_edges(graph_t* graph, void* benchmark_output) {
     case BENCHMARK_BFS:
       OMP(omp parallel for reduction(+ : trv_edges))
       for (vid_t vid = 0; vid < graph->vertex_count; vid++) {
-        uint32_t* cost = (uint32_t*)benchmark_output;
-        if (cost[vid] != INFINITE) {
+        cost_t* cost = (cost_t*)benchmark_output;
+        if (cost[vid] != INF_COST) {
           trv_edges += (graph->vertices[vid + 1] - graph->vertices[vid]);
         }
       }
@@ -150,7 +150,7 @@ PRIVATE eid_t get_traversed_edges(graph_t* graph, void* benchmark_output) {
       OMP(omp parallel for reduction(+ : trv_edges))
       for (vid_t vid = 0; vid < graph->vertex_count; vid++) {
         weight_t* distance = (weight_t*)benchmark_output;
-        if (distance[vid] != INFINITE) {
+        if (distance[vid] != WEIGHT_MAX) {
           trv_edges += (graph->vertices[vid + 1] - graph->vertices[vid]);
         }
       }
@@ -186,9 +186,9 @@ PRIVATE vid_t get_random_src(graph_t* graph) {
  */
 PRIVATE void benchmark_bfs(graph_t* graph, void* cost, totem_attr_t* attr) {
   if (options->platform == PLATFORM_CPU) {
-    bfs_cpu(graph, get_random_src(graph), (uint32_t*)cost);
+    bfs_cpu(graph, get_random_src(graph), (cost_t*)cost);
   } else {
-    CALL_SAFE(bfs_hybrid(get_random_src(graph), (uint32_t*)cost));
+    CALL_SAFE(bfs_hybrid(get_random_src(graph), (cost_t*)cost));
   }
 }
 

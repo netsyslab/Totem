@@ -13,8 +13,8 @@
 #include "totem_mem.h"
 
 extern __global__
-void vwarp_bfs_kernel(graph_t graph, uint32_t level, bool* finished,
-                      uint32_t* cost, uint32_t thread_count);
+void vwarp_bfs_kernel(graph_t graph, cost_t level, bool* finished,
+                      cost_t* cost, uint32_t thread_count);
 
 /**
  * Checks for input parameters and special cases. This is invoked at the
@@ -46,11 +46,11 @@ error_t check_special_cases(const graph_t* graph, bool* finished,
  */
 PRIVATE
 error_t initialize_gpu(const graph_t* graph, uint64_t vertex_count,
-                       graph_t** graph_d, uint32_t** dist_d,
+                       graph_t** graph_d, cost_t** dist_d,
                        bool** finished_d) {
   // Allocate space on GPU
   CHK_SUCCESS(graph_initialize_device(graph, graph_d), err);
-  CHK_CU_SUCCESS(cudaMalloc((void**)dist_d, vertex_count * sizeof(uint32_t)),
+  CHK_CU_SUCCESS(cudaMalloc((void**)dist_d, vertex_count * sizeof(cost_t)),
                  err_free_graph_d);
   CHK_CU_SUCCESS(cudaMalloc((void**)finished_d, sizeof(bool)),
                  err_free_dist_d);
@@ -69,7 +69,7 @@ error_t initialize_gpu(const graph_t* graph, uint64_t vertex_count,
  * resources.
  */
 PRIVATE
-error_t finalize_gpu(graph_t* graph_d, uint32_t* dist_d, bool* finished_d) {
+error_t finalize_gpu(graph_t* graph_d, cost_t* dist_d, bool* finished_d) {
   graph_finalize_device(graph_d);
   cudaFree(dist_d);
   cudaFree(finished_d);
@@ -81,15 +81,15 @@ error_t finalize_gpu(graph_t* graph_d, uint32_t* dist_d, bool* finished_d) {
  */
 PRIVATE
 error_t closeness_apsp_gpu(const graph_t* graph, vid_t source, graph_t* graph_d,
-                           uint32_t* dist, uint32_t* dist_d, bool* finished_d) {
+                           cost_t* dist, cost_t* dist_d, bool* finished_d) {
   // {} used to limit scope and avoid problems with error handles.
   {
   dim3 blocks;
   dim3 threads_per_block;
 
-  CHK_CU_SUCCESS(cudaMemset(dist_d, -1, graph->vertex_count * sizeof(uint32_t)),
+  CHK_CU_SUCCESS(cudaMemset(dist_d, 0xFF, graph->vertex_count * sizeof(cost_t)),
                  err);
-  CHK_CU_SUCCESS(cudaMemset(&(dist_d[source]), 0, sizeof(uint32_t)), err);
+  CHK_CU_SUCCESS(cudaMemset(&(dist_d[source]), 0, sizeof(cost_t)), err);
   CHK_CU_SUCCESS(cudaDeviceSynchronize(), err);
 
   bool finished = false;
@@ -115,13 +115,13 @@ error_t closeness_apsp_gpu(const graph_t* graph, vid_t source, graph_t* graph_d,
  * Calculates closeness centrality scores from the given BFS solution.
  */
 PRIVATE
-error_t calculate_closeness(const graph_t* graph, vid_t source, uint32_t* dists,
+error_t calculate_closeness(const graph_t* graph, vid_t source, cost_t* dists,
                             weight_t* closeness_centrality) {
   uint32_t connected = graph->vertex_count;
   uint64_t sum = 0;
   // TODO (greg): Move this to the GPU
   for (vid_t v = 0; v < graph->vertex_count; v++) {
-    if (dists[v] == (uint32_t)-1) {
+    if (dists[v] == INF_COST) {
       connected--;
     } else {
       sum += dists[v];
@@ -153,12 +153,11 @@ error_t closeness_unweighted_gpu(const graph_t* graph,
   // Allocate space for the results
   weight_t* closeness_centrality =
     (weight_t*)mem_alloc(graph->vertex_count * sizeof(weight_t));
-  uint32_t* dists =
-    (uint32_t*)mem_alloc(graph->vertex_count * sizeof(uint32_t));
+  cost_t* dists = (cost_t*)mem_alloc(graph->vertex_count * sizeof(cost_t));
 
   // Allocate memory and initialize state on the GPU
   graph_t* graph_d;
-  uint32_t* dist_d;
+  cost_t* dist_d;
   bool* finished_d;
 
   CHK_SUCCESS(initialize_gpu(graph, graph->vertex_count, &graph_d, &dist_d,
@@ -169,13 +168,13 @@ error_t closeness_unweighted_gpu(const graph_t* graph,
   // closeness centrality for each vertex
   for (vid_t source = 0; source < graph->vertex_count; source++) {
     // APSP
-    uint32_t dist = 0;
+    cost_t dist = 0;
     CHK_SUCCESS(closeness_apsp_gpu(graph, source, graph_d, &dist, dist_d,
                                   finished_d), err_free_all);
 
     // Count connected and calculate closeness centrality
     CHK_CU_SUCCESS(cudaMemcpy(dists, dist_d, graph->vertex_count
-                              * sizeof(uint32_t), cudaMemcpyDeviceToHost),
+                              * sizeof(cost_t), cudaMemcpyDeviceToHost),
                    err_free_all);
     CHK_CU_SUCCESS(cudaDeviceSynchronize(), err_free_all);
     CHK_SUCCESS(calculate_closeness(graph, source, dists, closeness_centrality),
@@ -216,17 +215,16 @@ error_t closeness_unweighted_cpu(const graph_t* graph,
     (weight_t*)mem_alloc(graph->vertex_count * sizeof(weight_t));
 
   // Allocate and initialize state for the problem
-  uint32_t* dists =
-    (uint32_t*)mem_alloc(graph->vertex_count * sizeof(uint32_t));
+  cost_t* dists = (cost_t*)mem_alloc(graph->vertex_count * sizeof(cost_t));
   memset(closeness_centrality, 0.0, graph->vertex_count * sizeof(weight_t));
 
   for (vid_t source = 0; source < graph->vertex_count; source++) {
     // Initialize state for SSSP
-    memset(dists, -1, graph->vertex_count * sizeof(uint32_t));
+    memset(dists, 0xFF, graph->vertex_count * sizeof(cost_t));
     dists[source] = 0;
 
     // SSSP and path counting
-    uint32_t dist = 0;
+    cost_t dist = 0;
     bool finished = false;
     while (!finished) {
       finished = true;
@@ -236,7 +234,7 @@ error_t closeness_unweighted_cpu(const graph_t* graph,
         for (eid_t i = graph->vertices[vertex_id];
              i < graph->vertices[vertex_id + 1]; i++) {
           const vid_t neighbor_id = graph->edges[i];
-          if (dists[neighbor_id] == (uint32_t)-1) {
+          if (dists[neighbor_id] == INF_COST) {
             finished = false;
             dists[neighbor_id] = dist + 1;
           }
