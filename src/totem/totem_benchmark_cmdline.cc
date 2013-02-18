@@ -11,13 +11,14 @@
  * An options instance that is used to configure the benchmark
  */
 PRIVATE benchmark_options_t options = {
-  NULL,           // graph_file
-  BENCHMARK_BFS,  // benchmark 
-  PLATFORM_CPU,   // platform
-  1,              // number of GPUs
-  5,              // repeat
-  50,             // alpha
-  PAR_RANDOM      // partitioning algorithm
+  NULL,                  // graph_file
+  BENCHMARK_BFS,         // benchmark 
+  PLATFORM_CPU,          // platform
+  1,                     // number of GPUs
+  omp_get_max_threads(), // number of CPU threads
+  5,                     // repeat
+  50,                    // alpha
+  PAR_RANDOM             // partitioning algorithm
 };
 
 /**
@@ -40,23 +41,24 @@ PRIVATE void display_help(char* exe_name, int exit_err) {
          "     %d: PageRank\n"
          "     %d: Dijkstra\n"
          "     %d: Betweenness\n"
+         "  -gNUM [0-%d] Number of GPUs to use. This is applicable for GPU\n"
+         "        and Hybrid platforms only (default 1).\n"
+         "  -iNUM Partitioning Algorithm\n"
+         "     %d: Random (default)\n"
+         "     %d: High degree nodes on CPU\n"
+         "     %d: Low degree nodes on CPU\n"
          "  -pNUM Platform\n"
          "     %d: Execute on CPU only (default)\n"
          "     %d: Execute on GPUs only\n"
          "     %d: Execute on the CPU and on the GPUs\n"
-         "  -gNUM [0-%d] Number of GPUs to use. This is applicable for GPU\n"
-         "         and Hybrid platforms only (default 1).\n"
-         "  -tNUM Partitioning Algorithm\n"
-         "     %d: Random (default)\n"
-         "     %d: High degree nodes on CPU\n"
-         "     %d: Low degree nodes on CPU\n"
          "  -rNUM [1-%d] Number of times an experiment is repeated or sources\n"
-         "         used to benchmark a traversal algorithm (default 5)\n"
+         "        used to benchmark a traversal algorithm (default 5)\n"
+         "  -tNUM [1-%d] Number of CPU threads to use (default %d).\n" 
          "  -h Print this help message\n",
          exe_name, BENCHMARK_BFS, BENCHMARK_PAGERANK, BENCHMARK_DIJKSTRA, 
-         BENCHMARK_BETWEENNESS, PLATFORM_CPU, PLATFORM_GPU, PLATFORM_HYBRID,
-         get_gpu_count(), PAR_RANDOM, PAR_SORTED_ASC, PAR_SORTED_DSC, 
-         REPEAT_MAX);
+         BENCHMARK_BETWEENNESS, get_gpu_count(), PAR_RANDOM, PAR_SORTED_ASC, 
+         PAR_SORTED_DSC, PLATFORM_CPU, PLATFORM_GPU, PLATFORM_HYBRID, 
+         REPEAT_MAX, omp_get_max_threads(), omp_get_max_threads());
   exit(exit_err);
 }
 
@@ -68,7 +70,7 @@ PRIVATE void display_help(char* exe_name, int exit_err) {
 benchmark_options_t* benchmark_cmdline_parse(int argc, char** argv) {
   optarg = NULL;
   int ch, benchmark, platform, par_algo;
-  while(((ch = getopt(argc, argv, "ha:b:t:p:g:r:")) != EOF)) {
+  while(((ch = getopt(argc, argv, "a:b:g:i:p:r:t:h")) != EOF)) {
     switch (ch) {
       case 'a':
         options.alpha = atoi(optarg);
@@ -85,7 +87,14 @@ benchmark_options_t* benchmark_cmdline_parse(int argc, char** argv) {
         }
         options.benchmark = (benchmark_t)benchmark;
         break;
-      case 't':
+      case 'g':
+        options.gpu_count = atoi(optarg);
+        if (options.gpu_count > get_gpu_count() || options.gpu_count < 0) {
+          fprintf(stderr, "Invalid number of GPUs %d\n", options.gpu_count);
+          display_help(argv[0], -1);
+        }
+        break;
+      case 'i':
         par_algo = atoi(optarg);
         if (par_algo >= PAR_MAX || par_algo < 0) {
           fprintf(stderr, "Invalid partitoining algorithm\n");
@@ -101,17 +110,17 @@ benchmark_options_t* benchmark_cmdline_parse(int argc, char** argv) {
         }
         options.platform = (platform_t)platform;
         break;
-      case 'g':
-        options.gpu_count = atoi(optarg);
-        if (options.gpu_count > get_gpu_count() || options.gpu_count < 0) {
-          fprintf(stderr, "Invalid number of GPUs %d\n", options.gpu_count);
-          display_help(argv[0], -1);
-        }
-        break;
       case 'r':
         options.repeat = atoi(optarg);
         if (options.repeat > REPEAT_MAX || options.repeat <= 0) {
           fprintf(stderr, "Invalid repeat argument\n");
+          display_help(argv[0], -1);
+        }
+        break;
+      case 't':
+        options.thread_count = atoi(optarg);
+        if (options.thread_count <= 0) {
+          fprintf(stderr, "Invalid number of threads\n");
           display_help(argv[0], -1);
         }
         break;
