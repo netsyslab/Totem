@@ -9,7 +9,7 @@
 #  * file:<graph file>\tbenchmark:<BFS|PageRank|etc>\tvertices:<number>\t
 #  * edges:<number>\tpartitioning:<RAND|HIGH|LOW>\tplatform:<CPU|GPU|HYBRID>\t
 #  * alpha:<percentage of edges on the CPU>\trepeat:<number of runs>\t
-#  * thread_count:<CPU threads>\tthread_bind:<TRUE|FALSE>\t
+#  * gpu_count:<number>\tthread_count:<CPU threads>\tthread_bind:<TRUE|FALSE>\t
 #  * time_init:<Totem init time>\ttime_par:<Graph partitoining time>\t"
 #  * rmt_vertex:<% of remote vertices>\trmt_edge:<% of remote edges>\t
 #  * beta:<% of remote edges after aggregation>
@@ -90,6 +90,13 @@ PAR_HIGH="1"
 PAR_LOW="2"
 PAR_STR=("RAN" "HIGH" "LOW")
 
+# Number of CPU sockets and threads
+THREADS_PER_SOCKET=`cat /proc/cpuinfo | \
+            grep "physical.*id.*:.*0" | wc -l`
+MAX_THREAD_COUNT=`cat /proc/cpuinfo | \
+            grep "physical.*id.*:.[[:digit:]]" | wc -l`
+MAX_SOCKET_COUNT=$(($MAX_THREAD_COUNT / $THREADS_PER_SOCKET))
+
 ##########################
 # Configuration Variables
 ##########################
@@ -99,7 +106,6 @@ BENCHMARK=${BFS}
 RESULT_BASE="../results/"
 TOTEM_EXE="../totem/totem"
 MAX_GPU_COUNT=1
-MAX_SOCKET_COUNT=2
 
 ###############################
 # Process command line options
@@ -124,9 +130,13 @@ while getopts 'a:b:g:hr:t:' options; do
 done
 shift $(($OPTIND - 1))
 
-if [ $# -ne 1 -o ! -f $1 ]; then
+if [ $# -ne 1 ]; then
     printf "\nError: Missing workload\n\n"
     usage
+    exit -1
+fi
+if [ ! -f $1 ]; then
+    printf "\nError: Workload $1 does not exist\n\n"
     exit -1
 fi
 
@@ -135,7 +145,7 @@ fi
 ##############################
 # The workload to benchmark
 WORKLOAD="$1"
-WORKLOAD_NAME=`basename ${WORKLOAD}`
+WORKLOAD_NAME=`basename ${WORKLOAD} | awk -F. '{print $1}'`
 
 # Results
 RESULT_DIR=${RESULT_BASE}"/"${BENCHMARK_STR[$BENCHMARK]}"/"${WORKLOAD_NAME}
@@ -148,21 +158,11 @@ LOG_FAILED_RUNS=${RESULT_DIR}"/logFailedRuns"
 # Number of execution rounds (sources for traversal-based algorithms)
 REPEAT_COUNT=${BENCHMARK_REPEAT[$BENCHMARK]}
 
-# Configures OpenMP to run on one socket only
-# TODO(abdullah): automatically figure out the number of hardware threads
-#                 in the system, and how they map to the available sockets
-function setup_one_socket() {
-    export OMP_PROC_BIND=true
-    export OMP_NUM_THREADS=12
-    export GOMP_CPU_AFFINITY="0-5 12-17"    
-}
-
-# Configures OpenMP to run on two sockets
-function setup_two_sockets() {
-    export OMP_PROC_BIND=true
-    export OMP_NUM_THREADS=24
-    export GOMP_CPU_AFFINITY="0-5 12-17 6-11 18-23"
-}
+# Configure OpenMP to bind OMP threads to specific hardware threads such that
+# the first half is on socket one, and the other on socket two
+# TODO(abdullah): detect the mapping automatically
+export GOMP_CPU_AFFINITY="0-5 12-17 6-11 18-23"
+export OMP_PROC_BIND=true
 
 # Invokes totem executable for a specific set of parameters
 function run() {
@@ -172,41 +172,42 @@ function run() {
     local PAR=$4;
     local ALPHA=$5;
 
-    setup_one_socket;
-    if [ $SOCKET_COUNT -eq 2 ]; then
-       setup_two_sockets;
-    fi
-
+    # Set the number of threads
+    THREAD_COUNT=$(($SOCKET_COUNT*$THREADS_PER_SOCKET))
     if [ $PLATFORM -eq ${GPU} ]; then
         SOCKET_COUNT=0
+        THREAD_COUNT=$MAX_THREAD_COUNT
     fi
 
     # Set the output file where the results will be dumped
-    OUTPUT=${WORKLOAD_NAME}_${BENCHMARK_STR[$BENCHMARK]}_${SOCKET_COUNT};
-    OUTPUT=${OUTPUT}_${GPU_COUNT}_${PAR_STR[$PAR]}_${ALPHA}.dat;
+    OUTPUT=${BENCHMARK_STR[$BENCHMARK]}_${SOCKET_COUNT}_${GPU_COUNT};
+    OUTPUT=${OUTPUT}_${PAR_STR[$PAR]}_${ALPHA}_${WORKLOAD_NAME}.dat;
     DATE=`date`
     printf "${DATE}: ${OUTPUT} b${BENCHMARK} a${ALPHA} p${PLATFORM} " >> ${LOG};
-    printf " t${PAR} g${GPU_COUNT} r${REPEAT_COUNT} ${WORKLOAD}\n" >> ${LOG};
-    ${TOTEM_EXE} -b${BENCHMARK} -a${ALPHA} -p${PLATFORM} -t${PAR} \
-        -g${GPU_COUNT} -r${REPEAT_COUNT} ${WORKLOAD} &>> ${RESULT_DIR}/${OUTPUT}
+    printf "i${PAR} g${GPU_COUNT} t${THREAD_COUNT} r${REPEAT_COUNT} " >> ${LOG};
+    printf "${WORKLOAD}\n" >> ${LOG};
+    ${TOTEM_EXE} -b${BENCHMARK} -a${ALPHA} -p${PLATFORM} -i${PAR} \
+        -g${GPU_COUNT} -t${THREAD_COUNT} -r${REPEAT_COUNT} \
+        ${WORKLOAD} &>> ${RESULT_DIR}/${OUTPUT}
 
     # Check the exit status, and log any problems
     exit_status=$?
     if [ $exit_status -ne 0 ]; then
-	date &>> ${LOG_FAILED_RUNS}
+        date &>> ${LOG_FAILED_RUNS}
         echo "${RESULT_DIR}/${OUTPUT}" &>> ${LOG_FAILED_RUNS}
         cat "${RESULT_DIR}/${OUTPUT}" &>> ${LOG_FAILED_RUNS}
-	echo "" &>> ${LOG_FAILED_RUNS}
+        echo "" &>> ${LOG_FAILED_RUNS}
         rm "${RESULT_DIR}/${OUTPUT}"
     fi
 }
 
 ## GPU Only, note that alpha has no effect when running only on GPU
 alpha=0
-run ${GPU} ${MAX_SOCKET_COUNT} 1 ${PAR_RAN} ${alpha}
+gpu_count=1
+run ${GPU} ${MAX_SOCKET_COUNT} ${gpu_count} ${PAR_RAN} ${alpha}
 for gpu_count in $(seq 2 ${MAX_GPU_COUNT}); do
     for par_algo in ${PAR_RAN} ${PAR_HIGH} ${PAR_LOW}; do
-	run ${GPU} ${MAX_SOCKET_COUNT} $gpu_count ${par_algo} ${alpha}
+        run ${GPU} ${MAX_SOCKET_COUNT} $gpu_count ${par_algo} ${alpha}
     done
 done
 
