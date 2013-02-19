@@ -25,15 +25,14 @@ library("igraph");
 data <- read.table(filename,head=FALSE);
 
 # Fit the power law and gets the alpha.
-a = power.law.fit(data$V1);
-summary(a);
+power.law.fit(data$V1)
 
 # Plot the rank-distribution.
 imgfile <- paste(filename,"_plot.png", sep="");
 png(filename=imgfile);
 plot(sort(data$V1, decreasing=T), log="xy", ylab="Norm. Degree", xlab="Rank", 
      main=main_title);
-dev.off()
+dev.off();
 
 # Plots the histogram.
 imgfile <- paste(filename,"_hist.png", sep="");
