@@ -128,6 +128,24 @@ typedef uint16_t cost_t;
 const cost_t INF_COST = (cost_t)INFINITE;
 
 /**
+ * Specifies a type for centrality scores. This is useful to allow future
+ * changes in the precision and value range that centrality scores can hold.
+ */
+typedef float score_t;
+
+/**
+ * The Betweenness Centrality algorithm accepts an epsilon value to determine
+ * the amount of error that is tolerable, along with how long the algorithm
+ * will take to complete. A value of 0.0 will indicate that the algorithm
+ * should compute an exact metric. For approximate Betweenness Centrality, we 
+ * are currently using a value of 1.0, which could change. This value was 
+ * initially selected as it allows the algorithm to complete in a more 
+ * reasonable amount of time.
+ */
+const double CENTRALITY_EXACT = 0.0;
+const double CENTRALITY_APPROXIMATE = 1.0;
+
+/**
  * A graph type based on adjacency list representation.
  * Modified from [Harish07]:
  * A graph G(V,E) is represented as adjacency list, with adjacency lists packed
@@ -398,9 +416,9 @@ error_t get_components_cpu(graph_t* graph, component_set_t** comp_set_ret);
  * @return generic success or failure
  */
 error_t betweenness_unweighted_cpu(const graph_t* graph,
-                                   weight_t* centrality_score);
+                                   score_t* centrality_score);
 error_t betweenness_unweighted_gpu(const graph_t* graph,
-                                   weight_t* centrality_score);
+                                   score_t* centrality_score);
 
 /**
  * Calculate betweenness centrality scores for unweighted graphs using the
@@ -411,17 +429,20 @@ error_t betweenness_unweighted_gpu(const graph_t* graph,
  * @return generic success or failure
  */
 error_t betweenness_unweighted_shi_gpu(const graph_t* graph,
-                                       weight_t* centrality_score);
+                                       score_t* centrality_score);
 
 /**
  * Calculate betweenness centrality scores for graphs using the algorithm
  * described in Chapter 2 of GPU Computing Gems (Algorithm 1)
  * @param[in] graph the graph for which the centrality measure is calculated
+ * @param[in] epsilon determines how precise the results of the algorithm will
+ *            be, and thus also how long it will take to compute
  * @param[out] centrality_score the output list of betweenness centrality
  *             scores per vertex
  * @return generic success or failure
  */
-error_t betweenness_cpu(const graph_t* graph, weight_t* centrality_score);
+error_t betweenness_cpu(const graph_t* graph, double epsilon, 
+                        score_t* centrality_score);
 
 /**
  * Implements the parallel Brandes closeness centrality algorithm using

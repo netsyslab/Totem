@@ -222,7 +222,7 @@ PRIVATE void benchmark_dijkstra(graph_t* graph, void* distance,
 PRIVATE void benchmark_betweenness(graph_t* graph, void* betweenness_score, 
                                    totem_attr_t* attr) {
   if (options->platform == PLATFORM_CPU) {
-    betweenness_cpu(graph, (weight_t*)betweenness_score);
+    betweenness_cpu(graph, CENTRALITY_APPROXIMATE, (score_t*)betweenness_score);
   } else {
       assert(false);
   }

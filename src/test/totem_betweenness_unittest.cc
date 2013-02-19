@@ -14,13 +14,23 @@
 using ::testing::TestWithParam;
 using ::testing::Values;
 
+/**
+ * Wrapper for betweenness_cpu to provide the singature expected for use in
+ * the unit tests with the other Betweenness Centrality algorithms
+ */
+PRIVATE error_t betweenness_cpu_exact(const graph_t* graph,
+                                      score_t* betweenness_score) {
+  // call betweenness_cpu for use in unit test framework with exact precision
+  return betweenness_cpu(graph, CENTRALITY_EXACT, betweenness_score);
+}   
+
 // The following implementation relies on
 // TestWithParam<BetwCentralityFunction> to test the two versions of Betweenness
 // Centrality implemented: CPU and GPU.  Details on how to use TestWithParam<T>
 // can be found at:
 // http://code.google.com/p/googletest/source/browse/trunk/samples/sample7_unittest.cc
 
-typedef error_t(*BetwCentralityFunction)(const graph_t*, weight_t*);
+typedef error_t(*BetwCentralityFunction)(const graph_t*, score_t*);
 
 class BetweennessCentralityTest : public TestWithParam<BetwCentralityFunction> {
  public:
@@ -40,7 +50,7 @@ class BetweennessCentralityTest : public TestWithParam<BetwCentralityFunction> {
  protected:
    BetwCentralityFunction betweenness;
    graph_t* graph;
-   weight_t* centrality_score;
+   score_t* centrality_score;
 };
 
 // Tests BetwCentrality for empty graphs.
@@ -59,23 +69,23 @@ TEST_P(BetweennessCentralityTest, Empty) {
 TEST_P(BetweennessCentralityTest, SingleNodeUnweighted) {
   EXPECT_EQ(SUCCESS, graph_initialize(DATA_FOLDER("single_node.totem"),
                                       false, &graph));
-  centrality_score = (weight_t*)mem_alloc(graph->vertex_count * 
-                                          sizeof(weight_t));
+  centrality_score = (score_t*)mem_alloc(graph->vertex_count * 
+                                          sizeof(score_t));
 
   EXPECT_EQ(SUCCESS, betweenness(graph, centrality_score));
-  EXPECT_EQ((weight_t)0.0, centrality_score[0]);
+  EXPECT_EQ((score_t)0.0, centrality_score[0]);
 }
 
 // Tests BetwCentrality for a chain of 100 nodes.
 TEST_P(BetweennessCentralityTest, Chain100Unweighted) {
   graph_initialize(DATA_FOLDER("chain_100_nodes_weight_directed.totem"), false,
                    &graph);
-  centrality_score = (weight_t*)mem_alloc(graph->vertex_count * 
-                                          sizeof(weight_t));
+  centrality_score = (score_t*)mem_alloc(graph->vertex_count * 
+                                          sizeof(score_t));
 
   // First vertex as source
   EXPECT_EQ(SUCCESS, betweenness(graph, centrality_score));
-  weight_t centrality[50];
+  score_t centrality[50];
   for (vid_t i = 0; i < 50; i++) {
     centrality[i] = (99 - i) * (i);
   }
@@ -90,8 +100,8 @@ TEST_P(BetweennessCentralityTest, CompleteGraphUnweighted) {
   EXPECT_EQ(SUCCESS,
             graph_initialize(DATA_FOLDER("complete_graph_300_nodes.totem"),
                              false, &graph));
-  centrality_score = (weight_t*)mem_alloc(graph->vertex_count * 
-                                          sizeof(weight_t));
+  centrality_score = (score_t*)mem_alloc(graph->vertex_count * 
+                                          sizeof(score_t));
 
   EXPECT_EQ(SUCCESS, betweenness(graph, centrality_score));
   for(vid_t vertex = 0; vertex < graph->vertex_count; vertex++){
@@ -109,7 +119,7 @@ INSTANTIATE_TEST_CASE_P(BetwCentralityGPUAndCPUTest, BetweennessCentralityTest,
                         Values(&betweenness_unweighted_cpu,
                                &betweenness_unweighted_gpu,
                                &betweenness_unweighted_shi_gpu,
-                               &betweenness_cpu));
+                               &betweenness_cpu_exact));
 
 #else
 
