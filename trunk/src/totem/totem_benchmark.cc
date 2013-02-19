@@ -214,7 +214,6 @@ PRIVATE void benchmark_dijkstra(graph_t* graph, void* distance,
   } else {
     assert(false);
   }
-  mem_free(distance);
 }
 
 /**
@@ -227,7 +226,6 @@ PRIVATE void benchmark_betweenness(graph_t* graph, void* betweenness_score,
   } else {
       assert(false);
   }
-  mem_free(betweenness_score);
 }
 
 /**
