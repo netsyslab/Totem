@@ -65,7 +65,7 @@ void unweighted_sssp_preds_kernel(graph_t graph, vid_t* r_edges, int32_t dist,
 __global__
 void unweighted_back_prop_kernel(graph_t graph, vid_t* r_edges, int32_t* dists,
                                  vid_t* sigma, bool* preds, int32_t dist,
-                                 weight_t* delta);
+                                 score_t* delta);
 
 /**
  * Construct reverse edges so that we can easily find the source vertex for each

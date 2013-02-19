@@ -86,7 +86,7 @@ void unweighted_sssp_preds_kernel(graph_t graph, vid_t* r_edges, int32_t dist,
 __global__
 void unweighted_back_prop_kernel(graph_t graph, vid_t* r_edges, int32_t* dists,
                                  vid_t* sigma, bool* preds, int32_t dist,
-                                 weight_t* delta) {
+                                 score_t* delta) {
   const vid_t thread_id = THREAD_GLOBAL_INDEX;
   // For each edge (u, v), if u is a predecessor of v, add to its dependence
   if (thread_id < graph.edge_count) {
