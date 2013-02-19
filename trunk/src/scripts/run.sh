@@ -66,6 +66,9 @@ function usage() {
   echo "  -g  <max gpu count> maximum number of GPUs to use (default 1)"
   echo "  -r  <results base directory> (default ../results)"
   echo "  -t  <totem executable> (default ../totem/totem)"
+  echo "  -x  <maximum alpha> maximum value of alpha (the percentage of edges "
+  echo "                      in the CPU partition) to use for experiments on"
+  echo "                      hybrid platforms (default 95%)"
   echo "  -h  Print this usage message and exit"
 }
 
@@ -110,7 +113,7 @@ MAX_GPU_COUNT=1
 ###############################
 # Process command line options
 ###############################
-while getopts 'a:b:g:hr:t:' options; do
+while getopts 'a:b:g:hr:t:x:' options; do
   case $options in
     a)MIN_ALPHA="$OPTARG"
       ;;
@@ -123,6 +126,8 @@ while getopts 'a:b:g:hr:t:' options; do
     r)RESULT_BASE="$OPTARG"
       ;;
     t)TOTEM_EXE="$OPTARG"
+      ;;
+    x)MAX_ALPHA="$OPTARG"
       ;;
     ?)usage; exit -1;
       ;;

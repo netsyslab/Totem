@@ -39,7 +39,7 @@ if length(arg_list) != 3
 end
 alpha = str2double(arg_list{1});
 maxdeg = str2num(arg_list{2});
-saveat = arg_list{2};
+saveat = arg_list{3};
 
 % Create a power-law distribution of edge degree
 ddist = round(maxdeg^(alpha)./(1:maxdeg).^(alpha))';
