@@ -190,7 +190,7 @@ nnodes = sum(ddist);
 maxdeg = length(ddist);
 
 % Number of edges 
-nedges = dot((1:maxdeg)',ddist);
+nedges = dot((1:maxdeg)',ddist)
 
 if verbose
     fprintf('Constructing BTER graph with %d nodes and %d edges.\n', nnodes, nedges);
@@ -208,15 +208,19 @@ if verbose
 end
 
 % --- Bookkeeping on the blocks ---
-maxblk = nnodes;
-blksize = zeros(maxblk,1);
-blkrho = zeros(maxblk,1);
+% Abdullah: the following two arrays are not used in generating the graph
+% therefore, I am commenting them out to reduce memory footprint
+# maxblk = nnodes;
+# blksize = zeros(maxblk,1);
+# blkrho = zeros(maxblk,1);
 bloc = 1;
 
 % --- Degree Lists ---
 deglist = zeros(nnodes,1);
 deglist2 = zeros(nnodes,1);
-blklist = zeros(nnodes,1);
+% Abdullah: the following array is not used in generating the graph,
+% therefore I am commenting it out to reduce memory footprint
+% blklist = zeros(nnodes,1);
 
 % --- Handle degree 1 nodes ---
 deglist(1:p) = 1;
@@ -225,8 +229,12 @@ nloc = p + 1;
 ddist(1) = 0;
 
 % source/destination pairs for Phase 1
-edges = zeros(nedges,2);
+edges = zeros(nedges,2, 'int32');
 eloc = 1;
+
+if verbose
+    fprintf('Entering Phase 1 loop...\n');
+end
 
 % Phase 1 Loop
 d = 2;
@@ -240,6 +248,9 @@ while d <= maxdeg
     % Pick smallest d such that ddist > 0
     while (ddist(d) == 0)
         d = d + 1;
+        if verbose
+            fprintf("Phase 1 processing degree %d\n", d);
+        end
     end   
        
     % Fill up the pattern
@@ -270,9 +281,11 @@ while d <= maxdeg
     deglist2(nloc:nloc2) = pattern - rho*(psize-1);
     
     % Update block info
-    blklist(nloc:nloc2) = bloc;
-    blksize(bloc) = psize;
-    blkrho(bloc) = rho;
+    % Abdullah: the following arrays are not used in generating the graph
+    % therefore, I am commenting them out to reduce memory footprint
+    # blklist(nloc:nloc2) = bloc;
+    # blksize(bloc) = psize;
+    # blkrho(bloc) = rho;
     bloc = bloc+1;
     
     % Create ER graph and extract and save edges
@@ -290,8 +303,10 @@ while d <= maxdeg
 end
 
 % Resize the arrays
-blksize = blksize(1:bloc-1);
-blkrho = blkrho(1:bloc-1);
+% Abdullah: the following arrays are not used in generating the graph
+% therefore, I am commenting them out to reduce memory footprint
+# blksize = blksize(1:bloc-1);
+# blkrho = blkrho(1:bloc-1);
 edges = edges(1:eloc-1,:);
 
 % Create G1
@@ -301,9 +316,11 @@ if debug
     check(G1,'G1'); 
 end
 
-if verbose    
-    fprintf('Phase 1 Max Connectivity: %d%%\n', round(100*max(blkrho)));
-    fprintf('Phase 1 Min Connectivity: %d%%\n', round(100*min(blkrho)));
+if verbose
+    % Abdullah: the following printf statements access the previously 
+    % commented-out blkrho array, hence they are also commented-out
+    # fprintf('Phase 1 Max Connectivity: %d%%\n', round(100*max(blkrho)));
+    # fprintf('Phase 1 Min Connectivity: %d%%\n', round(100*min(blkrho)));
     fprintf('Phase 1 communities: %d\n', bloc-1);
     fprintf('Phase 1 edges: %d\n',nnz(G1));
 end
