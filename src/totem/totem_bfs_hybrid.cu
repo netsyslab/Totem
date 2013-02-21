@@ -16,10 +16,10 @@
  * per-partition specific state
  */
 typedef struct bfs_state_s {
-  cost_t* cost;     // one slot per vertex in the partition
+  cost_t*   cost;     // one slot per vertex in the partition
   bitmap_t* visited;  // a list of bitmaps, one for each remote partition
   bool*     finished; // points to the global finish flag
-  cost_t  level;    // current level being processed by the partition
+  cost_t    level;    // current level being processed by the partition
   dim3      blocks;   // kernel configuration parameters
   dim3      threads;
 } bfs_state_t;
@@ -34,14 +34,6 @@ cost_t* cost_g     = NULL;
  * GPU partitions
  */
 cost_t* cost_h     = NULL;
-
-/**
- * A global finish flag. This flag is set to true at the beginning of each
- * superstep. Any partition that still has vertices to process sets this
- * flag to false. There is no need to synchronize access to it since
- * there is only one possible write value (false).
- */
-bool* finished_g = NULL;
 
 /**
  * Source vertex partition and local vertex id
@@ -181,11 +173,6 @@ PRIVATE void bfs(partition_t* par) {
   state->level++;
 }
 
-PRIVATE void bfs_ss() {
-  // This is invoked once at the very beginning of a superstep
-  *finished_g = true;
-}
-
 PRIVATE inline void bfs_scatter_cpu(grooves_box_table_t* inbox, 
                                     bfs_state_t* state, bitmap_t* visited) {
   bitmap_t remotely_visited = (bitmap_t)inbox->push_values;
@@ -223,18 +210,6 @@ PRIVATE inline void bfs_scatter_gpu(grooves_box_table_t* inbox,
 }
 
 PRIVATE void bfs_scatter(partition_t* par) {
-  // this callback function is invoked at the end of a superstep. i.e., it is
-  // guaranteed at this point that all kernels has finished execution (remember
-  // that GPU kernels are inovked asynchronously, and messages to remote
-  // vertices has been communicated to the inboxes.
-  // The most important point here is that only at this stage it is guaranteed
-  // that, if a kernel has set the shared flag "finished_g" to false, this write
-  // has been propagated to the host memory.
-  if (*finished_g) {
-    engine_report_finished(par->id);
-    return;
-  }
-
   bfs_state_t* state = (bfs_state_t*)par->algo_state;
   for (int rmt_pid = 0; rmt_pid < engine_partition_count(); rmt_pid++) {
     if (rmt_pid == par->id) continue;
@@ -307,7 +282,7 @@ PRIVATE inline void bfs_init_gpu(partition_t* par) {
     CALL_CU_SAFE(cudaGetLastError());
   }
   CALL_CU_SAFE(cudaHostGetDevicePointer((void **)&(state->finished), 
-                                        (void *)finished_g, 0));
+                                        (void *)engine_get_finished_ptr(), 0));
   KERNEL_CONFIGURE(VWARP_WARP_SIZE * VWARP_BATCH_COUNT(vcount),
                    state->blocks, state->threads);
 }
@@ -324,7 +299,7 @@ PRIVATE inline void bfs_init_cpu(partition_t* par) {
       bitmap_reset_cpu(state->visited[pid], par->outbox[pid].count);
     }
   }
-  state->finished = finished_g;
+  state->finished = engine_get_finished_ptr();
   OMP(omp parallel for)
   for (vid_t v = 0; v < par->subgraph.vertex_count; v++) {
     state->cost[v] = INF_COST;
@@ -378,18 +353,10 @@ error_t bfs_hybrid(vid_t src, cost_t* cost) {
   if (finished) return rc;
 
   cost_g = cost;
-  // The global finish flag is allocated on the host using the
-  // cudaHostAllocMapped option which allows GPU kernels to access it directly
-  // from within the GPU. This flag is initialized to true in the algo_ss_kernel
-  // invoked at the beginning of each superstep (before the per-partition kernel
-  // callback. Any of the processors (partitions) set this flag to false if it
-  // still has work to do.
-  CALL_CU_SAFE(cudaHostAlloc((void **)&finished_g, sizeof(bool),
-                             cudaHostAllocPortable | cudaHostAllocMapped));
 
   // initialize the engine
   engine_config_t config = {
-    bfs_ss, bfs, bfs_scatter, NULL, bfs_init, bfs_finalize, bfs_aggregate, 
+    NULL, bfs, bfs_scatter, NULL, bfs_init, bfs_finalize, bfs_aggregate, 
     GROOVES_PUSH,
   };
   src_vid_g = GET_VERTEX_ID(engine_vertex_id_in_partition(src));
@@ -403,7 +370,6 @@ error_t bfs_hybrid(vid_t src, cost_t* cost) {
 
   // clean up and return
   if (engine_largest_gpu_partition()) mem_free(cost_h);
-  CALL_CU_SAFE(cudaFreeHost(finished_g));
-  cost_g = NULL; cost_h = NULL; finished_g = NULL;
+  cost_g = NULL; cost_h = NULL;
   return SUCCESS;
 }

@@ -132,9 +132,8 @@ PRIVATE void page_rank_incoming(partition_t* par) {
     assert(par->processor.type == PROCESSOR_CPU);
     page_rank_incoming_cpu(par);
   }
-  if (engine_superstep() == (PAGE_RANK_ROUNDS + 1)) {
-    engine_report_finished(par->id);
-  } else {
+  if (engine_superstep() < (PAGE_RANK_ROUNDS + 1)) {
+    engine_report_not_finished();
     page_rank_state_t* ps = (page_rank_state_t*)par->algo_state;
     rank_t* tmp = ps->rank;
     ps->rank = ps->rank_s;

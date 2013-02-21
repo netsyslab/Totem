@@ -29,17 +29,6 @@ inline PRIVATE void reset_algorithm_timers() {
 }
 
 /**
- * Returns true if all partitions reported a finished state
- */
-inline PRIVATE bool superstep_check_finished() {
-  bool finished = true;
-  for (int pid = 0; pid < context.pset->partition_count; pid++) {
-    finished &= context.finished[pid];
-  }
-  return finished;
-}
-
-/**
  * Blocks until all kernels initiated by the client have finished.
  */
 inline PRIVATE void superstep_compute_synchronize() {
@@ -116,7 +105,7 @@ inline PRIVATE void superstep_communicate() {
  */
 inline PRIVATE void superstep_next() {
   context.superstep++;
-  memset(context.finished, 0, context.pset->partition_count * sizeof(bool));
+  *context.finished = true;
 }
 
 PRIVATE void engine_aggregate() {
@@ -135,11 +124,11 @@ error_t engine_execute() {
   stopwatch_t stopwatch;
   stopwatch_start(&stopwatch);
   while (true) {
-    superstep_next();                      // prepare state for the next round
-    superstep_compute();                   // compute phase
-    if (superstep_check_finished()) break; // check for termination
-    superstep_communicate();               // communication/synchronize phase
-    if (superstep_check_finished()) break; // check for termination
+    superstep_next();             // prepare state for the next round
+    superstep_compute();          // compute phase
+    if (*context.finished) break; // check for termination
+    superstep_communicate();      // communication/synchronize phase
+    if (*context.finished) break; // check for termination
   }
   engine_aggregate();
   context.timing.alg_exec = stopwatch_elapsed(&stopwatch);
@@ -237,7 +226,14 @@ PRIVATE void init_context(graph_t* graph, totem_attr_t* attr) {
   memset(&context, 0, sizeof(engine_context_t));
   context.graph = graph;
   context.attr = *attr;
-  memset(context.finished, false,  MAX_PARTITION_COUNT * sizeof(bool));
+  // The global finish flag is allocated on the host using the
+  // cudaHostAllocMapped option which allows GPU kernels to access it directly
+  // from within the GPU. This flag is initialized to true at the beginning of 
+  // each superstep before the kernel callback. Any of the partitions set this
+  // flag to false if it still has work to do.
+  CALL_CU_SAFE(cudaHostAlloc((void **)&context.finished, sizeof(bool),
+                             cudaHostAllocPortable | cudaHostAllocMapped));
+  *context.finished = true;
   context.initialized = true;
 }
 
@@ -287,7 +283,7 @@ error_t engine_config(engine_config_t* config) {
   stopwatch_t stopwatch;
   stopwatch_start(&stopwatch);
   context.superstep = 0;
-  memset(context.finished, 0, context.pset->partition_count * sizeof(bool));
+  *context.finished = false;
   // callback the per-partition initialization function
   if (context.config.par_init_func) {
     for (int pid = 0; pid < context.pset->partition_count; pid++) {
@@ -302,5 +298,6 @@ error_t engine_config(engine_config_t* config) {
 void engine_finalize() {
   assert(context.initialized);
   context.initialized = false;
+  CALL_CU_SAFE(cudaFreeHost(context.finished));
   CALL_SAFE(partition_set_finalize(context.pset));
 }

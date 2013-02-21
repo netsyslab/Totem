@@ -190,10 +190,19 @@ void engine_finalize();
 error_t engine_execute();
 
 /**
- * Allows a partition to report that it has finished computing. Note that if all
- * partitions reported finish status, then the engine terminates
+ * Allows a partition to report that it has not finished computing. Note that 
+ * it is enough for one partition to call this function to continue the BSP
+ * cycle. If this is not called by any partition, the Totem terminates.
  */
-void engine_report_finished(uint32_t pid);
+void engine_report_not_finished();
+
+/* Returns a reference to the global finish flag. This flag is allocated using
+ * the cudaHostAllocMapped option which allows GPU kernels to access it directly
+ * from within the GPU. This flag is initialized to true at the beginning of 
+ * each superstep. The BSP cycle continues as long as at least one partition
+ * sets this flag to false.
+ */
+bool* engine_get_finished_ptr();
 
 /**
  * Returns the number of partitions
