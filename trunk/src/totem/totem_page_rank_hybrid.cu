@@ -190,8 +190,8 @@ PRIVATE void page_rank(partition_t* partition) {
     assert(partition->processor.type == PROCESSOR_CPU);
     page_rank_cpu(partition);
   }
-  if (engine_superstep() == PAGE_RANK_ROUNDS) {
-    engine_report_finished(partition->id);
+  if (engine_superstep() < PAGE_RANK_ROUNDS) {
+    engine_report_not_finished();
   }
 }
 

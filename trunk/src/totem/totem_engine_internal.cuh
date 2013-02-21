@@ -35,7 +35,7 @@ typedef struct engine_context_s {
   vid_t            largest_gpu_par;
   uint32_t         partition_count;
   totem_timing_t   timing;
-  bool             finished[MAX_PARTITION_COUNT];
+  bool*            finished;
   vid_t            vertex_count[MAX_PARTITION_COUNT];
   eid_t            edge_count[MAX_PARTITION_COUNT];
   vid_t            rmt_vertex_count[MAX_PARTITION_COUNT];
@@ -255,9 +255,12 @@ inline vid_t engine_largest_gpu_partition() {
   return context.largest_gpu_par;
 }
 
-inline void engine_report_finished(uint32_t pid) {
-  assert(pid < context.pset->partition_count);
-  context.finished[pid] = true;
+inline void engine_report_not_finished() {
+  *context.finished = false;
+}
+
+inline bool* engine_get_finished_ptr() {
+  return context.finished;
 }
 
 inline vid_t* engine_vertex_id_in_partition() {

@@ -58,8 +58,7 @@ void degree(partition_t* par) {
       assert(par->processor.type == PROCESSOR_CPU);
       degree_cpu(par);
     }
-  } else {
-    engine_report_finished(par->id);
+    engine_report_not_finished();
   }
 }
 
