@@ -18,28 +18,25 @@
 typedef struct bfs_state_s {
   cost_t*   cost;     // one slot per vertex in the partition
   bitmap_t* visited;  // a list of bitmaps, one for each remote partition
-  bool*     finished; // points to the global finish flag
+  bool*     finished; // points to Totem's finish flag
   cost_t    level;    // current level being processed by the partition
   dim3      blocks;   // kernel configuration parameters
   dim3      threads;
 } bfs_state_t;
 
 /**
- * Stores the final result
+ * state shared between all partitions
  */
-cost_t* cost_g     = NULL;
+typedef struct bfs_global_state_s {
+  cost_t*   cost;   // final output buffer
+  cost_t*   cost_h; // Used as a temporary buffer to receive the final 
+                    // result copied back from GPU partitions before being
+                    // copied again to the final output buffer
+                    // TODO(abdullah): push this buffer to be managed by Totem
+  vid_t     src;    // source vertex id (the id after partitioning)  
 
-/**
- * Used as a temporary buffer to host the final result produced by
- * GPU partitions
- */
-cost_t* cost_h     = NULL;
-
-/**
- * Source vertex partition and local vertex id
- */
-vid_t src_vid_g;
-int  src_pid_g;
+} bfs_global_state_t;
+bfs_global_state_t state_g = {NULL, NULL, 0};
 
 /**
  * Checks for input parameters and special cases. This is invoked at the
@@ -233,17 +230,19 @@ PRIVATE void bfs_aggregate(partition_t* par) {
   if (par->processor.type == PROCESSOR_CPU) {
     src_cost = state->cost;
   } else if (par->processor.type == PROCESSOR_GPU) {
-    CALL_CU_SAFE(cudaMemcpy(cost_h, state->cost, 
+    assert(state_g.cost_h);
+    CALL_CU_SAFE(cudaMemcpy(state_g.cost_h, state->cost, 
                             subgraph->vertex_count * sizeof(cost_t),
                             cudaMemcpyDefault));
-    src_cost = cost_h;
+    src_cost = state_g.cost_h;
   } else {
     assert(false);
   }
   // aggregate the results
+  assert(state_g.cost);
   OMP(omp parallel for)
   for (vid_t v = 0; v < subgraph->vertex_count; v++) {
-    cost_g[par->map[v]] = src_cost[v];
+    state_g.cost[par->map[v]] = src_cost[v];
   }
 }
 
@@ -273,12 +272,12 @@ PRIVATE inline void bfs_init_gpu(partition_t* par) {
   memset_device<<<state->blocks, state->threads, 0,
     par->streams[1]>>>(state->cost, INF_COST, vcount);
   CALL_CU_SAFE(cudaGetLastError());
-  if (src_pid_g == par->id) {
+  if (GET_PARTITION_ID(state_g.src) == par->id) {
     // For the source vertex, initialize cost.
     memset_device<<<state->blocks, state->threads, 0, par->streams[1]>>>
-      (&((state->cost)[src_vid_g]), (cost_t)0, 1);
+      (&((state->cost)[GET_VERTEX_ID(state_g.src)]), (cost_t)0, 1);
     bfs_init_kernel<<<state->blocks, state->threads, 0, par->streams[1]>>>
-      (visited[par->id], src_vid_g);
+      (visited[par->id], GET_VERTEX_ID(state_g.src));
     CALL_CU_SAFE(cudaGetLastError());
   }
   CALL_CU_SAFE(cudaHostGetDevicePointer((void **)&(state->finished), 
@@ -305,9 +304,9 @@ PRIVATE inline void bfs_init_cpu(partition_t* par) {
     state->cost[v] = INF_COST;
   }
   // initialize the cost of the source vertex 
-  if (src_pid_g == par->id) {
-    state->cost[src_vid_g] = 0;
-    bitmap_set_cpu(state->visited[par->id], src_vid_g);
+  if (GET_PARTITION_ID(state_g.src) == par->id) {
+    state->cost[GET_VERTEX_ID(state_g.src)] = 0;
+    bitmap_set_cpu(state->visited[par->id], GET_VERTEX_ID(state_g.src));
   }
 }
 
@@ -352,24 +351,24 @@ error_t bfs_hybrid(vid_t src, cost_t* cost) {
   error_t rc = check_special_cases(src, cost, &finished);
   if (finished) return rc;
 
-  cost_g = cost;
+  // initialize the global state
+  state_g.cost = cost;
+  state_g.src  = engine_vertex_id_in_partition(src);
 
   // initialize the engine
   engine_config_t config = {
     NULL, bfs, bfs_scatter, NULL, bfs_init, bfs_finalize, bfs_aggregate, 
-    GROOVES_PUSH,
+    GROOVES_PUSH
   };
-  src_vid_g = GET_VERTEX_ID(engine_vertex_id_in_partition(src));
-  src_pid_g = GET_PARTITION_ID(engine_vertex_id_in_partition(src));
   engine_config(&config);
   if (engine_largest_gpu_partition()) {
-    cost_h = (cost_t*)mem_alloc(engine_largest_gpu_partition() *
-                                  sizeof(cost_t));
+    state_g.cost_h = (cost_t*)mem_alloc(engine_largest_gpu_partition() *
+                                        sizeof(cost_t));
   }
   engine_execute();
 
   // clean up and return
-  if (engine_largest_gpu_partition()) mem_free(cost_h);
-  cost_g = NULL; cost_h = NULL;
+  if (engine_largest_gpu_partition()) mem_free(state_g.cost_h);
+  memset(&state_g, 0, sizeof(bfs_global_state_t));
   return SUCCESS;
 }
