@@ -280,6 +280,17 @@ error_t bfs_gpu(graph_t* graph, vid_t source_id, cost_t* cost) {
     return FAILURE;
 }
 
+PRIVATE bitmap_t initialize_cpu(graph_t* graph, vid_t source_id, cost_t* cost) {
+  // Initialize cost to INFINITE and create the vertices bitmap
+  memset(cost, 0xFF, graph->vertex_count * sizeof(cost_t));
+  bitmap_t visited = bitmap_init_cpu(graph->vertex_count);
+  
+  // Initialize the state of the source vertex
+  cost[source_id] = 0;
+  bitmap_set_cpu(visited, source_id);
+  return visited;
+}
+
 __host__
 error_t bfs_cpu(graph_t* graph, vid_t source_id, cost_t* cost) {
   // Check for special cases
@@ -287,13 +298,7 @@ error_t bfs_cpu(graph_t* graph, vid_t source_id, cost_t* cost) {
   error_t rc = check_special_cases(graph, source_id, cost, &finished);
   if (finished) return rc;
 
-  // Initialize cost to INFINITE and create the vertices bitmap
-  memset(cost, 0xFF, graph->vertex_count * sizeof(cost_t));
-  bitmap_t visited = bitmap_init_cpu(graph->vertex_count);
-
-  // Initialize the state of the source vertex
-  cost[source_id] = 0;
-  bitmap_set_cpu(visited, source_id);
+  bitmap_t visited = initialize_cpu(graph, source_id, cost);
 
   finished = false;
   // Within the following code segment, all threads execute in parallel the 
@@ -342,5 +347,133 @@ error_t bfs_cpu(graph_t* graph, vid_t source_id, cost_t* cost) {
     }
   } // omp parallel
   bitmap_finalize_cpu(visited);
+  return SUCCESS;
+}
+
+PRIVATE void allocate_frontiers(graph_t* graph, vid_t** currF, vid_t** nextF,
+                                vid_t*** localFs) {
+  int thread_count = omp_get_max_threads();
+  // allocate a local queue for each thread
+  *localFs = (vid_t**)malloc(thread_count * sizeof(vid_t*));
+  for (int tid = 0; tid < thread_count; tid++) {
+    // allocate space assuming the worst case: all the vertices are
+    // pushed to the local queue of a thread. 
+    // TODO(abdullah): reduce the memory footprint of the local stacks
+    //                 (e.g., coarse-grained dynamic expansion of stack size)
+    (*localFs)[tid] = (vid_t*)malloc(graph->vertex_count * sizeof(vid_t));
+    assert((*localFs)[tid]);
+  }
+  *currF = (vid_t*)malloc(graph->vertex_count * sizeof(vid_t));  
+  *nextF = (vid_t*)malloc(graph->vertex_count * sizeof(vid_t));  
+  assert(*currF && *nextF);  
+}
+
+PRIVATE void free_frontiers(vid_t* currF, vid_t* nextF, vid_t** localFs) {
+  int thread_count = omp_get_max_threads();
+  for (int tid = 0; tid < thread_count; tid++) {
+    free(localFs[tid]);
+  }
+  free(localFs);
+  free(currF);
+  free(nextF);
+}
+
+/* Based on the implementation by Agarwal et al.
+ * The implementation uses two arrays that maintains the current and next 
+ * frontier. The current frontier array contains the vertices that are being 
+ * visited in the current level. While the vertices in the current frontier
+ * are being processed, their not-visited neighbors are stored in the next 
+ * frontier array. Once the current level is done, the next frontier array 
+ * becomes the current frontier array, and the processing of the next level
+ * starts. To improve performance, this implementation uses what is called local
+ * next frontier arrays: each thread has a local next array that in the end 
+ * merged into the global next array. This improves performance by getting rid
+ * of the required synchronization if the threads were to access the global next
+ * array directly.
+ */
+__host__
+error_t bfs_queue_cpu(graph_t* graph, vid_t source_id, cost_t* cost) {
+  // Check for special cases
+  bool finished = false;
+  error_t rc = check_special_cases(graph, source_id, cost, &finished);
+  if (finished) return rc;
+  bitmap_t visited = initialize_cpu(graph, source_id, cost);
+
+  // Initialize queues
+  vid_t currF_index = 0;
+  vid_t nextF_index = 0;
+  vid_t* currF = NULL;
+  vid_t* nextF = NULL;
+  vid_t** localFs = NULL;
+  allocate_frontiers(graph, &currF, &nextF, &localFs);
+
+  // Do level 0 separatelly and parallelize across neighbors. 
+  // Only the source node is active in level 0
+  OMP(omp parallel for schedule(static))
+  for(vid_t v = graph->vertices[source_id]; 
+      v < graph->vertices[source_id + 1]; v++) {
+    vid_t nbr = graph->edges[v];
+    cost[nbr] = 1;
+    bitmap_set_cpu(visited, nbr);
+    nextF[__sync_fetch_and_add(&nextF_index, 1)] = nbr;
+  }
+
+
+  OMP(omp parallel)
+  {
+    // thread-local variables
+    cost_t level        = 1;
+    vid_t  localF_index = 0;
+    vid_t* localF       = localFs[omp_get_thread_num()];
+    
+    // while the current level has vertices to be processed.
+    while (nextF_index > 0) {
+      // The following barrier is necessary to ensure that all threads have
+      // checked the while condition before nextF_index is cleared for the next
+      // round
+      OMP(omp barrier)
+
+      // This "single" clause ensures that only one thread enters the 
+      // following block of code. Note that this close has an implicit 
+      // barrier
+      OMP(omp single)
+      {
+        // swap the current with the next queue
+        vid_t* tmp = currF;
+        currF = nextF;
+        nextF = tmp;
+        currF_index = nextF_index;
+        nextF_index = 0;
+      }
+      localF_index = 0;
+
+      // The "for" clause instructs openmp to run the loop in parallel. Each
+      // thread will be statically assigned a contiguous chunk of work.
+      OMP(omp for schedule(static))
+      for(vid_t q = 0; q < currF_index; q++) {
+        vid_t v = currF[q];
+        for (eid_t i = graph->vertices[v]; i < graph->vertices[v + 1]; i++) {
+          const vid_t nbr = graph->edges[i];
+          if (!bitmap_is_set(visited, nbr)) {
+            if (bitmap_set_cpu(visited, nbr)) {
+              cost[nbr] = level + 1;
+              localF[localF_index++] = nbr;
+            }
+          }
+        }
+      }
+      if (localF_index > 0) {
+        vid_t idx = __sync_fetch_and_add(&nextF_index, localF_index);
+        memcpy(&(nextF[idx]), localF, localF_index * sizeof(vid_t));
+      }
+      level++;
+
+      // The following barrier is necessary to ensure that all threads see the
+      // same nextF_index value that is being incremented by the localF_indices
+      OMP(omp barrier)
+    }
+  } // omp parallel
+  bitmap_finalize_cpu(visited);
+  free_frontiers(currF, nextF, localFs);
   return SUCCESS;
 }
