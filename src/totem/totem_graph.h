@@ -271,6 +271,7 @@ graph_t* graph_create_bidirectional(graph_t* graph, eid_t** reverse_indices);
  * memory area.
 */
 error_t bfs_cpu(graph_t* graph, vid_t src_id, cost_t* cost);
+error_t bfs_queue_cpu(graph_t* graph, vid_t source_id, cost_t* cost);
 error_t bfs_gpu(graph_t* graph, vid_t src_id, cost_t* cost);
 error_t bfs_vwarp_gpu(graph_t* graph, vid_t src_id, cost_t* cost);
 error_t bfs_hybrid(vid_t src_id, cost_t* cost);

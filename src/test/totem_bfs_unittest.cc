@@ -236,6 +236,7 @@ TEST_P(BFSTest, Star) {
 // Values() seems to accept only pointers, hence the possible parameters
 // are defined here, and a pointer to each ot them is used.
 bfs_param_t bfs_params[] = {{false, &bfs_cpu},
+                            {false, &bfs_queue_cpu},
                             {false, &bfs_gpu},
                             {false, &bfs_vwarp_gpu},
                             {true, NULL}};
@@ -249,7 +250,8 @@ bfs_param_t bfs_params[] = {{false, &bfs_cpu},
 INSTANTIATE_TEST_CASE_P(BFSGPUAndCPUTest, BFSTest, Values(&bfs_params[0],
                                                           &bfs_params[1],
                                                           &bfs_params[2],
-                                                          &bfs_params[3]));
+                                                          &bfs_params[3],
+                                                          &bfs_params[4]));
 
 #else
 
