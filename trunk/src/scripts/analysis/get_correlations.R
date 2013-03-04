@@ -53,7 +53,7 @@ graph_data <- read.table(graph_file, header = T);
 average_time <- aggregate(graph_data$edges / (graph_data$time * 10^-9), 
                           list(algo = graph_data$algo, 
                                platform = graph_data$platform, 
-			       graph = graph_data$graph), mean);
+                               graph = graph_data$graph), mean);
 
 # Load the file with the node degree distribution dispersion information
 dispersion <- read.table(dispersion_file, header = T);
