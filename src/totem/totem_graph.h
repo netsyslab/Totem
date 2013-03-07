@@ -434,7 +434,7 @@ error_t betweenness_unweighted_shi_gpu(const graph_t* graph,
 
 /**
  * Calculate betweenness centrality scores for graphs using the algorithm
- * described in Chapter 2 of GPU Computing Gems (Algorithm 1)
+ * described in Chapter 2 of GPU Computing Gems (Algorithm 1) on a CPU
  * @param[in] graph the graph for which the centrality measure is calculated
  * @param[in] epsilon determines how precise the results of the algorithm will
  *            be, and thus also how long it will take to compute
@@ -443,6 +443,19 @@ error_t betweenness_unweighted_shi_gpu(const graph_t* graph,
  * @return generic success or failure
  */
 error_t betweenness_cpu(const graph_t* graph, double epsilon, 
+                        score_t* centrality_score);
+
+/**
+ * Calculate betweenness centrality scores for graphs using the algorithm
+ * described in Chapter 2 of GPU Computing Gems (Algorithm 1) on a GPU
+ * @param[in] graph the graph for which the centrality measure is calculated
+ * @param[in] epsilon determines how precise the results of the algorithm will
+ *            be, and thus also how long it will take to compute
+ * @param[out] centrality_score the output list of betweenness centrality
+ *             scores per vertex
+ * @return generic success or failure
+ */
+error_t betweenness_gpu(const graph_t* graph, double epsilon, 
                         score_t* centrality_score);
 
 /**
