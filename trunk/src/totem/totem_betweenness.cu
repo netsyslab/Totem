@@ -863,7 +863,7 @@ error_t betweenness_cpu(const graph_t* graph, double epsilon,
   if (epsilon == CENTRALITY_EXACT) {
     // Compute exact values for Betweenness Centrality
     for (vid_t source = 0; source < graph->vertex_count; source++) { 
-      // Perform forward and backward propogation with source node
+      // Perform forward and backward propagation with source node
       betweenness_cpu_core(graph, source, numSPs, distance, delta,
                            betweenness_score);  
     }
@@ -877,7 +877,7 @@ error_t betweenness_cpu(const graph_t* graph, double epsilon,
     for (int source_index = 0; source_index < num_samples; source_index++) {
       // Get the next sample node in the array to use as a source
       vid_t source = sample_nodes[source_index];
-      // Perform forward and backward propogation with source node
+      // Perform forward and backward propagation with source node
       betweenness_cpu_core(graph, source, numSPs, distance, delta,
                            betweenness_score);   
     }
@@ -901,5 +901,303 @@ error_t betweenness_cpu(const graph_t* graph, double epsilon,
   free(delta);
 
   return SUCCESS;
+}
+
+/**
+ * Allocates and initializes memory on the GPU for betweenness_gpu
+ */
+PRIVATE
+error_t initialize_betweenness_gpu(const graph_t* graph, vid_t vertex_count,
+                                   graph_t** graph_d, cost_t** distance_d,
+                                   uint32_t** numSPs_d, score_t** delta_d,
+                                   bool** done_d,
+                                   score_t** betweenness_scores_d) {
+  // Allocate space on GPU
+  CHK_SUCCESS(graph_initialize_device(graph, graph_d), err);
+  CHK_CU_SUCCESS(cudaMalloc((void**)distance_d, vertex_count * sizeof(cost_t)),
+                 err_free_graph_d);
+  CHK_CU_SUCCESS(cudaMalloc((void**)numSPs_d, vertex_count * sizeof(uint32_t)),
+                 err_free_distance_d);
+  CHK_CU_SUCCESS(cudaMalloc((void**)delta_d, vertex_count * sizeof(score_t)),
+                 err_free_numSPs_d);
+  CHK_CU_SUCCESS(cudaMalloc((void**)done_d, sizeof(bool)), err_free_delta_d);
+  CHK_CU_SUCCESS(cudaMalloc((void**)betweenness_scores_d, vertex_count
+                            * sizeof(score_t)), err_free_done_d);
+
+  // Setup initial parameters
+  CHK_CU_SUCCESS(cudaMemset(*betweenness_scores_d, (score_t)0.0,
+                            vertex_count * sizeof(score_t)), err_free_all);
+  return SUCCESS;
+
+  // Failure cases for freeing memory
+ err_free_all:
+  cudaFree(betweenness_scores_d);
+ err_free_done_d:
+  cudaFree(done_d);
+ err_free_delta_d:
+  cudaFree(delta_d);
+ err_free_numSPs_d:
+  cudaFree(numSPs_d);
+ err_free_distance_d:
+  cudaFree(distance_d);
+ err_free_graph_d:
+  graph_finalize_device(*graph_d);
+ err:
+  return FAILURE;
+}
+
+/**
+ * Scales the computed betweenness centrality scores
+ * when computing approximate values
+ */
+__global__
+void betweenness_gpu_scale_scores_kernel(vid_t vertex_count, int num_samples,
+                                         score_t* betweenness_score_d) { 
+  const vid_t thread_id = THREAD_GLOBAL_INDEX; 
+  if (thread_id < vertex_count) {
+    betweenness_score_d[thread_id] = (score_t)(((double)(vertex_count)
+                                     / num_samples) * 
+                                     betweenness_score_d[thread_id]);
+  }
+}
+
+/**
+ * Initializes the distance and number of shortest paths for each
+ * source node before forward propagation, as well as to initialize 
+ * the distance and number of shortest paths  for the specified
+ * source node.
+ */
+__global__
+void betweenness_gpu_forward_init_kernel(vid_t source, bool* done_d, 
+                                         vid_t vertex_count,
+                                         cost_t* distance_d, 
+                                         uint32_t* numSPs_d) { 
+  const vid_t thread_id = THREAD_GLOBAL_INDEX;
+  if (thread_id >= vertex_count) return;
+  if (thread_id == source) { 
+    distance_d[thread_id] = 0; 
+    numSPs_d[thread_id] = 1; 
+    *done_d = false; 
+  } else {
+    distance_d[thread_id] = INF_COST;
+    numSPs_d[thread_id] = 0; 
+  } 
+}
+
+/**
+ * Performs forward propagation for a specified source node
+ */
+__global__
+void betweenness_gpu_forward_kernel(const graph_t graph_d, bool* done_d,
+                                    vid_t source, cost_t level,
+                                    uint32_t* numSPs_d, cost_t* distance_d) {
+  const vid_t vid = THREAD_GLOBAL_INDEX; 
+  if (vid >= graph_d.vertex_count) return;
+  if (distance_d[vid] == level) {
+    // For all neighbors of v, iterate over paths
+    for (eid_t e = graph_d.vertices[vid];
+         e < graph_d.vertices[vid + 1]; e++) {
+      vid_t w = graph_d.edges[e];
+      if (distance_d[w] == INF_COST) {
+        distance_d[w] = level + 1;
+        *done_d = false;
+      }
+      if (distance_d[w] == level + 1) {
+        atomicAdd(&numSPs_d[w], numSPs_d[vid]);
+      }
+    }
+  }
+}
+
+/**
+ * Performs backward propagation for a specified source node
+ */
+__global__
+void betweenness_gpu_backward_kernel(const graph_t graph_d, vid_t source, 
+                                    cost_t level, uint32_t* numSPs_d,
+                                    cost_t* distance_d, score_t* delta_d,
+                                    score_t* betweenness_scores_d) {
+  const vid_t vid = THREAD_GLOBAL_INDEX; 
+  if (vid >= graph_d.vertex_count) return;
+  if (distance_d[vid] == level) {
+    // For all neighbors, iterate over paths
+    for (eid_t e = graph_d.vertices[vid]; e < 
+         graph_d.vertices[vid + 1]; e++) {
+      vid_t w = graph_d.edges[e];
+      if (distance_d[w] == level + 1) {
+        delta_d[vid] = (delta_d[vid] + 
+                             ((((score_t)numSPs_d[vid]) /
+                             ((score_t)numSPs_d[w]))*(delta_d[w] + 1)));
+      }
+    }
+    // Add the dependency to the BC sum
+    betweenness_scores_d[vid] = betweenness_scores_d[vid] + delta_d[vid];
+  }
+}
+
+/**
+ * Implements the core functionality for computing Betweenness Centrality
+ * @param[in] graph the graph for which the centrality measure is calculated
+ * @param[in] source the source node for the shortest paths
+ * @param[in] numSPs an array which counts the number of shortest paths in
+ *            which each node is involved 
+ * @param[in] distance an array which stores the distance of the shortest
+ *            path for each node
+ * @param[in] delta an array of the dependencies for each node, which are used
+ *            to compute the betweenness centrality measure
+ * @param[out] betweenness_centrality the output list which contains the
+ *             betweenness centrality values computed for each node
+ * @return void
+ */
+inline PRIVATE void betweenness_gpu_core(graph_t* graph_d,
+                                         vid_t vertex_count, bool* done_d,
+                                         vid_t source, uint32_t* numSPs_d, 
+                                         cost_t* distance_d, score_t* delta_d, 
+                                         score_t* betweenness_scores_d) {
+  // Initialize variables for both forward and backward propagation
+  dim3 blocks;
+  dim3 threads_per_block;
+  bool done = false;
+  cost_t level = 0;
+
+  // FORWARD PROPAGATION PHASE
+  // Initialize the shortest path count to 0 and distance to infinity given
+  // this source node, and also set the distance from source to itself to 0
+  // and set the shortest path count to 1 (from source to itself), along 
+  // with setting done_d to false
+  KERNEL_CONFIGURE(vertex_count, blocks, threads_per_block);
+  betweenness_gpu_forward_init_kernel<<<blocks, threads_per_block>>>
+    (source, done_d, vertex_count, distance_d, numSPs_d);
+  CHK_CU_SUCCESS(cudaDeviceSynchronize(), err_free_all);
+  
+  while (!done) {
+    CHK_CU_SUCCESS(cudaMemset(done_d, true, sizeof(bool)), err_free_all);
+    // In parallel, iterate over vertices which are at the current level
+    betweenness_gpu_forward_kernel<<<blocks, threads_per_block>>>
+      (*graph_d, done_d, source, level, numSPs_d, distance_d);
+    CHK_CU_SUCCESS(cudaMemcpy(&done, done_d, sizeof(bool),
+                              cudaMemcpyDeviceToHost), err_free_all);
+    level++;   
+  }
+
+  // BACKWARD PROPAGATION PHASE
+  // Set deltas to 0 for every input node
+  CHK_CU_SUCCESS(cudaMemset(delta_d, 0, vertex_count * sizeof(score_t)), 
+                 err_free_all);        
+  while (level > 1) {
+    level--;
+    CHK_CU_SUCCESS(cudaDeviceSynchronize(), err_free_all);
+    // In parallel, iterate over vertices which are at the current level
+    betweenness_gpu_backward_kernel<<<blocks, threads_per_block>>>
+      (*graph_d, source, level, numSPs_d, distance_d, delta_d,
+       betweenness_scores_d);
+  }
+
+  return;
+
+ err_free_all:
+  graph_finalize_device(graph_d);
+  cudaFree(distance_d);
+  cudaFree(numSPs_d);
+  cudaFree(delta_d);
+  cudaFree(done_d);
+  cudaFree(betweenness_scores_d);
+}
+
+/**
+ * GPU implementation of  Bewteenness Centrality algorithm described in
+ * Chapter 2 of GPU Computing Gems (Algorithm 1 - Sequential BC Computation)
+ * @param[in] graph the graph for which the centrality measure is calculated
+ * @param[in] epsilon determines how precise the results of the algorithm will
+ *            be, and thus also how long it will take to compute
+ * @param[out] betweenness_score the output list of betweenness centrality
+ *             scores per vertex
+ * @return generic success or failure
+ */
+error_t betweenness_gpu(const graph_t* graph, double epsilon,
+                        score_t* betweenness_score) {
+  // Sanity check on input
+  bool finished = true;
+  error_t rc = check_special_cases(graph, &finished, betweenness_score);
+  if (finished) return rc;
+
+  // Initialization stage
+  // Set BC(v) to 0 for every input node
+  memset(betweenness_score, 0, graph->vertex_count * sizeof(score_t));
+
+  // Create pointers for use with the GPU's memory
+  graph_t*  graph_d;
+  cost_t*   distance_d;
+  uint32_t* numSPs_d;
+  score_t*  delta_d;
+  bool*     done_d;
+  score_t*  betweenness_scores_d;
+
+  // Initialization stage
+  CHK_SUCCESS(initialize_betweenness_gpu(graph, graph->vertex_count,
+                                         &graph_d, &distance_d, &numSPs_d,
+                                         &delta_d, &done_d, 
+                                         &betweenness_scores_d), err);
+
+  // determine whether we will compute exact or approximate BC values
+  if (epsilon == CENTRALITY_EXACT) {
+    // Compute exact values for Betweenness Centrality
+    for (vid_t source = 0; source < graph->vertex_count; source++) { 
+      // Perform forward and backward propagation with source node
+      betweenness_gpu_core(graph_d, graph->vertex_count, done_d, source,
+                           numSPs_d, distance_d, delta_d, betweenness_scores_d);  
+    }
+  } else {
+    // Compute approximate values based on the value of epsilon provided
+    // Select a subset of source nodes to make the computation faster
+    int num_samples = get_number_sample_nodes(graph->vertex_count, epsilon);
+    // Populate the array of indices to sample
+    vid_t* sample_nodes = select_sampling_nodes(graph, num_samples);
+ 
+    for (vid_t source_index = 0; source_index < num_samples; source_index++) {
+      // Get the next sample node in the array to use as a source
+      vid_t source = sample_nodes[source_index];
+      // Perform forward and backward propagation with source node
+      betweenness_gpu_core(graph_d, graph->vertex_count, done_d, source,
+                           numSPs_d, distance_d, delta_d, betweenness_scores_d);  
+    }
+    
+    // Scale the computed Betweenness Centrality metrics since they were
+    // computed using a subset of the total nodes within the graph
+    // The scaling value is: (Total Number of Nodes / Subset of Nodes Used)
+    dim3 blocks;
+    dim3 threads_per_block;
+    KERNEL_CONFIGURE(graph->vertex_count, blocks, threads_per_block);
+    betweenness_gpu_scale_scores_kernel<<<blocks, threads_per_block>>>
+      (graph->vertex_count, num_samples, betweenness_scores_d);
+
+    // Clean up the allocated memory
+    free(sample_nodes);
+  }
+
+  // Copy the calculated betweenness centrality scores back to host memory
+  CHK_CU_SUCCESS(cudaMemcpy(betweenness_score, betweenness_scores_d,
+                            graph->vertex_count * sizeof(score_t),
+                            cudaMemcpyDeviceToHost), err_free_all);
+
+  // Clean up the memory allocated on the GPU
+  graph_finalize_device(graph_d);
+  cudaFree(distance_d);
+  cudaFree(numSPs_d);
+  cudaFree(delta_d);
+  cudaFree(done_d);
+  cudaFree(betweenness_scores_d);
+
+  return SUCCESS;
+
+ err_free_all:
+  graph_finalize_device(graph_d);
+  cudaFree(distance_d);
+  cudaFree(numSPs_d);
+  cudaFree(delta_d);
+  cudaFree(done_d);
+  cudaFree(betweenness_scores_d);
+ err:
+  return FAILURE;
 }
 

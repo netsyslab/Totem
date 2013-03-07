@@ -224,7 +224,8 @@ PRIVATE void benchmark_betweenness(graph_t* graph, void* betweenness_score,
   if (options->platform == PLATFORM_CPU) {
     betweenness_cpu(graph, CENTRALITY_APPROXIMATE, (score_t*)betweenness_score);
   } else {
-      assert(false);
+      CALL_SAFE(betweenness_gpu(graph, CENTRALITY_APPROXIMATE,
+                                (score_t*)betweenness_score));
   }
 }
 

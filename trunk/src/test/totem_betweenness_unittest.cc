@@ -24,6 +24,16 @@ PRIVATE error_t betweenness_cpu_exact(const graph_t* graph,
   return betweenness_cpu(graph, CENTRALITY_EXACT, betweenness_score);
 }   
 
+/**
+ * Wrapper for betweenness_gpu to provide the singature expected for use in
+ * the unit tests with the other Betweenness Centrality algorithms
+ */
+PRIVATE error_t betweenness_gpu_exact(const graph_t* graph,
+                                      score_t* betweenness_score) {
+  // call betweenness_gpu for use in unit test framework with exact precision
+  return betweenness_gpu(graph, CENTRALITY_EXACT, betweenness_score);
+}
+
 // The following implementation relies on
 // TestWithParam<BetwCentralityFunction> to test the two versions of Betweenness
 // Centrality implemented: CPU and GPU.  Details on how to use TestWithParam<T>
@@ -119,7 +129,8 @@ INSTANTIATE_TEST_CASE_P(BetwCentralityGPUAndCPUTest, BetweennessCentralityTest,
                         Values(&betweenness_unweighted_cpu,
                                &betweenness_unweighted_gpu,
                                &betweenness_unweighted_shi_gpu,
-                               &betweenness_cpu_exact));
+                               &betweenness_cpu_exact,
+                               &betweenness_gpu_exact));
 
 #else
 
