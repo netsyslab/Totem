@@ -193,7 +193,7 @@ maxdeg = length(ddist);
 nedges = dot((1:maxdeg)',ddist)
 
 if verbose
-    fprintf('Constructing BTER graph with %d nodes and %d edges.\n', nnodes, nedges);
+    fprintf('Constructing BTER graph with %f nodes and %f edges.\n', nnodes, nedges);
 end
 
 %% Set some more parameters
@@ -319,10 +319,10 @@ end
 if verbose
     % Abdullah: the following printf statements access the previously 
     % commented-out blkrho array, hence they are also commented-out
-    # fprintf('Phase 1 Max Connectivity: %d%%\n', round(100*max(blkrho)));
-    # fprintf('Phase 1 Min Connectivity: %d%%\n', round(100*min(blkrho)));
-    fprintf('Phase 1 communities: %d\n', bloc-1);
-    fprintf('Phase 1 edges: %d\n',nnz(G1));
+    # fprintf('Phase 1 Max Connectivity: %f%%\n', round(100*max(blkrho)));
+    # fprintf('Phase 1 Min Connectivity: %f%%\n', round(100*min(blkrho)));
+    fprintf('Phase 1 communities: %f\n', bloc-1);
+    fprintf('Phase 1 edges: %f\n',nnz(G1));
 end
 
 %% Prep for BTER-Phase 2
@@ -337,10 +337,10 @@ deglist2(1:newp) = 0;
 deglist2(newp+1:p) = 1 + d1_inc;
 
 if verbose
-    fprintf('Phase 2 "Manual" Degree 1 Nodes: %d\n', newp);
-    fprintf('Phase 2 Chung-Lu Degree 1 Nodes: %d\n', p-newp);
-    fprintf('Phase 2 Chung-Lu Degree 1 Nodes Boost: %d%%\n', round(100*d1_inc));
-    fprintf('Phase 2 Chung-Lu Percent Extra Edges: %d%%\n', round(edge_inc*100));
+    fprintf('Phase 2 "Manual" Degree 1 Nodes: %f\n', newp);
+    fprintf('Phase 2 Chung-Lu Degree 1 Nodes: %f\n', p-newp);
+    fprintf('Phase 2 Chung-Lu Degree 1 Nodes Boost: %f%%\n', round(100*d1_inc));
+    fprintf('Phase 2 Chung-Lu Percent Extra Edges: %f%%\n', round(edge_inc*100));
 end
 
 p = newp;
@@ -368,7 +368,7 @@ if debug
 end
 
 if verbose
-    fprintf('Phase 2a (Manual Degree 1-Degree 1) edges: %d\n', nnz(G2a));
+    fprintf('Phase 2a (Manual Degree 1-Degree 1) edges: %f\n', nnz(G2a));
 end
 
 %% BTER-Phase 2b: Degree 1 to Degree 2+ connections
@@ -379,7 +379,7 @@ if debug
 end;
 
 if verbose
-    fprintf('Phase 2b (Manual Degree 1-Degree 2+) edges: %d\n', nnz(G2b));
+    fprintf('Phase 2b (Manual Degree 1-Degree 2+) edges: %f\n', nnz(G2b));
 end
 
 %% Call BTER-Phase 2c
@@ -393,7 +393,7 @@ if debug
 end;
 
 if verbose
-    fprintf('Phase 2c (Chung-Lu) edges: %d\n', nnz(G2c));
+    fprintf('Phase 2c (Chung-Lu) edges: %f\n', nnz(G2c));
 end
 
 %% Assemble G2
@@ -404,7 +404,7 @@ if debug
 end;
 
 if verbose
-    fprintf('Phase 2 total edges: %d\n', nnz(G2));
+    fprintf('Phase 2 total edges: %f\n', nnz(G2));
 end
 
 
@@ -418,8 +418,8 @@ end;
 d_final = full(sum(G,2));
 nnodes_final = sum(d_final>0);
 if verbose
-    fprintf('Final number of non-isolated nodes: %d (%d%% of desired)\n', nnodes_final, round(100*nnodes_final/nnodes));
-    fprintf('Final numbder of edges: %d (%d%% of desired)\n', nnz(G), round(100*nnz(G)/nedges));
+    fprintf('Final number of non-isolated nodes: %f (%f%% of desired)\n', nnodes_final, round(100*nnodes_final/nnodes));
+    fprintf('Final numbder of edges: %f (%f%% of desired)\n', nnz(G), round(100*nnz(G)/nedges));
 end
 
 
@@ -500,7 +500,7 @@ end
 
 for i = 1:size(G,1)
     if G(i,i) > 0
-        warning('%s diagonal entry (%d,%d) is nonzero',name,i,i);
+        warning('%s diagonal entry (%f,%f) is nonzero',name,i,i);
     end
 end
 

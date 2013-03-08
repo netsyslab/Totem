@@ -32,18 +32,24 @@
 
 % Get command line arguments
 arg_list = argv();
-if length(arg_list) != 3
+if length(arg_list) != 4
   fprintf("\nError: missing arguments\n");
-  fprintf("usage: %s <alpha> <maxdeg> <output_file>\n", program_name());
+  fprintf("usage: %s <alpha> <mindeg> <maxdeg> <output_file>\n", 
+          program_name());
   exit(-1)
 end
 alpha = str2double(arg_list{1});
-maxdeg = str2num(arg_list{2});
-saveat = arg_list{3};
+mindeg = str2num(arg_list{2}); 
+maxdeg = str2num(arg_list{3});
+saveat = arg_list{4};
 
 % Create a power-law distribution of edge degree
-ddist = round(maxdeg^(alpha)./(1:maxdeg).^(alpha))';
+ddist = round(maxdeg^(alpha)./(mindeg:maxdeg).^(alpha))';
+
+% final degree distribution
+ddist_f = zeros(maxdeg,1);
+ddist_f(mindeg:maxdeg) = ddist;
 
 % Invoke BTER generator and save the generated sparse matrix
-G = bter(ddist);
+G = bter(ddist_f);
 save(saveat, "G");
