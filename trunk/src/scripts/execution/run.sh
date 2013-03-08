@@ -173,8 +173,6 @@ LOG_FAILED_RUNS=${RESULT_DIR}"/logFailedRuns"
 if [ ! $REPEAT_COUNT ]; then
     REPEAT_COUNT=${BENCHMARK_REPEAT[$BENCHMARK]}
 fi
-echo $REPEAT_COUNT
-exit
 
 # Configure OpenMP to bind OMP threads to specific hardware threads such that
 # the first half is on socket one, and the other on socket two
