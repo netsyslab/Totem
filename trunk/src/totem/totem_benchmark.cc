@@ -17,10 +17,10 @@ PRIVATE void benchmark_betweenness(graph_t*, void*, totem_attr_t*);
 const benchmark_attr_t BENCHMARKS[] = {
   {
     benchmark_bfs, 
-   "BFS", 
-   1, 
-   MSG_SIZE_ZERO, 
-   sizeof(cost_t)
+    "BFS", 
+    1, 
+    MSG_SIZE_ZERO, 
+    sizeof(cost_t)
   },
   {
     benchmark_pagerank, 
@@ -33,7 +33,7 @@ const benchmark_attr_t BENCHMARKS[] = {
     benchmark_dijkstra, 
     "DIJKSTRA", 
     sizeof(weight_t) * BITS_PER_BYTE, 
-   MSG_SIZE_ZERO, 
+    MSG_SIZE_ZERO, 
     sizeof(weight_t)
   },
   {
@@ -41,7 +41,7 @@ const benchmark_attr_t BENCHMARKS[] = {
     "BETWEENNESS", 
     MSG_SIZE_ZERO, 
     MSG_SIZE_ZERO, 
-   sizeof(weight_t)
+    sizeof(weight_t)
   }
 };
 
@@ -160,7 +160,7 @@ PRIVATE eid_t get_traversed_edges(graph_t* graph, void* benchmark_output) {
       break;
     case BENCHMARK_BETWEENNESS:
       // The two is for the two phases: forward and backward
-      trv_edges = 2 * graph->edge_count * graph->vertex_count;
+      trv_edges = 2 * graph->edge_count;
       break;
     default:
       trv_edges = graph->edge_count;
