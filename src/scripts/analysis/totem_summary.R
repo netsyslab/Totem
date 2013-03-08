@@ -60,19 +60,19 @@
 ## Date: 2013-02-23
 ## Author: Abdullah Gharaibeh
 
-# Returns the 95% confidence interval of the values in vector x
+## Returns the 95% confidence interval of the values in vector x
 totem.ci95 <- function(x) {  
   1.9723 * sd(x) / sqrt(length(x));
 }
 
-# Returns a list containing the configuration of an experiment passed as a
-# string with the following format: ALG_CPUs_GPUs_PAR_ALPHA_WORKLOAD. The
-# configuration parameters can be accessed via the returned list like this:
-# config$ALG etc.
+## Returns a list containing the configuration of an experiment passed as a
+## string with the following format: ALG_CPUs_GPUs_PAR_ALPHA_WORKLOAD. The
+## configuration parameters can be accessed via the returned list like this:
+## config$ALG etc.
 totem.config <- function(f) {
   config = unlist(strsplit(f, "_"));
-  # put the workload name back together (gets split if the workload name is
-  # of the form X_Y_Z)
+  ## put the workload name back together (gets split if the workload name is
+  ## of the form X_Y_Z)
   config[6] = paste(config[6:length(config)], collapse='_')
   names(config) = c("ALG", "CPU_COUNT", "GPU_COUNT", "PAR", "ALPHA",
                     "WORKLOAD");
@@ -83,10 +83,10 @@ totem.config <- function(f) {
   return(config);
 }
 
-# Returns a data frame with averages and confidence interval of all the files
-# with .dat extension and put the result in one data frame. 
+## Returns a data frame with averages and confidence interval of all the files
+## with .dat extension and put the result in one data frame. 
 totem.summary <- function(dir) {  
-  # A raw data file name has the format ALG_CPUs_GPUs_PAR_ALPHA_WORKLOAD
+  ## A raw data file name has the format ALG_CPUs_GPUs_PAR_ALPHA_WORKLOAD
   files = list.files(dir, pattern="*.dat");
   l = length(files);
   data.setup = data.frame(ALG = character(l), CPU_COUNT = numeric(l),
@@ -107,17 +107,25 @@ totem.summary <- function(dir) {
                        TRV_CI = numeric(l), RATE_CI = numeric(l));
   index = 1;
   for (f in files) {
-    # get this experiment's configuration
-    data.setup[index, ] = totem.config(f);
+    ## read.table function throws an error and halts execution if the file being
+    ## read is empty. tryCatch will catch the error, and continue to parse the 
+    ## next file
+    tryCatch({
+      ## The following columns are read: total, exec, init, comp, comm,
+      ## finalize, gpu_comp, scatter, gather, aggr, trv_edges, exec_rate
+      raw = read.table(paste(dir, f, sep="/"), header = TRUE, skip = 1);
 
-    # the following columns are read: total, exec, init, comp, comm,
-    # finalize, gpu_comp, scatter, gather, aggr, trv_edges, exec_rate
-    raw <- read.table(paste(dir, f, sep="/"), header = TRUE, skip = 1);
-    
-    # Compute average and 95 confidence interval
-    data.avg[index,] = as.vector(sapply(raw, mean));
-    data.ci[index,] = as.vector(sapply(raw, totem.ci95));
-    index = index + 1;
+      ## Handle the case where the file contains only the header with no data
+      if (length(raw$total) != 0) {
+        ## Compute average and 95 confidence interval
+        data.avg[index,] = as.vector(sapply(raw, mean));
+        data.ci[index,] = as.vector(sapply(raw, totem.ci95));
+        
+        ## get this experiment's configuration
+        data.setup[index, ] = totem.config(f);
+        index = index + 1;
+      }
+    }, error = function(err){});
   }
   data = data.frame(data.setup, data.avg, data.ci);
   return(with(data, data[order(WORKLOAD, ALG, CPU_COUNT,
