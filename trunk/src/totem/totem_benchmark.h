@@ -45,6 +45,7 @@ typedef struct benchmark_options_s {
   int                   gpu_count;    /**< Number of GPUs to use for hybrid
                                            and GPU-only platforms */
   int                   thread_count; /**< Number of CPU threads */
+  omp_sched_t           omp_sched;    /**< OMP scheduling kind */
   int                   repeat;       /**< Number of times to repeat an
                                            execution (for traversal algorithms,
                                            number of sources used) */

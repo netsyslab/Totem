@@ -50,6 +50,8 @@ PRIVATE benchmark_options_t* options = NULL;
 
 PRIVATE const char* PLATFORM_STR[] = {"CPU", "GPU", "HYBRID"};
 PRIVATE const char* PAR_ALGO_STR[] = {"RANDOM", "HIGH", "LOW"};
+PRIVATE const char* OMP_SCHEDULE_STR[] = {"", "STATIC", "DYNAMIC", "GUIDED", 
+                                          "RUNTIME"};
 PRIVATE const int SEED = 1985;
 
 /**
@@ -111,13 +113,16 @@ PRIVATE void print_header_partitions(graph_t* graph) {
  */
 PRIVATE void print_header(graph_t* graph) {
   const char* OMP_PROC_BIND = getenv("OMP_PROC_BIND");
+  omp_sched_t sched; int sched_modifier;
+  omp_get_schedule(&sched, &sched_modifier);
   printf("file:%s\tbenchmark:%s\tvertices:%llu\tedges:%llu\tpartitioning:%s\t"
          "platform:%s\talpha:%d\trepeat:%d\tgpu_count:%d\t"
-         "thread_count:%d\tthread_bind:%s", options->graph_file, 
-         BENCHMARKS[options->benchmark].str, (uint64_t)graph->vertex_count, 
-         (uint64_t)graph->edge_count, PAR_ALGO_STR[options->par_algo], 
-         PLATFORM_STR[options->platform], options->alpha, options->repeat, 
-         options->gpu_count, omp_get_max_threads(), 
+         "thread_count:%d\tthread_sched:%s\tthread_bind:%s", 
+         options->graph_file, BENCHMARKS[options->benchmark].str, 
+         (uint64_t)graph->vertex_count, (uint64_t)graph->edge_count, 
+         PAR_ALGO_STR[options->par_algo], PLATFORM_STR[options->platform], 
+         options->alpha, options->repeat, options->gpu_count, 
+         omp_get_max_threads(), OMP_SCHEDULE_STR[sched],
          OMP_PROC_BIND == NULL ? "false" : OMP_PROC_BIND);
   if (options->platform != PLATFORM_CPU) {
     // print the time spent on initializing Totem and partitioning the graph
@@ -254,6 +259,7 @@ PRIVATE void benchmark_run() {
   }
 
   omp_set_num_threads(options->thread_count);
+  omp_set_schedule(options->omp_sched, 0);
   print_header(graph);
 
   for (int s = 0; s < options->repeat; s++) {
