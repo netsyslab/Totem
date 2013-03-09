@@ -57,7 +57,8 @@ PRIVATE const int SEED = 1985;
 /**
  * Prints out detailed timing of a single run
  */
-PRIVATE void print_timing(graph_t* graph, double time_total, eid_t trv_edges) {
+PRIVATE void print_timing(graph_t* graph, double time_total, 
+                          uint64_t trv_edges) {
   bool totem_based = options->platform != PLATFORM_CPU;
   const totem_timing_t* timers = totem_timing();
   printf("%0.2f\t%0.2f\t%0.2f\t%0.2f\t%0.2f\t"
@@ -139,8 +140,8 @@ PRIVATE void print_header(graph_t* graph) {
 /**
  * Returns the number of traversed edges used in computing the processing rate
  */
-PRIVATE eid_t get_traversed_edges(graph_t* graph, void* benchmark_output) {
-  eid_t trv_edges = 0;
+PRIVATE uint64_t get_traversed_edges(graph_t* graph, void* benchmark_output) {
+  uint64_t trv_edges = 0;
   switch(options->benchmark) {
     case BENCHMARK_BFS:
       OMP(omp parallel for reduction(+ : trv_edges))
@@ -161,11 +162,11 @@ PRIVATE eid_t get_traversed_edges(graph_t* graph, void* benchmark_output) {
       }
       break;
     case BENCHMARK_PAGERANK:
-      trv_edges = graph->edge_count * PAGE_RANK_ROUNDS;
+      trv_edges = (uint64_t)graph->edge_count * PAGE_RANK_ROUNDS;
       break;
     case BENCHMARK_BETWEENNESS:
       // The two is for the two phases: forward and backward
-      trv_edges = 2 * graph->edge_count;
+      trv_edges = (uint64_t)graph->edge_count * 2;
       break;
     default:
       trv_edges = graph->edge_count;
