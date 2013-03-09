@@ -16,6 +16,7 @@ PRIVATE benchmark_options_t options = {
   PLATFORM_CPU,          // platform
   1,                     // number of GPUs
   omp_get_max_threads(), // number of CPU threads
+  omp_sched_static,      // static scheduling
   5,                     // repeat
   50,                    // alpha
   PAR_RANDOM             // partitioning algorithm
@@ -53,12 +54,17 @@ PRIVATE void display_help(char* exe_name, int exit_err) {
          "     %d: Execute on the CPU and on the GPUs\n"
          "  -rNUM [1-%d] Number of times an experiment is repeated or sources\n"
          "        used to benchmark a traversal algorithm (default 5)\n"
+         "  -sNUM OMP scheduling type\n"
+         "     %d: static (default)\n"
+         "     %d: dynamic\n"
+         "     %d: guided\n"
          "  -tNUM [1-%d] Number of CPU threads to use (default %d).\n" 
          "  -h Print this help message\n",
          exe_name, BENCHMARK_BFS, BENCHMARK_PAGERANK, BENCHMARK_DIJKSTRA, 
          BENCHMARK_BETWEENNESS, get_gpu_count(), PAR_RANDOM, PAR_SORTED_ASC, 
          PAR_SORTED_DSC, PLATFORM_CPU, PLATFORM_GPU, PLATFORM_HYBRID, 
-         REPEAT_MAX, omp_get_max_threads(), omp_get_max_threads());
+         REPEAT_MAX, omp_sched_static, omp_sched_dynamic, omp_sched_guided, 
+         omp_get_max_threads(), omp_get_max_threads());
   exit(exit_err);
 }
 
@@ -70,7 +76,7 @@ PRIVATE void display_help(char* exe_name, int exit_err) {
 benchmark_options_t* benchmark_cmdline_parse(int argc, char** argv) {
   optarg = NULL;
   int ch, benchmark, platform, par_algo;
-  while(((ch = getopt(argc, argv, "a:b:g:i:p:r:t:h")) != EOF)) {
+  while(((ch = getopt(argc, argv, "a:b:g:i:p:r:s:t:h")) != EOF)) {
     switch (ch) {
       case 'a':
         options.alpha = atoi(optarg);
@@ -114,6 +120,16 @@ benchmark_options_t* benchmark_cmdline_parse(int argc, char** argv) {
         options.repeat = atoi(optarg);
         if (options.repeat > REPEAT_MAX || options.repeat <= 0) {
           fprintf(stderr, "Invalid repeat argument\n");
+          display_help(argv[0], -1);
+        }
+        break;
+      case 's':
+        options.omp_sched = (omp_sched_t)atoi(optarg);
+        if (options.omp_sched != omp_sched_static &&
+            options.omp_sched != omp_sched_dynamic &&
+            options.omp_sched != omp_sched_guided) {
+          fprintf(stderr, "Invalid OMP scheduling argument %d\n", 
+                  options.omp_sched);
           display_help(argv[0], -1);
         }
         break;
