@@ -72,6 +72,12 @@ PAR_HIGH="1"
 PAR_LOW="2"
 PAR_STR=("RAN" "HIGH" "LOW")
 
+# OpenMP thread scheduling algorithms
+OMP_SCHED_STATIC="1"
+OMP_SCHED_DYNAMIC="2"
+OMP_SCHED_GUIDED="3"
+OMP_SCHED_STR=("" "STATIC" "DYNAMIC" "GUIDED")
+
 # Number of CPU sockets and threads
 THREADS_PER_SOCKET=`cat /proc/cpuinfo | \
             grep "physical.*id.*:.*0" | wc -l`
@@ -85,10 +91,11 @@ MAX_SOCKET_COUNT=$(($MAX_THREAD_COUNT / $THREADS_PER_SOCKET))
 MIN_ALPHA=5
 MAX_ALPHA=95
 BENCHMARK=${BFS}
-RESULT_BASE="../results/"
-TOTEM_EXE="../totem/totem"
+RESULT_BASE="../../results"
+TOTEM_EXE="../../totem/totem"
 MAX_GPU_COUNT=1
 REPEAT_COUNT=
+OMP_SCHED=${OMP_SCHED_STATIC}
 
 ###########################################
 # Display usage message and exit the script
@@ -101,14 +108,20 @@ function usage() {
   echo "  -a  <minimum alpha> minimum value of alpha (the percentage of edges "
   echo "                      in the CPU partition) to use for experiments on"
   echo "                      hybrid platforms (default ${MIN_ALPHA}%)"
-  echo "  -b  <benchmark> BFS=${BFS}, PageRank=${PAGERANK} (default ${BENCHMARK})"
+  echo "  -b  <benchmark> BFS=${BFS}, PageRank=${PAGERANK}" \
+      "(default ${BENCHMARK_STR[${BENCHMARK}]})"
+  echo "  -d  <results base directory> (default ${RESULT_BASE})"
   echo "  -e  <totem executable> (default ${TOTEM_EXE})"
   echo "  -g  <max gpu count> maximum number of GPUs to use" \
       "(default ${MAX_GPU_COUNT})"
-  echo "  -r  <repeat count> number of times an experiment is repeated" \
-      "(default BFS:${BENCHMARK_REPEAT[$BFS]},"                         \
+  echo "  -r  <repeat count> number of times an experiment is repeated"
+  echo "                     (default BFS:${BENCHMARK_REPEAT[$BFS]}," \
       "PageRank:${BENCHMARK_REPEAT[$PAGERANK]})"
-  echo "  -s  <results base directory> (default ${RESULT_BASE})"
+  echo "  -s  <OMP scheduling>" \
+      "${OMP_SCHED_STR[${OMP_SCHED_STATIC}]}=${OMP_SCHED_STATIC}," \
+      "${OMP_SCHED_STR[${OMP_SCHED_DYNAMIC}]}=${OMP_SCHED_DYNAMIC}," \
+      "${OMP_SCHED_STR[${OMP_SCHED_GUIDED}]}=${OMP_SCHED_GUIDED}" \
+      "(default ${OMP_SCHED_STR[${OMP_SCHED}]})"
   echo "  -x  <maximum alpha> maximum value of alpha (the percentage of edges "
   echo "                      in the CPU partition) to use for experiments on"
   echo "                      hybrid platforms (default ${MAX_ALPHA}%)"
@@ -119,11 +132,13 @@ function usage() {
 ###############################
 # Process command line options
 ###############################
-while getopts 'a:b:e:g:hr:s:x:' options; do
+while getopts 'a:b:d:e:g:hr:s:x:' options; do
   case $options in
     a)MIN_ALPHA="$OPTARG"
       ;;
     b)BENCHMARK="$OPTARG"
+      ;;
+    d)RESULT_BASE="$OPTARG"
       ;;
     e)TOTEM_EXE="$OPTARG"
       ;;
@@ -133,7 +148,7 @@ while getopts 'a:b:e:g:hr:s:x:' options; do
       ;;
     r)REPEAT_COUNT="$OPTARG"
       ;;
-    s)RESULT_BASE="$OPTARG"
+    s)OMP_SCHED="$OPTARG"
       ;;
     x)MAX_ALPHA="$OPTARG"
       ;;
@@ -201,14 +216,14 @@ function run() {
     DATE=`date`
     printf "${DATE}: ${OUTPUT} b${BENCHMARK} a${ALPHA} p${PLATFORM} " >> ${LOG};
     printf "i${PAR} g${GPU_COUNT} t${THREAD_COUNT} r${REPEAT_COUNT} " >> ${LOG};
-    printf "${WORKLOAD}\n" >> ${LOG};
+    printf "s${OMP_SCHED} ${WORKLOAD}\n" >> ${LOG};
     ${TOTEM_EXE} -b${BENCHMARK} -a${ALPHA} -p${PLATFORM} -i${PAR} \
         -g${GPU_COUNT} -t${THREAD_COUNT} -r${REPEAT_COUNT} \
-        ${WORKLOAD} &>> ${RESULT_DIR}/${OUTPUT}
+        -s${OMP_SCHED} ${WORKLOAD} &>> ${RESULT_DIR}/${OUTPUT}
 
     # Check the exit status, and log any problems
     exit_status=$?
-    if [ $exit_status -ne 0 ]; then
+    if [ ${exit_status} -ne 0 ]; then
         date &>> ${LOG_FAILED_RUNS}
         echo "${RESULT_DIR}/${OUTPUT}" &>> ${LOG_FAILED_RUNS}
         cat "${RESULT_DIR}/${OUTPUT}" &>> ${LOG_FAILED_RUNS}
@@ -216,16 +231,6 @@ function run() {
         rm "${RESULT_DIR}/${OUTPUT}"
     fi
 }
-
-## GPU Only, note that alpha has no effect when running only on GPU
-alpha=0
-gpu_count=1
-run ${GPU} ${MAX_SOCKET_COUNT} ${gpu_count} ${PAR_RAN} ${alpha}
-for gpu_count in $(seq 2 ${MAX_GPU_COUNT}); do
-    for par_algo in ${PAR_RAN} ${PAR_HIGH} ${PAR_LOW}; do
-        run ${GPU} ${MAX_SOCKET_COUNT} $gpu_count ${par_algo} ${alpha}
-    done
-done
 
 ## CPU Only, alpha and GPU count has no effect when running only on CPU 
 alpha=0
@@ -244,5 +249,17 @@ for gpu_count in $(seq 1 ${MAX_GPU_COUNT}); do
        done
     done
 done
+
+## GPU Only, note that alpha has no effect when running only on GPU
+if [ ${MAX_GPU_COUNT} -ge 1 ]; then
+    alpha=0
+    gpu_count=1
+    run ${GPU} ${MAX_SOCKET_COUNT} ${gpu_count} ${PAR_RAN} ${alpha}
+    for gpu_count in $(seq 2 ${MAX_GPU_COUNT}); do
+        for par_algo in ${PAR_RAN} ${PAR_HIGH} ${PAR_LOW}; do
+            run ${GPU} ${MAX_SOCKET_COUNT} $gpu_count ${par_algo} ${alpha}
+        done
+    done
+fi
 
 echo "done!" >> ${LOG}
