@@ -324,12 +324,15 @@ error_t bfs_cpu(graph_t* graph, vid_t source_id, cost_t* cost) {
       finished = true;
 
       // The "for" clause instructs openmp to run the loop in parallel. Each
-      // thread will be statically assigned a contiguous chunk of work. The
-      // reduction clause tells openmp to define a private temporary variable
-      // for each thread, and reduce them in the end using an "and" operator and
-      // store the value in "finished". Similar to the argument above, this 
-      // improves performance by reducing cache coherency overhead
-      OMP(omp for schedule(static) reduction(& : finished))
+      // thread will be assigned a chunk of work depending on the chosen OMP
+      // scheduling algorithm. The reduction clause tells openmp to define a
+      // private temporary variable for each thread, and reduce them in the 
+      // end using an "and" operator and store the value in "finished". Similar 
+      // to the argument above, this improves performance by reducing cache 
+      // coherency overhead. The "runtime" scheduling clause defer the choice
+      // of thread scheduling algorithm to the choice of the client, either
+      // via OS environment variable or omp_set_schedule interface.
+      OMP(omp for schedule(runtime) reduction(& : finished))
       for (vid_t vertex_id = 0; vertex_id < graph->vertex_count; vertex_id++) {
         if (cost[vertex_id] != level) continue;
         for (eid_t i = graph->vertices[vertex_id];
@@ -448,8 +451,11 @@ error_t bfs_queue_cpu(graph_t* graph, vid_t source_id, cost_t* cost) {
       localF_index = 0;
 
       // The "for" clause instructs openmp to run the loop in parallel. Each
-      // thread will be statically assigned a contiguous chunk of work.
-      OMP(omp for schedule(static))
+      // thread will be assigned a chunk of work depending on the chosen 
+      // OMP scheduling algorithm. The "runtime" scheduling clause defer the 
+      // choice of thread scheduling algorithm to the choice of the client, 
+      // either via OS environment variable or omp_set_schedule interface.
+      OMP(omp for schedule(runtime))
       for(vid_t q = 0; q < currF_index; q++) {
         vid_t v = currF[q];
         for (eid_t i = graph->vertices[v]; i < graph->vertices[v + 1]; i++) {

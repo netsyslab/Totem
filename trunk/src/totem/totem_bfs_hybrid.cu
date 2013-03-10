@@ -138,7 +138,10 @@ void bfs_cpu(partition_t* par) {
   graph_t* subgraph = &par->subgraph;
   bool finished = true;
 
-  OMP(omp parallel for reduction(& : finished))
+  // The "runtime" scheduling clause defer the choice of thread scheduling
+  // algorithm to the choice of the client, either via OS environment variable
+  // or omp_set_schedule interface.
+  OMP(omp parallel for schedule(runtime) reduction(& : finished))
   for (vid_t v = 0; v < subgraph->vertex_count; v++) {
     if (state->cost[v] != state->level) continue;
     for (eid_t i = subgraph->vertices[v]; i < subgraph->vertices[v + 1]; i++) {
@@ -173,7 +176,7 @@ PRIVATE void bfs(partition_t* par) {
 PRIVATE inline void bfs_scatter_cpu(grooves_box_table_t* inbox, 
                                     bfs_state_t* state, bitmap_t* visited) {
   bitmap_t remotely_visited = (bitmap_t)inbox->push_values;
-  OMP(omp parallel for)
+  OMP(omp parallel for schedule(static))
   for (vid_t index = 0; index < inbox->count; index++) {
     vid_t vid = inbox->rmt_nbrs[index];
     if (bitmap_is_set(remotely_visited, index) &&
@@ -240,7 +243,7 @@ PRIVATE void bfs_aggregate(partition_t* par) {
   }
   // aggregate the results
   assert(state_g.cost);
-  OMP(omp parallel for)
+  OMP(omp parallel for schedule(static))
   for (vid_t v = 0; v < subgraph->vertex_count; v++) {
     state_g.cost[par->map[v]] = src_cost[v];
   }
@@ -299,7 +302,7 @@ PRIVATE inline void bfs_init_cpu(partition_t* par) {
     }
   }
   state->finished = engine_get_finished_ptr();
-  OMP(omp parallel for)
+  OMP(omp parallel for schedule(static))
   for (vid_t v = 0; v < par->subgraph.vertex_count; v++) {
     state->cost[v] = INF_COST;
   }
