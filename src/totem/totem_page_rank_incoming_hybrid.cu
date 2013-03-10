@@ -113,7 +113,7 @@ PRIVATE void page_rank_incoming_cpu(partition_t* par) {
   page_rank_state_t* ps = (page_rank_state_t*)par->algo_state;
   if (engine_superstep() > 1) {
     vid_t vcount = engine_vertex_count();
-    OMP(omp parallel for)
+    OMP(omp parallel for schedule(runtime))
     for(vid_t vid = 0; vid < par->subgraph.vertex_count; vid++) {
       double sum = sum_neighbors_ranks(par->id, par->outbox, &par->subgraph, 
                                        vid, ps->rank_s);
@@ -185,7 +185,10 @@ PRIVATE void page_rank_incoming_init_cpu(partition_t* par,
   ps->rank = (rank_t*)calloc(par->subgraph.vertex_count, sizeof(rank_t));
   ps->rank_s = (rank_t*)calloc(par->subgraph.vertex_count, sizeof(rank_t));
   assert(ps->rank && ps->rank_s);
-  OMP(omp parallel for)
+  // The loop has no load balancing issues, hence the choice of dividing
+  // the iterations between the threads statically via the static schedule 
+  // clause
+  OMP(omp parallel for schedule(static))
   for (vid_t v = 0; v < par->subgraph.vertex_count; v++) { 
     ps->rank[v] = init_value;
   }
