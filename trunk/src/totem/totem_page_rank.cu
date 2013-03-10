@@ -406,7 +406,10 @@ error_t page_rank_cpu(graph_t* graph, rank_t* rank_i, rank_t* rank) {
 
   for (uint32_t round = 0; round < PAGE_RANK_ROUNDS; round++) {
     // iterate over all vertices to calculate the ranks for this round
-    OMP(omp parallel for)
+    // The "runtime" scheduling clause defer the choice of thread scheduling
+    // algorithm to the choice of the client, either via OS environment variable
+    // or omp_set_schedule interface.
+    OMP(omp parallel for schedule(runtime))
     for(vid_t vertex_id = 0; vertex_id < graph->vertex_count; vertex_id++) {
       // calculate the sum of all neighbors' rank
       rank_t my_rank = rank[vertex_id];
@@ -417,7 +420,10 @@ error_t page_rank_cpu(graph_t* graph, rank_t* rank_i, rank_t* rank) {
       }
     }
 
-    OMP(omp parallel for)
+    // The loop has no load balancing issues, hence the choice of dividing
+    // the iterations between the threads statically via the static schedule 
+    // clause
+    OMP(omp parallel for schedule(static))
     for(vid_t vertex_id = 0; vertex_id < graph->vertex_count; vertex_id++) {
       // get sum of neighbors' ranks
       rank_t sum = mailbox[vertex_id];
