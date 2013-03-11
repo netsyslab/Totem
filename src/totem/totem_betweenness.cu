@@ -733,9 +733,9 @@ void betweenness_cpu_forward_propagation(const graph_t* graph,
  * @return void
  */
 inline PRIVATE 
-void betweenness_cpu_backward_propagation(const graph_t* graph, cost_t& level,
-                                          uint32_t* numSPs, cost_t* distance,
-                                          score_t* delta, 
+void betweenness_cpu_backward_propagation(const graph_t* graph,
+                                          cost_t& level, uint32_t* numSPs, 
+                                          cost_t* distance, score_t* delta, 
                                           score_t* betweenness_centrality) {
   // Set deltas to 0 for every input node
   memset(delta, 0, graph->vertex_count * sizeof(vid_t));
@@ -904,49 +904,6 @@ error_t betweenness_cpu(const graph_t* graph, double epsilon,
 }
 
 /**
- * Allocates and initializes memory on the GPU for betweenness_gpu
- */
-PRIVATE
-error_t initialize_betweenness_gpu(const graph_t* graph, vid_t vertex_count,
-                                   graph_t** graph_d, cost_t** distance_d,
-                                   uint32_t** numSPs_d, score_t** delta_d,
-                                   bool** done_d,
-                                   score_t** betweenness_scores_d) {
-  // Allocate space on GPU
-  CHK_SUCCESS(graph_initialize_device(graph, graph_d), err);
-  CHK_CU_SUCCESS(cudaMalloc((void**)distance_d, vertex_count * sizeof(cost_t)),
-                 err_free_graph_d);
-  CHK_CU_SUCCESS(cudaMalloc((void**)numSPs_d, vertex_count * sizeof(uint32_t)),
-                 err_free_distance_d);
-  CHK_CU_SUCCESS(cudaMalloc((void**)delta_d, vertex_count * sizeof(score_t)),
-                 err_free_numSPs_d);
-  CHK_CU_SUCCESS(cudaMalloc((void**)done_d, sizeof(bool)), err_free_delta_d);
-  CHK_CU_SUCCESS(cudaMalloc((void**)betweenness_scores_d, vertex_count
-                            * sizeof(score_t)), err_free_done_d);
-
-  // Setup initial parameters
-  CHK_CU_SUCCESS(cudaMemset(*betweenness_scores_d, (score_t)0.0,
-                            vertex_count * sizeof(score_t)), err_free_all);
-  return SUCCESS;
-
-  // Failure cases for freeing memory
- err_free_all:
-  cudaFree(betweenness_scores_d);
- err_free_done_d:
-  cudaFree(done_d);
- err_free_delta_d:
-  cudaFree(delta_d);
- err_free_numSPs_d:
-  cudaFree(numSPs_d);
- err_free_distance_d:
-  cudaFree(distance_d);
- err_free_graph_d:
-  graph_finalize_device(*graph_d);
- err:
-  return FAILURE;
-}
-
-/**
  * Scales the computed betweenness centrality scores
  * when computing approximate values
  */
@@ -985,26 +942,71 @@ void betweenness_gpu_forward_init_kernel(vid_t source, bool* done_d,
 }
 
 /**
- * Performs forward propagation for a specified source node
+ * This structure is used by the virtual warp-based implementation. It stores a
+ * batch of work. It is allocated on shared memory and is processed by a single
+ * virtual warp. Basically it caches the state of the vertices to be processed.
+ */
+typedef struct {
+  eid_t    vertices[VWARP_BATCH_SIZE + 1];
+  cost_t   distance[VWARP_BATCH_SIZE];
+  uint32_t numSPs[VWARP_BATCH_SIZE];
+} vwarp_mem_t;
+
+/**
+ * The neighbors forward propagation processing function. This function sets 
+ * the level of the neighbors' vertex to one level more than the parent vertex.
+ * The assumption is that the threads of a warp invoke this function to process
+ * the warp's batch of work. In each iteration of the for loop, each thread 
+ * processes a neighbor. For example, thread 0 in the warp processes neighbors 
+ * at indices 0, VWARP_WARP_SIZE, (2 * VWARP_WARP_SIZE) etc. in the edges array, 
+ * while thread 1 in the warp processes neighbors 1, (1 + VWARP_WARP_SIZE),
+ * (1 + 2 * VWARP_WARP_SIZE) and so on.
+ */
+__device__
+void forward_process_neighbors(vid_t warp_offset, vid_t* nbrs, vid_t nbr_count, 
+                               uint32_t my_numSPs, uint32_t* numSPs_d,
+                               cost_t* distance_d, cost_t level, bool* done_d) {
+  for(vid_t i = warp_offset; i < nbr_count; i += VWARP_WARP_SIZE) {
+    vid_t nbr = nbrs[i];
+    if (distance_d[nbr] == INF_COST) {
+      distance_d[nbr] = level + 1;
+      *done_d = false;
+    }
+    if (distance_d[nbr] == level + 1) {
+      atomicAdd(&numSPs_d[nbr], my_numSPs);
+    }
+  }
+}
+
+/**
+ * Performs forward propagation
  */
 __global__
 void betweenness_gpu_forward_kernel(const graph_t graph_d, bool* done_d,
                                     cost_t level, uint32_t* numSPs_d, 
-                                    cost_t* distance_d) {
-  const vid_t vid = THREAD_GLOBAL_INDEX; 
-  if (vid >= graph_d.vertex_count) return;
-  if (distance_d[vid] == level) {
-    // For all neighbors of v, iterate over paths
-    for (eid_t e = graph_d.vertices[vid];
-         e < graph_d.vertices[vid + 1]; e++) {
-      vid_t w = graph_d.edges[e];
-      if (distance_d[w] == INF_COST) {
-        distance_d[w] = level + 1;
-        *done_d = false;
-      }
-      if (distance_d[w] == level + 1) {
-        atomicAdd(&numSPs_d[w], numSPs_d[vid]);
-      }
+                                    cost_t* distance_d, uint32_t thread_count) {
+  if (THREAD_GLOBAL_INDEX >= thread_count) return;
+  vid_t warp_offset = THREAD_GLOBAL_INDEX % VWARP_WARP_SIZE;
+  vid_t warp_id     = THREAD_GLOBAL_INDEX / VWARP_WARP_SIZE;
+
+  __shared__ vwarp_mem_t shared_memory[(MAX_THREADS_PER_BLOCK /
+                                        VWARP_WARP_SIZE)];
+  vwarp_mem_t* my_space = &shared_memory[THREAD_GRID_INDEX / VWARP_WARP_SIZE];
+  vid_t v_ = warp_id * VWARP_BATCH_SIZE;
+  vwarp_memcpy(my_space->vertices, &(graph_d.vertices[v_]), 
+               VWARP_BATCH_SIZE + 1, warp_offset);
+  vwarp_memcpy(my_space->distance, &distance_d[v_], VWARP_BATCH_SIZE, 
+               warp_offset);
+  vwarp_memcpy(my_space->numSPs, &numSPs_d[v_], VWARP_BATCH_SIZE, warp_offset);
+
+  // iterate over my work
+  for(vid_t v = 0; v < VWARP_BATCH_SIZE; v++) {
+    if (my_space->distance[v] == level) {
+      vid_t* nbrs = &(graph_d.edges[my_space->vertices[v]]);
+      vid_t nbr_count = my_space->vertices[v + 1] - my_space->vertices[v];
+      forward_process_neighbors(warp_offset, nbrs, nbr_count, 
+                                my_space->numSPs[v], numSPs_d, 
+                                distance_d, level, done_d);
     }
   }
 }
@@ -1065,25 +1067,29 @@ error_t betweenness_gpu_core(graph_t* graph_d, vid_t vertex_count, bool* done_d,
   // this source node, and also set the distance from source to itself to 0
   // and set the shortest path count to 1 (from source to itself), along 
   // with setting done_d to false
+  vid_t state_length = VWARP_BATCH_SIZE * 
+    VWARP_BATCH_COUNT(vertex_count);
   KERNEL_CONFIGURE(vertex_count, blocks, threads_per_block);
   betweenness_gpu_forward_init_kernel<<<blocks, threads_per_block>>>
-    (source, done_d, vertex_count, distance_d, numSPs_d);
+    (source, done_d, state_length, distance_d, numSPs_d);
   CHK_CU_SUCCESS(cudaDeviceSynchronize(), err);
-  
+  vid_t thread_count;
+  thread_count = VWARP_WARP_SIZE * VWARP_BATCH_COUNT(vertex_count);
+  KERNEL_CONFIGURE(thread_count, blocks, threads_per_block);
   while (!done) {
     CHK_CU_SUCCESS(cudaMemset(done_d, true, sizeof(bool)), err);
     // In parallel, iterate over vertices which are at the current level
     betweenness_gpu_forward_kernel<<<blocks, threads_per_block>>>
-      (*graph_d, done_d, level, numSPs_d, distance_d);
-    CHK_CU_SUCCESS(cudaMemcpy(&done, done_d, sizeof(bool),
+      (*graph_d, done_d, level, numSPs_d, distance_d, thread_count);
+    CHK_CU_SUCCESS(cudaMemcpy(&done, done_d, sizeof(bool), 
                               cudaMemcpyDeviceToHost), err);
-    level++;   
+    level++;
   }
 
   // BACKWARD PROPAGATION PHASE
   // Set deltas to 0 for every input node
-  CHK_CU_SUCCESS(cudaMemset(delta_d, 0, vertex_count * sizeof(score_t)), 
-                 err);
+  CHK_CU_SUCCESS(cudaMemset(delta_d, 0, state_length * sizeof(score_t)), err);
+  KERNEL_CONFIGURE(vertex_count, blocks, threads_per_block);
   while (level > 1) {
     level--;
     CHK_CU_SUCCESS(cudaDeviceSynchronize(), err);
@@ -1094,6 +1100,52 @@ error_t betweenness_gpu_core(graph_t* graph_d, vid_t vertex_count, bool* done_d,
 
   return SUCCESS;
 
+ err:
+  return FAILURE;
+}
+
+/**
+ * Allocates and initializes memory on the GPU for betweenness_gpu
+ */
+PRIVATE
+error_t initialize_betweenness_gpu(const graph_t* graph, graph_t** graph_d, 
+                                   cost_t** distance_d, uint32_t** numSPs_d, 
+                                   score_t** delta_d, bool** done_d, 
+                                   score_t** betweenness_scores_d) {
+  vid_t state_length = VWARP_BATCH_SIZE * 
+    VWARP_BATCH_COUNT(graph->vertex_count);
+  // Allocate space on GPU
+  CHK_SUCCESS(graph_initialize_device(graph, graph_d), err);
+  CHK_CU_SUCCESS(cudaMalloc((void**)distance_d, state_length * sizeof(cost_t)),
+                 err_free_graph_d);
+  CHK_CU_SUCCESS(cudaMalloc((void**)numSPs_d, state_length * sizeof(uint32_t)),
+                 err_free_distance_d);
+  CHK_CU_SUCCESS(cudaMalloc((void**)delta_d, state_length * sizeof(score_t)),
+                 err_free_numSPs_d);
+  CHK_CU_SUCCESS(cudaMalloc((void**)done_d, sizeof(bool)), err_free_delta_d);
+  CHK_CU_SUCCESS(cudaMalloc((void**)betweenness_scores_d, state_length
+                            * sizeof(score_t)), err_free_done_d);
+
+  // Setup initial parameters
+  CHK_CU_SUCCESS(cudaMemset(*betweenness_scores_d, (score_t)0.0,
+                            state_length * sizeof(score_t)), err_free_all);
+  cudaFuncSetCacheConfig(betweenness_gpu_forward_kernel, 
+                         cudaFuncCachePreferShared);
+  return SUCCESS;
+
+  // Failure cases for freeing memory
+ err_free_all:
+  cudaFree(betweenness_scores_d);
+ err_free_done_d:
+  cudaFree(done_d);
+ err_free_delta_d:
+  cudaFree(delta_d);
+ err_free_numSPs_d:
+  cudaFree(numSPs_d);
+ err_free_distance_d:
+  cudaFree(distance_d);
+ err_free_graph_d:
+  graph_finalize_device(*graph_d);
  err:
   return FAILURE;
 }
@@ -1128,11 +1180,9 @@ error_t betweenness_gpu(const graph_t* graph, double epsilon,
   score_t*  betweenness_scores_d;
 
   // Initialization stage
-  CHK_SUCCESS(initialize_betweenness_gpu(graph, graph->vertex_count,
-                                         &graph_d, &distance_d, &numSPs_d,
-                                         &delta_d, &done_d, 
+  CHK_SUCCESS(initialize_betweenness_gpu(graph, &graph_d, &distance_d, 
+                                         &numSPs_d, &delta_d, &done_d, 
                                          &betweenness_scores_d), err);
-
   // determine whether we will compute exact or approximate BC values
   if (epsilon == CENTRALITY_EXACT) {
     // Compute exact values for Betweenness Centrality
