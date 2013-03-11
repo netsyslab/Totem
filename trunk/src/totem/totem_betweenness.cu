@@ -1071,7 +1071,7 @@ error_t betweenness_gpu_core(graph_t* graph_d, vid_t vertex_count, bool* done_d,
   CHK_CU_SUCCESS(cudaDeviceSynchronize(), err);
   
   while (!done) {
-    CHK_CU_SUCCESS(cudaMemset(done_d, true, sizeof(bool)), err_free_all);
+    CHK_CU_SUCCESS(cudaMemset(done_d, true, sizeof(bool)), err);
     // In parallel, iterate over vertices which are at the current level
     betweenness_gpu_forward_kernel<<<blocks, threads_per_block>>>
       (*graph_d, done_d, level, numSPs_d, distance_d);
