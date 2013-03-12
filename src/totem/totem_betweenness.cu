@@ -910,11 +910,11 @@ error_t betweenness_cpu(const graph_t* graph, double epsilon,
 __global__
 void betweenness_gpu_scale_scores_kernel(vid_t vertex_count, int num_samples,
                                          score_t* betweenness_score_d) { 
-  const vid_t thread_id = THREAD_GLOBAL_INDEX; 
-  if (thread_id < vertex_count) {
-    betweenness_score_d[thread_id] = (score_t)(((double)(vertex_count)
-                                     / num_samples) * 
-                                     betweenness_score_d[thread_id]);
+  const vid_t vid = THREAD_GLOBAL_INDEX; 
+  if (vid < vertex_count) {
+    betweenness_score_d[vid] = (score_t)(((double)(vertex_count) / 
+                                          num_samples) * 
+                                         betweenness_score_d[vid]);
   }
 }
 
@@ -926,18 +926,17 @@ void betweenness_gpu_scale_scores_kernel(vid_t vertex_count, int num_samples,
  */
 __global__
 void betweenness_gpu_forward_init_kernel(vid_t source, bool* done_d, 
-                                         vid_t vertex_count,
-                                         cost_t* distance_d, 
-                                         uint32_t* numSPs_d) { 
-  const vid_t thread_id = THREAD_GLOBAL_INDEX;
-  if (thread_id >= vertex_count) return;
-  if (thread_id == source) { 
-    distance_d[thread_id] = 0; 
-    numSPs_d[thread_id] = 1; 
+                                         vid_t vertex_count, cost_t* distance_d,
+                                         uint32_t* numSPs_d) {
+  const vid_t vid = THREAD_GLOBAL_INDEX;
+  if (vid >= vertex_count) return;
+  if (vid == source) { 
+    distance_d[vid] = 0; 
+    numSPs_d[vid] = 1; 
     *done_d = false; 
   } else {
-    distance_d[thread_id] = INF_COST;
-    numSPs_d[thread_id] = 0; 
+    distance_d[vid] = INF_COST;
+    numSPs_d[vid] = 0; 
   } 
 }
 
@@ -950,7 +949,7 @@ typedef struct {
   eid_t    vertices[VWARP_BATCH_SIZE + 1];
   cost_t   distance[VWARP_BATCH_SIZE];
   uint32_t numSPs[VWARP_BATCH_SIZE];
-} vwarp_mem_t;
+} batch_mem_t;
 
 /**
  * The neighbors forward propagation processing function. This function sets 
@@ -958,10 +957,10 @@ typedef struct {
  * The assumption is that the threads of a warp invoke this function to process
  * the warp's batch of work. In each iteration of the for loop, each thread 
  * processes a neighbor. For example, thread 0 in the warp processes neighbors 
- * at indices 0, VWARP_WARP_SIZE, (2 * VWARP_WARP_SIZE) etc. in the edges array, 
+ * at indices 0, VWARP_WARP_SIZE, (2 * VWARP_WARP_SIZE) etc. in the edges array,
  * while thread 1 in the warp processes neighbors 1, (1 + VWARP_WARP_SIZE),
  * (1 + 2 * VWARP_WARP_SIZE) and so on.
- */
+*/
 __device__
 void forward_process_neighbors(vid_t warp_offset, vid_t* nbrs, vid_t nbr_count, 
                                uint32_t my_numSPs, uint32_t* numSPs_d,
@@ -989,51 +988,116 @@ void betweenness_gpu_forward_kernel(const graph_t graph_d, bool* done_d,
   vid_t warp_offset = THREAD_GLOBAL_INDEX % VWARP_WARP_SIZE;
   vid_t warp_id     = THREAD_GLOBAL_INDEX / VWARP_WARP_SIZE;
 
-  __shared__ vwarp_mem_t shared_memory[(MAX_THREADS_PER_BLOCK /
-                                        VWARP_WARP_SIZE)];
-  vwarp_mem_t* my_space = &shared_memory[THREAD_GRID_INDEX / VWARP_WARP_SIZE];
-  vid_t v_ = warp_id * VWARP_BATCH_SIZE;
-  vwarp_memcpy(my_space->vertices, &(graph_d.vertices[v_]), 
+  __shared__ batch_mem_t batch_s[(MAX_THREADS_PER_BLOCK / VWARP_WARP_SIZE)];
+  batch_mem_t* vwarp_batch_s = &batch_s[THREAD_GRID_INDEX / VWARP_WARP_SIZE];
+  vid_t base_v = warp_id * VWARP_BATCH_SIZE;
+  vwarp_memcpy(vwarp_batch_s->vertices, &(graph_d.vertices[base_v]), 
                VWARP_BATCH_SIZE + 1, warp_offset);
-  vwarp_memcpy(my_space->distance, &distance_d[v_], VWARP_BATCH_SIZE, 
+  vwarp_memcpy(vwarp_batch_s->distance, &distance_d[base_v], VWARP_BATCH_SIZE, 
                warp_offset);
-  vwarp_memcpy(my_space->numSPs, &numSPs_d[v_], VWARP_BATCH_SIZE, warp_offset);
+  vwarp_memcpy(vwarp_batch_s->numSPs, &numSPs_d[base_v], VWARP_BATCH_SIZE,
+               warp_offset);
 
   // iterate over my work
   for(vid_t v = 0; v < VWARP_BATCH_SIZE; v++) {
-    if (my_space->distance[v] == level) {
-      vid_t* nbrs = &(graph_d.edges[my_space->vertices[v]]);
-      vid_t nbr_count = my_space->vertices[v + 1] - my_space->vertices[v];
+    if (vwarp_batch_s->distance[v] == level) {
+      vid_t* nbrs = &(graph_d.edges[vwarp_batch_s->vertices[v]]);
+      vid_t nbr_count = vwarp_batch_s->vertices[v + 1] - 
+        vwarp_batch_s->vertices[v];
       forward_process_neighbors(warp_offset, nbrs, nbr_count, 
-                                my_space->numSPs[v], numSPs_d, 
+                                vwarp_batch_s->numSPs[v], numSPs_d, 
                                 distance_d, level, done_d);
     }
   }
 }
 
 /**
- * Performs backward propagation for a specified source node
+ * The neighbors backward propagation processing function. This function 
+ * computes the delta of a vertex.
+ */
+__device__
+void backward_process_neighbors(vid_t warp_offset, vid_t* nbrs, vid_t nbr_count,
+                                uint32_t my_numSPs, score_t* vwarp_delta_s, 
+                                uint32_t* numSPs_d, cost_t* distance_d, 
+                                score_t* delta_d, cost_t level,
+                                score_t* my_delta_d, score_t* my_bc_d) {
+  vwarp_delta_s[warp_offset] = 0;
+  for(vid_t i = warp_offset; i < nbr_count; i += VWARP_WARP_SIZE) {
+    vid_t nbr = nbrs[i];
+    if (distance_d[nbr] == level + 1) {
+      // Compute an intermediary delta value in shared memory
+      vwarp_delta_s[warp_offset] += 
+        (((score_t)my_numSPs) / ((score_t)numSPs_d[nbr])) * (delta_d[nbr] + 1);
+    }
+  }
+
+  // Only one thread in the warp aggregates the final value of delta
+  if (warp_offset == 0) {
+    score_t delta = 0;
+    for (vid_t i = 0; i < VWARP_WARP_SIZE; i++) {
+      delta += vwarp_delta_s[i];
+    }
+    // Add the dependency to the BC sum
+    if (delta) {
+      *my_delta_d = delta;
+      *my_bc_d += delta;
+    }
+  }
+}
+
+/**
+ * Performs backward propagation
  */
 __global__
 void betweenness_gpu_backward_kernel(const graph_t graph_d, cost_t level, 
                                      uint32_t* numSPs_d, cost_t* distance_d,
                                      score_t* delta_d, 
-                                     score_t* betweenness_scores_d) {
-  const vid_t vid = THREAD_GLOBAL_INDEX; 
-  if (vid >= graph_d.vertex_count) return;
-  if (distance_d[vid] == level) {
-    // For all neighbors, iterate over paths
-    for (eid_t e = graph_d.vertices[vid]; e < 
-         graph_d.vertices[vid + 1]; e++) {
-      vid_t w = graph_d.edges[e];
-      if (distance_d[w] == level + 1) {
-        delta_d[vid] = (delta_d[vid] + 
-                             ((((score_t)numSPs_d[vid]) /
-                             ((score_t)numSPs_d[w]))*(delta_d[w] + 1)));
-      }
+                                     score_t* betweenness_scores_d, 
+                                     uint32_t thread_count) {
+  if (THREAD_GLOBAL_INDEX >= thread_count) return;
+  vid_t warp_offset = THREAD_GLOBAL_INDEX % VWARP_WARP_SIZE;
+  vid_t warp_id     = THREAD_GLOBAL_INDEX / VWARP_WARP_SIZE;
+
+  // Each warp has a single entry in the following shared memory array.
+  // The entry corresponds to a batch of work which will be processed
+  // in parallel by a warp of threads.
+  __shared__ batch_mem_t batch_s[(MAX_THREADS_PER_BLOCK / VWARP_WARP_SIZE)];
+
+  // Get a reference to the batch of work of the warp this thread belongs to
+  batch_mem_t* vwarp_batch_s = &batch_s[THREAD_GRID_INDEX / VWARP_WARP_SIZE];
+
+  // Calculate the starting vertex of the batch
+  vid_t base_v = warp_id * VWARP_BATCH_SIZE;
+
+  // Cache the state of my warp's batch in the shared memory space
+  vwarp_memcpy(vwarp_batch_s->vertices, &(graph_d.vertices[base_v]),
+               VWARP_BATCH_SIZE + 1, warp_offset);
+  vwarp_memcpy(vwarp_batch_s->distance, &distance_d[base_v], VWARP_BATCH_SIZE,
+               warp_offset);
+  vwarp_memcpy(vwarp_batch_s->numSPs, &numSPs_d[base_v], VWARP_BATCH_SIZE, 
+               warp_offset);
+
+  // Each thread in every warp has an entry in the following array which will be
+  // used to calcule intermediary delta values in shared memory
+  __shared__ score_t delta_s[MAX_THREADS_PER_BLOCK];
+
+  // Get a reference to the entry of the first thread in the warp. This will be
+  // indexed later using warp_offset
+  int index = THREAD_GRID_INDEX / VWARP_WARP_SIZE;
+  score_t* vwarp_delta_s = &delta_s[index * VWARP_WARP_SIZE];
+
+  // Iterate over the warp's batch of work
+  for(vid_t v = 0; v < VWARP_BATCH_SIZE; v++) {
+    if (vwarp_batch_s->distance[v] == level) {
+      vid_t* nbrs = &(graph_d.edges[vwarp_batch_s->vertices[v]]);
+      vid_t nbr_count = vwarp_batch_s->vertices[v + 1] - 
+        vwarp_batch_s->vertices[v];
+      backward_process_neighbors(warp_offset, nbrs, nbr_count, 
+                                 vwarp_batch_s->numSPs[v], vwarp_delta_s,
+                                 numSPs_d, distance_d, delta_d, level, 
+                                 &delta_d[base_v + v], 
+                                 &betweenness_scores_d[base_v + v]);
     }
-    // Add the dependency to the BC sum
-    betweenness_scores_d[vid] = betweenness_scores_d[vid] + delta_d[vid];
   }
 }
 
@@ -1089,13 +1153,13 @@ error_t betweenness_gpu_core(graph_t* graph_d, vid_t vertex_count, bool* done_d,
   // BACKWARD PROPAGATION PHASE
   // Set deltas to 0 for every input node
   CHK_CU_SUCCESS(cudaMemset(delta_d, 0, state_length * sizeof(score_t)), err);
-  KERNEL_CONFIGURE(vertex_count, blocks, threads_per_block);
   while (level > 1) {
     level--;
     CHK_CU_SUCCESS(cudaDeviceSynchronize(), err);
     // In parallel, iterate over vertices which are at the current level
     betweenness_gpu_backward_kernel<<<blocks, threads_per_block>>>
-      (*graph_d, level, numSPs_d, distance_d, delta_d, betweenness_scores_d);
+      (*graph_d, level, numSPs_d, distance_d, delta_d, betweenness_scores_d, 
+       thread_count);
   }
 
   return SUCCESS;
