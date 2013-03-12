@@ -28,11 +28,13 @@ typedef enum {
  *  Benchmark attributes type
  */
 typedef struct benchmark_attr_s {
-  void(*func)(graph_t*, void*, totem_attr_t*);
-  const char* str;
-  size_t push_msg_size;
-  size_t pull_msg_size;
-  size_t output_size;
+  void(*func)(graph_t*, void*, totem_attr_t*); /**< benchmark function */
+  const char* name;       /**< benchmark name */
+  size_t output_size;     /**< per-vertex output size */
+  bool has_totem;         /**< true if the benchmark has a Totem-based 
+                               implementation */
+  size_t push_msg_size;   /**< push message size (for Totem-based impl.) */
+  size_t pull_msg_size;   /**< pull message size (for Totem-based impl.) */
 } benchmark_attr_t;
 
 /**
@@ -60,5 +62,25 @@ typedef struct benchmark_options_s {
  * @param[in] argv argument array
  */
 benchmark_options_t* benchmark_cmdline_parse(int argc, char** argv);
+
+/**
+ * Prints out the configuration parameters of this benchmark run
+ * @param[in] graph the graph being benchmarked
+ * @param[in] options benchmark options
+ * @param[in] benchmark_str benchmark name
+ * @param[in] totem_based defines whether the benchmark was run via Totem or not
+ */
+void print_header(graph_t* graph, benchmark_options_t* options, 
+                  const char* benchmark_name, bool totem_based);
+
+/**
+ * Prints out detailed timing of a single run
+ * @param[in] graph the graph being benchmarked
+ * @param[in] time_total end to end running time
+ * @param[in] trv_edges number of edges processed
+ * @param[in] totem_based defines whether the benchmark was run via Totem or not
+ */
+void print_timing(graph_t* graph, double time_total, uint64_t trv_edges, 
+                  bool totem_based);
 
 #endif // TOTEM_BENCHMARK_H
