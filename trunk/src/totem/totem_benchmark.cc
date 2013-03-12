@@ -8,7 +8,6 @@
 // totem includes
 #include "totem_benchmark.h"
 
-
 // Defines attributes of the algorithms available for benchmarking
 PRIVATE void benchmark_bfs(graph_t*, void*, totem_attr_t*);
 PRIVATE void benchmark_pagerank(graph_t*, void*, totem_attr_t*);
@@ -16,126 +15,42 @@ PRIVATE void benchmark_dijkstra(graph_t*, void*, totem_attr_t*);
 PRIVATE void benchmark_betweenness(graph_t*, void*, totem_attr_t*);
 const benchmark_attr_t BENCHMARKS[] = {
   {
-    benchmark_bfs, 
-    "BFS", 
-    1, 
-    MSG_SIZE_ZERO, 
-    sizeof(cost_t)
+    benchmark_bfs,
+    "BFS",
+    sizeof(cost_t),
+    true,
+    1,
+    MSG_SIZE_ZERO
   },
   {
-    benchmark_pagerank, 
-    "PAGERANK", 
-    MSG_SIZE_ZERO, 
-    sizeof(rank_t) * BITS_PER_BYTE, 
-    sizeof(rank_t)
+    benchmark_pagerank,
+    "PAGERANK",
+    sizeof(rank_t),
+    true,
+    MSG_SIZE_ZERO,
+    sizeof(rank_t) * BITS_PER_BYTE
   },
   {
-    benchmark_dijkstra, 
-    "DIJKSTRA", 
-    sizeof(weight_t) * BITS_PER_BYTE, 
-    MSG_SIZE_ZERO, 
-    sizeof(weight_t)
+    benchmark_dijkstra,
+    "DIJKSTRA",
+    sizeof(weight_t),
+    false,
+    sizeof(weight_t) * BITS_PER_BYTE,
+    MSG_SIZE_ZERO
   },
   {
-    benchmark_betweenness, 
-    "BETWEENNESS", 
-    MSG_SIZE_ZERO, 
-    MSG_SIZE_ZERO, 
-    sizeof(weight_t)
+    benchmark_betweenness,
+    "BETWEENNESS",
+    sizeof(weight_t),
+    false,
+    MSG_SIZE_ZERO,
+    MSG_SIZE_ZERO
   }
 };
 
 // A reference to the options used to configure the benchmark
 PRIVATE benchmark_options_t* options = NULL;
-
-PRIVATE const char* PLATFORM_STR[] = {"CPU", "GPU", "HYBRID"};
-PRIVATE const char* PAR_ALGO_STR[] = {"RANDOM", "HIGH", "LOW"};
-PRIVATE const char* OMP_SCHEDULE_STR[] = {"", "STATIC", "DYNAMIC", "GUIDED", 
-                                          "RUNTIME"};
 PRIVATE const int SEED = 1985;
-
-/**
- * Prints out detailed timing of a single run
- */
-PRIVATE void print_timing(graph_t* graph, double time_total, 
-                          uint64_t trv_edges) {
-  bool totem_based = options->platform != PLATFORM_CPU;
-  const totem_timing_t* timers = totem_timing();
-  printf("%0.2f\t%0.2f\t%0.2f\t%0.2f\t%0.2f\t"
-         "%0.2f\t%0.2f\t%0.2f\t%0.2f\t%0.2f\t%llu\t%0.4f\n",
-         time_total,
-         totem_based ? timers->alg_exec : time_total,
-         totem_based ? timers->alg_init : 0,
-         totem_based ? timers->alg_comp : time_total,
-         totem_based ? timers->alg_comm : 0,
-         totem_based ? timers->alg_finalize : 0,
-         totem_based ? timers->alg_gpu_comp : 0,
-         totem_based ? timers->alg_scatter : 0,
-         totem_based ? timers->alg_gather : 0,
-         totem_based ? timers->alg_aggr : 0,
-         trv_edges,
-         (trv_edges / (totem_based ? timers->alg_exec : time_total))/1000000);
-  fflush(stdout);
-}
-
-/**
- * Prints partitioning characteristics
- */
-PRIVATE void print_header_partitions(graph_t* graph) {
-  uint64_t rv = 0; uint64_t re = 0;
-  for (uint32_t pid = 0; pid < totem_partition_count(); pid++) {
-    rv += totem_par_rmt_vertex_count(pid);
-    re += totem_par_rmt_edge_count(pid);
-  }
-  // Print the total percentage of remote vertices/edges
-  printf("rmt_vertex:%0.0f\trmt_edge:%0.0f\tbeta:%0.0f\t", 
-         100.0*(double)((double)rv/(double)graph->vertex_count),
-         100.0*(double)((double)re/(double)graph->edge_count),
-         100.0*(double)((double)rv/(double)graph->edge_count));
-  
-  // For each partition, print partition id, % of vertices, % of edges, 
-  // % of remote vertices, % of remote edges
-  for (uint32_t pid = 0; pid < totem_partition_count(); pid++) {
-    printf("pid%d:%0.0f,%0.0f,%0.0f,%0.0f\t", pid, 
-           100.0 * ((double)totem_par_vertex_count(pid) / 
-                    (double)graph->vertex_count), 
-           100.0 * ((double)totem_par_edge_count(pid) / 
-                    (double)graph->edge_count),
-           100.0 * ((double)totem_par_rmt_vertex_count(pid) / 
-                    (double)graph->vertex_count),
-           100.0 * ((double)totem_par_rmt_edge_count(pid) / 
-                    (double)graph->edge_count));
-   
-  }
-}
-
-/**
- * Prints out the configuration parameters of this benchmark run
- */
-PRIVATE void print_header(graph_t* graph) {
-  const char* OMP_PROC_BIND = getenv("OMP_PROC_BIND");
-  omp_sched_t sched; int sched_modifier;
-  omp_get_schedule(&sched, &sched_modifier);
-  printf("file:%s\tbenchmark:%s\tvertices:%llu\tedges:%llu\tpartitioning:%s\t"
-         "platform:%s\talpha:%d\trepeat:%d\tgpu_count:%d\t"
-         "thread_count:%d\tthread_sched:%s\tthread_bind:%s", 
-         options->graph_file, BENCHMARKS[options->benchmark].str, 
-         (uint64_t)graph->vertex_count, (uint64_t)graph->edge_count, 
-         PAR_ALGO_STR[options->par_algo], PLATFORM_STR[options->platform], 
-         options->alpha, options->repeat, options->gpu_count, 
-         omp_get_max_threads(), OMP_SCHEDULE_STR[sched],
-         OMP_PROC_BIND == NULL ? "false" : OMP_PROC_BIND);
-  if (options->platform != PLATFORM_CPU) {
-    // print the time spent on initializing Totem and partitioning the graph
-    const totem_timing_t* timers = totem_timing();
-    printf("\ttime_init:%0.2f\ttime_par:%0.2f\t",
-           timers->engine_init, timers->engine_par);
-    print_header_partitions(graph);
-  }
-  printf("\ntotal\texec\tinit\tcomp\tcomm\tfinalize\tgpu_comp\tscatter\t"
-         "gather\taggr\ttrv_edges\texec_rate\n"); 
-  fflush(stdout);
-}
 
 /**
  * Returns the number of traversed edges used in computing the processing rate
@@ -192,7 +107,7 @@ PRIVATE vid_t get_random_src(graph_t* graph) {
  */
 PRIVATE void benchmark_bfs(graph_t* graph, void* cost, totem_attr_t* attr) {
   if (options->platform == PLATFORM_CPU) {
-    bfs_cpu(graph, get_random_src(graph), (cost_t*)cost);
+    CALL_SAFE(bfs_cpu(graph, get_random_src(graph), (cost_t*)cost));
   } else {
     CALL_SAFE(bfs_hybrid(get_random_src(graph), (cost_t*)cost));
   }
@@ -204,7 +119,7 @@ PRIVATE void benchmark_bfs(graph_t* graph, void* cost, totem_attr_t* attr) {
 PRIVATE void benchmark_pagerank(graph_t* graph, void* rank, 
                                 totem_attr_t* attr) {
   if (options->platform == PLATFORM_CPU) {
-    page_rank_incoming_cpu(graph, NULL, (rank_t*)rank);
+    CALL_SAFE(page_rank_incoming_cpu(graph, NULL, (rank_t*)rank));
   } else {
     CALL_SAFE(page_rank_incoming_hybrid(NULL, (rank_t*)rank));
   }
@@ -216,7 +131,10 @@ PRIVATE void benchmark_pagerank(graph_t* graph, void* rank,
 PRIVATE void benchmark_dijkstra(graph_t* graph, void* distance,
                                 totem_attr_t* attr) {
   if (options->platform == PLATFORM_CPU) {
-    dijkstra_cpu(graph, get_random_src(graph), (weight_t*)distance);
+    CALL_SAFE(dijkstra_cpu(graph, get_random_src(graph), (weight_t*)distance));
+  } else if (options->platform == PLATFORM_GPU && options->gpu_count == 1) {
+    CALL_SAFE(dijkstra_vwarp_gpu(graph, get_random_src(graph), 
+                                 (weight_t*)distance));
   } else {
     assert(false);
   }
@@ -228,10 +146,13 @@ PRIVATE void benchmark_dijkstra(graph_t* graph, void* distance,
 PRIVATE void benchmark_betweenness(graph_t* graph, void* betweenness_score, 
                                    totem_attr_t* attr) {
   if (options->platform == PLATFORM_CPU) {
-    betweenness_cpu(graph, CENTRALITY_APPROXIMATE, (score_t*)betweenness_score);
-  } else {
+    CALL_SAFE(betweenness_cpu(graph, CENTRALITY_APPROXIMATE, 
+                              (score_t*)betweenness_score));
+  } else if (options->platform == PLATFORM_GPU && options->gpu_count == 1) {
       CALL_SAFE(betweenness_gpu(graph, CENTRALITY_APPROXIMATE,
                                 (score_t*)betweenness_score));
+  } else {
+    assert(false);
   }
 }
 
@@ -244,12 +165,15 @@ PRIVATE void benchmark_run() {
   CALL_SAFE(graph_initialize(options->graph_file, 
                              (options->benchmark == BENCHMARK_DIJKSTRA),
                              &graph));
-  srand(SEED);
-  void* benchmark_state = mem_alloc(graph->vertex_count * 
-                                    BENCHMARKS[options->benchmark].output_size);
+  void* benchmark_state = 
+    mem_alloc(graph->vertex_count * BENCHMARKS[options->benchmark].output_size);
   assert(benchmark_state || (BENCHMARKS[options->benchmark].output_size == 0));
+
+  bool totem_based = BENCHMARKS[options->benchmark].has_totem && 
+    options->platform != PLATFORM_CPU;
+
   totem_attr_t attr = TOTEM_DEFAULT_ATTR;
-  if (options->platform != PLATFORM_CPU) {
+  if (totem_based) {
     attr.par_algo = options->par_algo;
     attr.cpu_par_share = (float)options->alpha / 100.0;
     attr.platform = options->platform;
@@ -259,23 +183,40 @@ PRIVATE void benchmark_run() {
     CALL_SAFE(totem_init(graph, &attr));
   }
 
+  // Configure OpenMP 
   omp_set_num_threads(options->thread_count);
   omp_set_schedule(options->omp_sched, 0);
-  print_header(graph);
+  print_header(graph, options, BENCHMARKS[options->benchmark].name, 
+               totem_based);
 
+  srand(SEED);
   for (int s = 0; s < options->repeat; s++) {
     stopwatch_t stopwatch;
     stopwatch_start(&stopwatch);
     BENCHMARKS[options->benchmark].func(graph, benchmark_state, &attr);
     print_timing(graph, stopwatch_elapsed(&stopwatch), 
-                 get_traversed_edges(graph, benchmark_state));
+                 get_traversed_edges(graph, benchmark_state), totem_based);
   }
 
-  if (options->platform != PLATFORM_CPU) {
+  if (totem_based) {
     totem_finalize();
   }
   mem_free(benchmark_state);
   CALL_SAFE(graph_finalize(graph));
+}
+
+void benchmark_check_configuration() {
+  if (!BENCHMARKS[options->benchmark].has_totem) {
+    if (options->platform == PLATFORM_HYBRID) {
+      fprintf(stderr, "Error: No hybrid implementation for benchmark %s\n",
+              BENCHMARKS[options->benchmark].name);
+      exit(-1);
+    } else if (options->platform == PLATFORM_GPU && options->gpu_count > 1) {
+      fprintf(stderr, "Error: No multi-GPU implementation for benchmark %s\n",
+              BENCHMARKS[options->benchmark].name);
+      exit(-1);
+    }
+  }
 }
 
 /**
@@ -284,6 +225,7 @@ PRIVATE void benchmark_run() {
 int main(int argc, char** argv) {
   CALL_SAFE(check_cuda_version());
   options = benchmark_cmdline_parse(argc, argv);
+  benchmark_check_configuration();
   benchmark_run();
   return 0;
 }
