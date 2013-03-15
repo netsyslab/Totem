@@ -41,7 +41,6 @@ dir.create(plot_dir, showWarnings = FALSE);
 ## Set the theme and save the plot
 totem.plot.finalize <- function(plot, data, data_hybrid, filename,
                                 legend_position) {
-
   ## Plot the 1S and 2S lines
   data_1S = data[data$GPU_COUNT == 0 & data$CPU_COUNT == 1,]$RATE;
   data_2S = data[data$GPU_COUNT == 0 & data$CPU_COUNT == 2,]$RATE;
@@ -54,8 +53,10 @@ totem.plot.finalize <- function(plot, data, data_hybrid, filename,
   ylimit = .2 * as.integer(5 * max(data_hybrid$RATE) + 1);
   plot = plot +
          scale_x_continuous("% of Edges on the CPU",
-                            limits = c(min(data_hybrid$ALPHA), 95),
-                            breaks = seq(min(data_hybrid$ALPHA), 95, 5)) +
+                            limits = c(min(data_hybrid$ALPHA),
+                                       max(data_hybrid$ALPHA)),
+                            breaks = seq(min(data_hybrid$ALPHA),
+                                         max(data_hybrid$ALPHA), 5)) +
          scale_y_continuous("Billion Traversed Edges Per Second",
                             limits = c(0, ylimit),
                             breaks = seq(0, ylimit, .2));
@@ -144,6 +145,57 @@ totem.plot.par <- function(data, filename, par = "LOW",
   totem.plot.finalize(plot, data, data_hybrid, filename, legend_position);
 }
 
+## Plots the breakdown of exeuction time of a specific hardware configuration
+## and alpha value
+totem.plot.breakdown <- function(data, filename, alpha, cpu_count = 1,
+                                 gpu_count = 1, legend_position = c(.9, .9)) {
+  ## Get the data to plot
+  data_points = subset(data, ALPHA == alpha & 
+                      CPU_COUNT == cpu_count & GPU_COUNT == gpu_count);
+  if (length(data_points$ALPHA) == 0) {
+    print(sprintf("Warning: no data to plot breakdown for %dS%dG at %d",
+                  cpu_count, gpu_count, alpha));
+    return();
+  }
+
+  print(sprintf("Plotting time breakdown for %d alpha data point", alpha));
+  
+  ## Create a data frame such that each processing stage in a row
+  data_all = data.frame(PHASE = character(0), TIME = numeric(0),
+                        PAR = character(0));
+  for (par in c("HIGH", "LOW", "RAN")) {
+    data_point = subset(data_points, PAR == par);
+    phases = c("Computation", "Communication", "Result Aggregation");
+    d = data.frame(PHASE = factor(phases, levels = rev(phases)),
+                   TIME = c(data_point$COMP, data_point$COMM,
+                            data_point$AGGR));
+    d$PAR = par;
+    data_all = rbind(data_all, d);
+  }
+
+  ## Plot as stacked bars
+  plot = ggplot(data_all, aes(x = PAR, y = TIME, fill = PHASE, width = .5)) +
+         geom_bar(stat = "identity");
+
+  ## The axes labels and limits
+  plot = plot + scale_x_discrete("") + scale_colour_grey() +
+         scale_y_continuous("Time (ms)");
+
+  ## Set the theme
+  theme_set(theme_bw());
+  plot = plot + theme(panel.border = element_blank(),
+                      legend.title = element_blank(),
+                      legend.text = element_text(size = 15),
+                      legend.position = legend_position,
+                      axis.line = element_line(size = 1),
+                      axis.title = element_text(size = 15),
+                      axis.ticks = element_line(size = 1),
+                      axis.text = element_text(size = 15));
+
+  ## Save the plot
+  ggsave(filename, plot, width = 7, height = 4.7);
+}
+
 ## Pre-process the data to get averages and confidence intervals
 data = totem.summary(dir);
 
@@ -153,14 +205,20 @@ imgbase = paste(plot_dir, path[length(path)], sep="/");
 
 ## Plot different possible combinations
 totem.plot.config(data, paste(imgbase, "1S1G.png", sep = "_"),
-               cpu_count = 1, gpu_count = 1);
+                  cpu_count = 1, gpu_count = 1);
 totem.plot.config(data, paste(imgbase, "2S1G.png", sep = "_"),
-               cpu_count = 2, gpu_count = 1);
+                  cpu_count = 2, gpu_count = 1);
 totem.plot.config(data, paste(imgbase, "1S2G.png", sep = "_"),
-               cpu_count = 1, gpu_count = 2);
+                  cpu_count = 1, gpu_count = 2);
 totem.plot.config(data, paste(imgbase, "2S2G.png", sep = "_"),
-               cpu_count = 2, gpu_count = 2);
+                  cpu_count = 2, gpu_count = 2);
 
 totem.plot.par(data, paste(imgbase, "RAN.png", sep = "_"), par = "RAN");
 totem.plot.par(data, paste(imgbase, "LOW.png", sep = "_"), par = "LOW");
 totem.plot.par(data, paste(imgbase, "HIGH.png", sep = "_"), par = "HIGH");
+
+## Plot the breakdown of execution time for the data point that represent
+## a hybrid 1S1G configuration and minimum CPU partition size
+alpha = min(subset(data, CPU_COUNT == 1 & GPU_COUNT == 1)$ALPHA);
+totem.plot.breakdown(data, sprintf("%s_1S1G_%d_breakdown.png", imgbase, alpha),
+                     alpha, legend_position = c(.2, .8));
