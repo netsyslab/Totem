@@ -102,8 +102,8 @@ void vwarp_sum_neighbors_rank_kernel(partition_t par, rank_t* rank,
     vid_t nbr_count = my_space->vertices[v + 1] - my_space->vertices[v];
     vid_t* nbrs = &(par.subgraph.edges[my_space->vertices[v]]);
     for(vid_t i = warp_offset; i < nbr_count; i += VWARP_WARP_SIZE) {
-      rank_t* dst; const vid_t nbr = nbrs[i];
-      ENGINE_FETCH_DST(par.id, nbr, par.outbox_d, rank_s, dst, rank_t);
+      const vid_t nbr = nbrs[i];
+      rank_t* dst = engine_get_dst_ptr(par.id, nbr, par.outbox_d, rank_s);      
       atomicAdd(dst, my_space->rank[v]);
     }
   }
@@ -181,8 +181,8 @@ PRIVATE void page_rank_cpu(partition_t* par) {
   for(vid_t v = 0; v < subgraph->vertex_count; v++) {
     rank_t my_rank = ps->rank[v];
     for (eid_t i = subgraph->vertices[v]; i < subgraph->vertices[v + 1]; i++) {
-      rank_t* dst; vid_t nbr = subgraph->edges[i];
-      ENGINE_FETCH_DST(par->id, nbr, par->outbox, ps->rank_s, dst, rank_t);
+      vid_t nbr = subgraph->edges[i];
+      rank_t* dst = engine_get_dst_ptr(par->id, nbr, par->outbox, ps->rank_s);
       __sync_fetch_and_add_float(dst, my_rank);
     }
   }

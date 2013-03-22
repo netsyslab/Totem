@@ -7,6 +7,7 @@
 
 // totem includes
 #include "totem_benchmark.h"
+#include "totem_mem.h"
 
 // Defines attributes of the algorithms available for benchmarking
 PRIVATE void benchmark_bfs(graph_t*, void*, totem_attr_t*);
@@ -58,7 +59,7 @@ PRIVATE const int SEED = 1985;
 PRIVATE uint64_t get_traversed_edges(graph_t* graph, void* benchmark_output) {
   uint64_t trv_edges = 0;
   switch(options->benchmark) {
-    case BENCHMARK_BFS:
+    case BENCHMARK_BFS: {
       OMP(omp parallel for reduction(+ : trv_edges))
       for (vid_t vid = 0; vid < graph->vertex_count; vid++) {
         cost_t* cost = (cost_t*)benchmark_output;
@@ -67,7 +68,8 @@ PRIVATE uint64_t get_traversed_edges(graph_t* graph, void* benchmark_output) {
         }
       }
       break;
-    case BENCHMARK_DIJKSTRA:
+    }
+    case BENCHMARK_DIJKSTRA: {
       OMP(omp parallel for reduction(+ : trv_edges))
       for (vid_t vid = 0; vid < graph->vertex_count; vid++) {
         weight_t* distance = (weight_t*)benchmark_output;
@@ -76,16 +78,20 @@ PRIVATE uint64_t get_traversed_edges(graph_t* graph, void* benchmark_output) {
         }
       }
       break;
-    case BENCHMARK_PAGERANK:
+    }
+    case BENCHMARK_PAGERANK: {
       trv_edges = (uint64_t)graph->edge_count * PAGE_RANK_ROUNDS;
       break;
-    case BENCHMARK_BETWEENNESS:
+    }
+    case BENCHMARK_BETWEENNESS: {
       // The two is for the two phases: forward and backward
       trv_edges = (uint64_t)graph->edge_count * 2;
       break;
-    default:
+    }
+    default: {
       trv_edges = graph->edge_count;
       break;
+    }
   }
   return trv_edges;
 }

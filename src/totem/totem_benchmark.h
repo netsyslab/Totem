@@ -10,7 +10,6 @@
 
 // totem includes
 #include "totem.h"
-#include "totem_mem.h"
 #include "totem_util.h"
 
 /**
