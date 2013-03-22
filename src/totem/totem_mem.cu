@@ -33,7 +33,7 @@ void mem_free(void* buf) {
 #endif // FEATURE_PAGEABLE_MEMORY
 }
 
-error_t totem_malloc(void** ptr, size_t size, totem_mem_t type) {
+error_t totem_malloc(size_t size, totem_mem_t type, void** ptr) {
   error_t err = SUCCESS;
   switch (type) {
     case TOTEM_MEM_HOST:
@@ -43,12 +43,12 @@ error_t totem_malloc(void** ptr, size_t size, totem_mem_t type) {
       }
       break;
     case TOTEM_MEM_HOST_PINNED:
-      if (cudaMallocHost(&ptr, size, cudaHostAllocPortable) != cudaSuccess) {
+      if (cudaMallocHost(ptr, size, cudaHostAllocPortable) != cudaSuccess) {
         err = FAILURE;
       }
       break;
     case TOTEM_MEM_DEVICE:
-      if (cudaMalloc(&ptr, size) != cudaSuccess) {
+      if (cudaMalloc(ptr, size) != cudaSuccess) {
         err = FAILURE;
       }
       break;
@@ -59,8 +59,8 @@ error_t totem_malloc(void** ptr, size_t size, totem_mem_t type) {
   return err;
 }
 
-error_t totem_calloc(void** ptr, size_t size, totem_mem_t type) {
-  error_t err = totem_malloc(ptr, size, type);
+error_t totem_calloc(size_t size, totem_mem_t type, void** ptr) {
+  error_t err = totem_malloc(size, type, ptr);
   if (err != SUCCESS) {
     return FAILURE;
   }
@@ -91,6 +91,7 @@ void totem_free(void* ptr, totem_mem_t type) {
       break;
     case TOTEM_MEM_DEVICE:
       cudaFree(ptr);
+      break;
     default:
       fprintf(stderr, "Error: invalid memory type\n");
       assert(false);
