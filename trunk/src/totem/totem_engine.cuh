@@ -129,32 +129,35 @@ typedef struct engine_config_s {
 #define ENGINE_DEFAULT_CONFIG {NULL, NULL, NULL, NULL, NULL, \
       NULL, NULL, GROOVES_PUSH}
 
+
 /**
  * Returns the address of a neighbor's state. If remote, it returns a reference
  * to its state in the outbox table. If local, it returns a reference to its
- * state in the array pstate
+ * state in the array local_state
  */
-#define ENGINE_FETCH_DST(_pid, _nbr, _outbox, _pstate, _dst, _type)     \
-  do {                                                                  \
-    int nbr_pid = GET_PARTITION_ID((_nbr));                             \
-    if (nbr_pid != (_pid)) {                                            \
-      _type * values = (_type *)(_outbox)[nbr_pid].push_values;         \
-      (_dst) = &values[GET_VERTEX_ID((_nbr))];                          \
-    } else {                                                            \
-      (_dst) = &(_pstate)[GET_VERTEX_ID((_nbr))];                       \
-    }                                                                   \
-  } while(0)
+template<typename T>
+__device__  __host__
+inline T* engine_get_dst_ptr(int pid, vid_t nbr, grooves_box_table_t* outbox,
+                             T* local_state) {
+  int nbr_pid = GET_PARTITION_ID(nbr);
+  if (nbr_pid != pid) {
+    T* values = (T*)(outbox[nbr_pid].push_values);
+    return &values[GET_VERTEX_ID(nbr)];
+  }
+  return &(local_state)[GET_VERTEX_ID(nbr)];
+}
+template<typename T>
+__device__  __host__
+inline T* engine_get_src_ptr(int pid, vid_t nbr, grooves_box_table_t* outbox,
+                             T* local_state) {
+  int nbr_pid = GET_PARTITION_ID(nbr);
+  if (nbr_pid != pid) {
+    T* values = (T*)(outbox[nbr_pid].pull_values);
+    return &values[GET_VERTEX_ID(nbr)];
+  }
+  return &(local_state)[GET_VERTEX_ID(nbr)];
+}
 
-#define ENGINE_FETCH_SRC(_pid, _nbr, _outbox, _pstate, _src, _type)     \
-  do {                                                                  \
-    int nbr_pid = GET_PARTITION_ID((_nbr));                             \
-    if (nbr_pid != (_pid)) {                                            \
-      _type * values = (_type *)(_outbox)[nbr_pid].pull_values;         \
-      (_src) = &values[GET_VERTEX_ID((_nbr))];                          \
-    } else {                                                            \
-      (_src) = &(_pstate)[GET_VERTEX_ID((_nbr))];                       \
-    }                                                                   \
-  } while(0)
 
 /**
  * Initializes the state required for hybrid CPU-GPU processing. It creates a

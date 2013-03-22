@@ -100,7 +100,8 @@ PRIVATE error_t partition_random(graph_t* graph, int partition_count,
   // TODO(abdullah): pass the seed as an argument to control the randomness
   //                 of the algorithm if the experiments show variability in 
   //                 performance or the characteristics of the partitions.
-  srand(time(NULL));
+  //srand(time(NULL));
+  srand(1885);
 
   for (vid_t vertex_id = 0; vertex_id < graph->vertex_count; vertex_id++) {
     // Assign each vertex to a random partition within the range
@@ -129,7 +130,8 @@ error_t partition_random(graph_t* graph, int partition_count,
   assert(partitions != NULL);
 
   // Initialize the random number generator
-  srand(time(NULL));
+  // srand(time(NULL));
+  srand(1885);
 
   // Allocate all the partition ids to the id vector
   vid_t v = 0;

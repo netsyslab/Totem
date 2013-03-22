@@ -62,8 +62,7 @@ double sum_neighbors_ranks(int pid, grooves_box_table_t* outbox,
   double sum = 0;
   for (eid_t i = graph->vertices[vid];
        i < graph->vertices[vid + 1]; i++) {
-    rank_t* src;
-    ENGINE_FETCH_SRC(pid, graph->edges[i], outbox, ranks, src, rank_t);
+    rank_t* src = engine_get_src_ptr(pid, graph->edges[i], outbox, ranks);
     sum += *src;
   }
   return sum;
