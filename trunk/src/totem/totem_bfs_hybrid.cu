@@ -283,8 +283,7 @@ PRIVATE inline void bfs_init_gpu(partition_t* par) {
       (visited[par->id], GET_VERTEX_ID(state_g.src));
     CALL_CU_SAFE(cudaGetLastError());
   }
-  CALL_CU_SAFE(cudaHostGetDevicePointer((void **)&(state->finished), 
-                                        (void *)engine_get_finished_ptr(), 0));
+  state->finished = engine_get_finished_ptr(par->id);
   KERNEL_CONFIGURE(VWARP_WARP_SIZE * VWARP_BATCH_COUNT(vcount),
                    state->blocks, state->threads);
 }
@@ -301,7 +300,7 @@ PRIVATE inline void bfs_init_cpu(partition_t* par) {
       bitmap_reset_cpu(state->visited[pid], par->outbox[pid].count);
     }
   }
-  state->finished = engine_get_finished_ptr();
+  state->finished = engine_get_finished_ptr(par->id);
   OMP(omp parallel for schedule(static))
   for (vid_t v = 0; v < par->subgraph.vertex_count; v++) {
     state->cost[v] = INF_COST;
