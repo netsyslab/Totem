@@ -263,6 +263,15 @@ inline bool* engine_get_finished_ptr() {
   return context.finished;
 }
 
+inline bool* engine_get_finished_ptr(int pid) {
+  bool* finished = context.finished;
+  if (context.pset->partitions[pid].processor.type == PROCESSOR_GPU) {
+    CALL_CU_SAFE(cudaHostGetDevicePointer((void **)&(finished), 
+                                          (void *)context.finished, 0));
+  }
+  return finished;
+}
+
 inline vid_t* engine_vertex_id_in_partition() {
   return context.pset->id_in_partition;
 }

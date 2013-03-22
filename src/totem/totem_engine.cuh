@@ -196,13 +196,21 @@ error_t engine_execute();
  */
 void engine_report_not_finished();
 
-/* Returns a reference to the global finish flag. This flag is allocated using
- * the cudaHostAllocMapped option which allows GPU kernels to access it directly
- * from within the GPU. This flag is initialized to true at the beginning of 
- * each superstep. The BSP cycle continues as long as at least one partition
- * sets this flag to false.
+/* Returns a host reference to the global finish flag. This flag is allocated
+ * using the cudaHostAllocMapped option which allows GPU kernels to access it
+ * directly from within the GPU. This flag is initialized to true at the
+ * beginning of each superstep. The BSP cycle continues as long as at least one
+ * partition sets this flag to false.
  */
 bool* engine_get_finished_ptr();
+
+/*
+ * Returns a pointer to the global finish flag. If the partition is GPU-based,
+ * the function returns a device pointer to the finished flag which can be used
+ * to access the flag from within the device. If the partition is CPU-based,
+ * then it will return a host pointer.
+*/
+bool* engine_get_finished_ptr(int pid);
 
 /**
  * Returns the number of partitions
