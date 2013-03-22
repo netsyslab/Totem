@@ -116,7 +116,8 @@ TEST_P(DijkstraTest, Chain) {
   source = 199;
   EXPECT_EQ(SUCCESS, dijkstra(_graph, source, _distances));
   for(vid_t vertex_id = 0; vertex_id < _graph->vertex_count; vertex_id++) {
-    EXPECT_EQ((uint32_t)abs(source - vertex_id), _distances[vertex_id]);
+    EXPECT_EQ((uint32_t)abs((double)source - (double)vertex_id), 
+              _distances[vertex_id]);
   }
 
   // Non existent vertex source

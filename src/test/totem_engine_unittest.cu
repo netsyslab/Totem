@@ -22,9 +22,9 @@ __global__ void degree_kernel(partition_t par) {
   if (v >= par.subgraph.vertex_count) return;
   for (eid_t i = par.subgraph.vertices[v];
        i < par.subgraph.vertices[v + 1]; i++) {
-    int* dst;
     vid_t nbr = par.subgraph.edges[i];
-    ENGINE_FETCH_DST(par.id, nbr, par.outbox_d, (int*)par.algo_state, dst, int);
+    int* dst = engine_get_dst_ptr(par.id, nbr, par.outbox_d, 
+                                  (int*)par.algo_state);
     atomicAdd(dst, 1);
   }
 }
@@ -41,10 +41,9 @@ void degree_cpu(partition_t* par) {
   for (vid_t v = 0; v < par->subgraph.vertex_count; v++) {
     for (eid_t i = par->subgraph.vertices[v];
          i < par->subgraph.vertices[v + 1]; i++) {
-      int* dst;
       vid_t nbr = par->subgraph.edges[i];
-      ENGINE_FETCH_DST(par->id, nbr, par->outbox, (int*)par->algo_state, dst, 
-                       int);
+      int* dst = engine_get_dst_ptr(par->id, nbr, par->outbox, 
+                                    (int*)par->algo_state);
       __sync_fetch_and_add(dst, 1);
     }
   }

@@ -146,7 +146,7 @@ TEST_P(BFSTest, Chain) {
   source = 199;
   EXPECT_EQ(SUCCESS, TestGraph(graph, source, cost));
   for(vid_t vertex = 0; vertex < graph->vertex_count; vertex++) {
-    EXPECT_EQ((cost_t)abs(source - vertex), cost[vertex]);
+    EXPECT_EQ((cost_t)abs((double)source - (double)vertex), cost[vertex]);
   }
 
   // Non existent vertex source
