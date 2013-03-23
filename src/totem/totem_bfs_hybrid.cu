@@ -51,7 +51,7 @@ PRIVATE error_t check_special_cases(vid_t src, cost_t* cost, bool* finished) {
     return SUCCESS;
   } else if(engine_edge_count() == 0) {
     // Initialize cost to INFINITE.
-    memset(cost, 0xFF, engine_vertex_count() * sizeof(cost_t));
+    totem_memset(cost, INF_COST, engine_vertex_count(), TOTEM_MEM_HOST);
     cost[src] = 0;
     return SUCCESS;
   }
@@ -256,43 +256,35 @@ __global__ void bfs_init_kernel(bitmap_t visited, vid_t src) {
 
 PRIVATE inline void bfs_init_gpu(partition_t* par) {
   bfs_state_t* state = (bfs_state_t*)par->algo_state;
-  vid_t vcount = par->subgraph.vertex_count;
-  CALL_CU_SAFE(cudaMalloc((void**)&(state->cost), vcount * sizeof(cost_t)));
-  CALL_CU_SAFE(cudaMalloc((void**)&(state->visited), 
-                          MAX_PARTITION_COUNT * sizeof(bitmap_t)));
   bitmap_t visited[MAX_PARTITION_COUNT];
-  visited[par->id] = bitmap_init_gpu(vcount);
+  visited[par->id] = bitmap_init_gpu(par->subgraph.vertex_count);
   for (int pid = 0; pid < engine_partition_count(); pid++) {
     if (pid != par->id && par->outbox[pid].count != 0) {
       visited[pid] = (bitmap_t)par->outbox[pid].push_values;
       bitmap_reset_gpu(visited[pid], par->outbox[pid].count);
     }
   }
+  CALL_SAFE(totem_malloc(MAX_PARTITION_COUNT * sizeof(bitmap_t), 
+                         TOTEM_MEM_DEVICE, (void**)&(state->visited)));
   CALL_CU_SAFE(cudaMemcpy(state->visited, visited, 
                           MAX_PARTITION_COUNT * sizeof(bitmap_t),
                           cudaMemcpyDefault));
-  KERNEL_CONFIGURE(vcount, state->blocks, state->threads);
-  memset_device<<<state->blocks, state->threads, 0,
-    par->streams[1]>>>(state->cost, INF_COST, vcount);
-  CALL_CU_SAFE(cudaGetLastError());
+  // set the source vertex as visited
   if (GET_PARTITION_ID(state_g.src) == par->id) {
-    // For the source vertex, initialize cost.
-    memset_device<<<state->blocks, state->threads, 0, par->streams[1]>>>
-      (&((state->cost)[GET_VERTEX_ID(state_g.src)]), (cost_t)0, 1);
+    KERNEL_CONFIGURE(1, state->blocks, state->threads);
     bfs_init_kernel<<<state->blocks, state->threads, 0, par->streams[1]>>>
       (visited[par->id], GET_VERTEX_ID(state_g.src));
     CALL_CU_SAFE(cudaGetLastError());
   }
-  state->finished = engine_get_finished_ptr(par->id);
-  KERNEL_CONFIGURE(VWARP_WARP_SIZE * VWARP_BATCH_COUNT(vcount),
+  KERNEL_CONFIGURE(VWARP_WARP_SIZE * 
+                   VWARP_BATCH_COUNT(par->subgraph.vertex_count),
                    state->blocks, state->threads);
 }
 
 PRIVATE inline void bfs_init_cpu(partition_t* par) {
   bfs_state_t* state = (bfs_state_t*)par->algo_state;
-  state->cost = (cost_t*)calloc(par->subgraph.vertex_count, sizeof(cost_t));
-  state->visited = (bitmap_t*)calloc(MAX_PARTITION_COUNT, sizeof(bitmap_t));
-  assert(state->cost && state->visited);
+  CALL_SAFE(totem_malloc(MAX_PARTITION_COUNT * sizeof(bitmap_t),
+                         TOTEM_MEM_HOST, (void**)&(state->visited)));
   state->visited[par->id] = bitmap_init_cpu(par->subgraph.vertex_count);
   for (int pid = 0; pid < engine_partition_count(); pid++) {
     if (pid != par->id && par->outbox[pid].count != 0) {
@@ -300,14 +292,8 @@ PRIVATE inline void bfs_init_cpu(partition_t* par) {
       bitmap_reset_cpu(state->visited[pid], par->outbox[pid].count);
     }
   }
-  state->finished = engine_get_finished_ptr(par->id);
-  OMP(omp parallel for schedule(static))
-  for (vid_t v = 0; v < par->subgraph.vertex_count; v++) {
-    state->cost[v] = INF_COST;
-  }
-  // initialize the cost of the source vertex 
+  // set the source vertex as visited
   if (GET_PARTITION_ID(state_g.src) == par->id) {
-    state->cost[GET_VERTEX_ID(state_g.src)] = 0;
     bitmap_set_cpu(state->visited[par->id], GET_VERTEX_ID(state_g.src));
   }
 }
@@ -316,33 +302,45 @@ PRIVATE void bfs_init(partition_t* par) {
   if (!par->subgraph.vertex_count) return;
   bfs_state_t* state = (bfs_state_t*)calloc(1, sizeof(bfs_state_t));
   assert(state);
-  state->level = 0;
   par->algo_state = state;
+  totem_mem_t type = TOTEM_MEM_HOST;
   if (par->processor.type == PROCESSOR_CPU) {
     bfs_init_cpu(par);
   } else if (par->processor.type == PROCESSOR_GPU) {
+    type = TOTEM_MEM_DEVICE;
     bfs_init_gpu(par);
   } else {
     assert(false);
   }
+  CALL_SAFE(totem_malloc(par->subgraph.vertex_count * sizeof(cost_t), type, 
+                         (void**)&(state->cost)));
+  totem_memset(state->cost, INF_COST, par->subgraph.vertex_count, type, 
+               par->streams[1]);
+  if (GET_PARTITION_ID(state_g.src) == par->id) {
+    // For the source vertex, initialize cost.    
+    totem_memset(&((state->cost)[GET_VERTEX_ID(state_g.src)]), (cost_t)0, 1, 
+                 type, par->streams[1]);
+  }
+  state->finished = engine_get_finished_ptr(par->id);
+  state->level = 0;
 }
 
 PRIVATE void bfs_finalize(partition_t* par) {
   bfs_state_t* state = (bfs_state_t*)par->algo_state;
+  totem_mem_t type = TOTEM_MEM_HOST;
   if (par->processor.type == PROCESSOR_CPU) {
     bitmap_finalize_cpu(state->visited[par->id]);
-    free(state->visited);
-    free(state->cost);
   } else if (par->processor.type == PROCESSOR_GPU) {
-    CALL_CU_SAFE(cudaFree(state->cost));
     bitmap_t visited;
     CALL_CU_SAFE(cudaMemcpy(&visited, &(state->visited[par->id]), 
                             sizeof(bitmap_t), cudaMemcpyDefault));
     bitmap_finalize_gpu(visited);
-    CALL_CU_SAFE(cudaFree(state->visited));    
+    type = TOTEM_MEM_DEVICE;
   } else {
     assert(false);
   }
+  totem_free(state->visited, type);
+  totem_free(state->cost, type);
   free(state);
   par->algo_state = NULL;
 }
@@ -364,13 +362,15 @@ error_t bfs_hybrid(vid_t src, cost_t* cost) {
   };
   engine_config(&config);
   if (engine_largest_gpu_partition()) {
-    state_g.cost_h = (cost_t*)mem_alloc(engine_largest_gpu_partition() *
-                                        sizeof(cost_t));
+    CALL_SAFE(totem_malloc(engine_largest_gpu_partition() * sizeof(cost_t), 
+                           TOTEM_MEM_HOST_PINNED, (void**)&state_g.cost_h));
   }
   engine_execute();
 
   // clean up and return
-  if (engine_largest_gpu_partition()) mem_free(state_g.cost_h);
+  if (engine_largest_gpu_partition()) {
+    totem_free(state_g.cost_h, TOTEM_MEM_HOST_PINNED);
+  }
   memset(&state_g, 0, sizeof(bfs_global_state_t));
   return SUCCESS;
 }
