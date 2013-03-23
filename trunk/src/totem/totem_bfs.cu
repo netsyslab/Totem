@@ -42,7 +42,7 @@ PRIVATE error_t check_special_cases(graph_t* graph, vid_t src_id,
     return SUCCESS;
   } else if(graph->edge_count == 0) {
     // Initialize cost to INFINITE and zero to the source node
-    memset(cost, 0xFF, graph->vertex_count * sizeof(cost_t));
+    totem_memset(cost, INF_COST, graph->vertex_count, TOTEM_MEM_HOST);
     cost[src_id] = 0;
     return SUCCESS;
   }
@@ -56,28 +56,22 @@ PRIVATE error_t check_special_cases(graph_t* graph, vid_t src_id,
 */
 PRIVATE
 error_t initialize_gpu(const graph_t* graph, vid_t source_id, vid_t cost_len, 
-                       graph_t** graph_d, cost_t** cost_d, 
-                       bool** finished_d) {
-  dim3 blocks;
-  dim3 threads_per_block;
-
+                       graph_t** graph_d, cost_t** cost_d, bool** finished_d) {
   // Allocate space on GPU
   CHK_SUCCESS(graph_initialize_device(graph, graph_d), err);
-  CHK_CU_SUCCESS(cudaMalloc((void**) cost_d, cost_len * sizeof(cost_t)),
-                 err_free_graph_d);
+  CHK_SUCCESS(totem_malloc(cost_len * sizeof(cost_t), TOTEM_MEM_DEVICE, 
+                           (void**)cost_d), err_free_graph_d);
   // Initialize cost to INFINITE.
-  KERNEL_CONFIGURE(cost_len, blocks, threads_per_block);
-  memset_device<<<blocks, threads_per_block>>>((*cost_d), INF_COST, cost_len);
+  totem_memset(*cost_d, INF_COST, cost_len, TOTEM_MEM_DEVICE);
   // For the source vertex, initialize cost.
-  CHK_CU_SUCCESS(cudaMemset(&((*cost_d)[source_id]), 0, sizeof(cost_t)),
-                 err_free_cost_d_graph_d);
+  totem_memset(&((*cost_d)[source_id]), (cost_t)0, 1, TOTEM_MEM_DEVICE);
   // Allocate the termination flag
-  CHK_CU_SUCCESS(cudaMalloc((void**) finished_d, sizeof(bool)),
-                 err_free_cost_d_graph_d);
+  CHK_SUCCESS(totem_malloc(sizeof(bool), TOTEM_MEM_DEVICE, (void**)finished_d),
+              err_free_cost_d_graph_d);
   return SUCCESS;
 
   err_free_cost_d_graph_d:
-    cudaFree(cost_d);
+    totem_free(cost_d, TOTEM_MEM_DEVICE);
   err_free_graph_d:
     graph_finalize_device(*graph_d);
   err:
@@ -90,11 +84,13 @@ error_t initialize_gpu(const graph_t* graph, vid_t source_id, vid_t cost_len,
  * frees up some resources.
 */
 PRIVATE 
-error_t finalize_gpu(graph_t* graph_d, cost_t* cost_d, cost_t* cost) {
+error_t finalize_gpu(graph_t* graph_d, bool* finished_d, 
+                     cost_t* cost_d, cost_t* cost) {
   CHK_CU_SUCCESS(cudaMemcpy(cost, cost_d, graph_d->vertex_count *
                             sizeof(cost_t), cudaMemcpyDeviceToHost), err);
   graph_finalize_device(graph_d);
-  cudaFree(cost_d);
+  totem_free(finished_d, TOTEM_MEM_DEVICE);
+  totem_free(cost_d, TOTEM_MEM_DEVICE);
   return SUCCESS;
  err:
   return FAILURE;
@@ -226,13 +222,13 @@ error_t bfs_vwarp_gpu(graph_t* graph, vid_t source_id, cost_t* cost) {
   }
   }
 
-  CHK_SUCCESS(finalize_gpu(graph_d, cost_d, cost), err_free_all);
+  CHK_SUCCESS(finalize_gpu(graph_d, finished_d, cost_d, cost), err_free_all);
   return SUCCESS;
 
   // error handlers
   err_free_all:
-    cudaFree(finished_d);
-    cudaFree(cost_d);
+    totem_free(finished_d, TOTEM_MEM_DEVICE);
+    totem_free(cost_d, TOTEM_MEM_DEVICE);
     graph_finalize_device(graph_d);
     return FAILURE;
 }
@@ -269,20 +265,20 @@ error_t bfs_gpu(graph_t* graph, vid_t source_id, cost_t* cost) {
   }}
 
   // We are done, get the results back and clean up state
-  CHK_SUCCESS(finalize_gpu(graph_d, cost_d, cost), err_free_all);
+  CHK_SUCCESS(finalize_gpu(graph_d, finished_d, cost_d, cost), err_free_all);
   return SUCCESS;
 
   // error handlers
   err_free_all:
-    cudaFree(finished_d);
-    cudaFree(cost_d);
+    totem_free(finished_d, TOTEM_MEM_DEVICE);
+    totem_free(cost_d, TOTEM_MEM_DEVICE);
     graph_finalize_device(graph_d);
     return FAILURE;
 }
 
 PRIVATE bitmap_t initialize_cpu(graph_t* graph, vid_t source_id, cost_t* cost) {
   // Initialize cost to INFINITE and create the vertices bitmap
-  memset(cost, 0xFF, graph->vertex_count * sizeof(cost_t));
+  totem_memset(cost, INF_COST, graph->vertex_count, TOTEM_MEM_HOST);
   bitmap_t visited = bitmap_init_cpu(graph->vertex_count);
   
   // Initialize the state of the source vertex

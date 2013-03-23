@@ -35,6 +35,7 @@ class BFSTest : public TestWithParam<bfs_param_t*> {
     // Ensure the minimum CUDA architecture is supported
     CUDA_CHECK_VERSION();
     bfs_param = GetParam();
+    mem_type = TOTEM_MEM_HOST_PINNED;
   }
 
   error_t TestGraph(graph_t* graph, vid_t src, cost_t* cost) {
@@ -52,6 +53,7 @@ class BFSTest : public TestWithParam<bfs_param_t*> {
   }
  protected:
   bfs_param_t* bfs_param;
+  totem_mem_t mem_type;
 };
 
 // Tests BFS for empty graphs.
@@ -69,19 +71,22 @@ TEST_P(BFSTest, Empty) {
 TEST_P(BFSTest, SingleNode) {
   graph_t* graph;
   graph_initialize(DATA_FOLDER("single_node.totem"), false, &graph);
-  cost_t* cost = (cost_t*)mem_alloc(graph->vertex_count * sizeof(cost_t));
+  cost_t* cost = NULL;
+  CALL_SAFE(totem_malloc(graph->vertex_count * sizeof(cost_t), mem_type, 
+                         (void**)&cost));
   EXPECT_EQ(SUCCESS, TestGraph(graph, 0, cost));
   EXPECT_EQ((cost_t)0, cost[0]);
   EXPECT_EQ(FAILURE, TestGraph(graph, 1, cost));
   graph_finalize(graph);
-  mem_free(cost);
+  totem_free(cost, mem_type);
 
   graph_initialize(DATA_FOLDER("single_node_loop.totem"), false, &graph);
-  cost = (cost_t*)mem_alloc(graph->vertex_count * sizeof(cost_t));
+  CALL_SAFE(totem_malloc(graph->vertex_count * sizeof(cost_t), mem_type, 
+                         (void**)&cost));
   EXPECT_EQ(SUCCESS, TestGraph(graph, 0, cost));
   EXPECT_EQ((cost_t)0, cost[0]);
   EXPECT_EQ(FAILURE, TestGraph(graph, 1, cost));
-  mem_free(cost);
+  totem_free(cost, mem_type);
   graph_finalize(graph);
 }
 
@@ -89,7 +94,9 @@ TEST_P(BFSTest, SingleNode) {
 TEST_P(BFSTest, EmptyEdges) {
   graph_t* graph;
   graph_initialize(DATA_FOLDER("disconnected_1000_nodes.totem"), false, &graph);
-  cost_t* cost = (cost_t*)mem_alloc(graph->vertex_count * sizeof(cost_t));
+  cost_t* cost = NULL;
+  CALL_SAFE(totem_malloc(graph->vertex_count * sizeof(cost_t), mem_type, 
+                         (void**)&cost));
 
   // First vertex as source
   vid_t source = 0;
@@ -117,7 +124,7 @@ TEST_P(BFSTest, EmptyEdges) {
   // Non existent vertex source
   EXPECT_EQ(FAILURE, TestGraph(graph, graph->vertex_count, cost));
 
-  mem_free(cost);
+  totem_free(cost, mem_type);
   graph_finalize(graph);
 }
 
@@ -125,7 +132,9 @@ TEST_P(BFSTest, EmptyEdges) {
 TEST_P(BFSTest, Chain) {
   graph_t* graph;
   graph_initialize(DATA_FOLDER("chain_1000_nodes.totem"), false, &graph);
-  cost_t* cost = (cost_t*)mem_alloc(graph->vertex_count * sizeof(cost_t));
+  cost_t* cost = NULL;
+  CALL_SAFE(totem_malloc(graph->vertex_count * sizeof(cost_t), mem_type, 
+                         (void**)&cost));
 
   // First vertex as source
   vid_t source = 0;
@@ -152,7 +161,7 @@ TEST_P(BFSTest, Chain) {
   // Non existent vertex source
   EXPECT_EQ(FAILURE, TestGraph(graph, graph->vertex_count, cost));
 
-  mem_free(cost);
+  totem_free(cost, mem_type);
   graph_finalize(graph);
 }
 
@@ -161,7 +170,9 @@ TEST_P(BFSTest, CompleteGraph) {
   graph_t* graph;
   graph_initialize(DATA_FOLDER("complete_graph_300_nodes.totem"), false,
                    &graph);
-  cost_t* cost = (cost_t*)mem_alloc(graph->vertex_count * sizeof(cost_t));
+  cost_t* cost = NULL;
+  CALL_SAFE(totem_malloc(graph->vertex_count * sizeof(cost_t), mem_type, 
+                         (void**)&cost));
 
   // First vertex as source
   vid_t source = 0;
@@ -189,7 +200,7 @@ TEST_P(BFSTest, CompleteGraph) {
   // Non existent vertex source
   EXPECT_EQ(FAILURE, TestGraph(graph, graph->vertex_count, cost));
 
-  mem_free(cost);
+  totem_free(cost, mem_type);
   graph_finalize(graph);
 }
 
@@ -197,7 +208,9 @@ TEST_P(BFSTest, CompleteGraph) {
 TEST_P(BFSTest, Star) {
   graph_t* graph;
   graph_initialize(DATA_FOLDER("star_1000_nodes.totem"), false, &graph);
-  cost_t* cost = (cost_t*)mem_alloc(graph->vertex_count * sizeof(cost_t));
+  cost_t* cost = NULL;
+  CALL_SAFE(totem_malloc(graph->vertex_count * sizeof(cost_t), mem_type, 
+                         (void**)&cost));
 
   // First vertex as source
   vid_t source = 0;
@@ -227,7 +240,7 @@ TEST_P(BFSTest, Star) {
   // Non existent vertex source
   EXPECT_EQ(FAILURE, TestGraph(graph, graph->vertex_count, cost));
 
-  mem_free(cost);
+  totem_free(cost, mem_type);
   graph_finalize(graph);
 }
 
