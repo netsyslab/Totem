@@ -13,27 +13,6 @@
 #include "totem_mem.h"
 
 /**
- * Checks for input parameters and special cases. This is invoked at the
- * beginning of public interfaces (GPU and CPU).
-*/
-PRIVATE
-error_t check_special_cases(const graph_t* graph, bool* finished,
-                            score_t* betweenness_score) {
-  if (graph == NULL || graph->vertex_count == 0 || betweenness_score == NULL) {
-    return FAILURE;
-  }
-
-  if (graph->edge_count == 0) {
-    memset(betweenness_score, (score_t)0.0, graph->vertex_count
-           * sizeof(score_t));
-    return SUCCESS;
-  }
-
-  *finished = false;
-  return SUCCESS;
-}
-
-/**
  * Allocates and initializes memory on the GPU for the successors implementation
  * of betweenness centrality.
  */
@@ -328,7 +307,10 @@ error_t betweenness_unweighted_gpu(const graph_t* graph,
                                    score_t* betweenness_centrality) {
   // Sanity check on input
   bool finished = true;
-  error_t rc = check_special_cases(graph, &finished, betweenness_centrality);
+  error_t rc = betweenness_check_special_cases(graph->vertex_count,
+                                               graph->edge_count, 
+                                               &finished, 
+                                               betweenness_centrality);
   if (finished) return rc;
 
   // Allocate memory and initialize state on the GPU
@@ -436,7 +418,10 @@ error_t betweenness_unweighted_shi_gpu(const graph_t* graph,
                                        score_t* betweenness_centrality) {
   // Sanity check on input
   bool finished = true;
-  error_t rc = check_special_cases(graph, &finished, betweenness_centrality);
+  error_t rc = betweenness_check_special_cases(graph->vertex_count,
+                                               graph->edge_count,
+                                               &finished, 
+                                               betweenness_centrality);
   if (finished) return rc;
 
   // Construct the reverse edges list (graph->edges is a list of destination
@@ -553,7 +538,10 @@ error_t betweenness_unweighted_cpu(const graph_t* graph,
                                    score_t* betweenness_centrality) {
   // Sanity check on input
   bool finished = true;
-  error_t rc = check_special_cases(graph, &finished, betweenness_centrality);
+  error_t rc = betweenness_check_special_cases(graph->vertex_count,
+                                               graph->edge_count,
+                                               &finished, 
+                                               betweenness_centrality);
   if (finished) return rc;
 
   // Allocate memory for the shortest paths problem
@@ -761,52 +749,6 @@ void betweenness_cpu_backward_propagation(const graph_t* graph,
 }
 
 /**
- * Populate the sampling nodes for approximate Betweenness Centrality.
- * Currently just randomly selects nodes within the graph and also verifies
- * that there are no duplicates, then returns the allocated pointer.
- */
-inline PRIVATE 
-vid_t* select_sampling_nodes(const graph_t* graph, int number_samples) {
-  // Array to store the indices of the selected sampling nodes
-  vid_t* sample_nodes = (vid_t*)malloc(number_samples * sizeof(vid_t));
-  // Randomly select unique vertices until we have the desired number 
-  int i = 0;
-  while (i < number_samples) {
-    sample_nodes[i] = rand() % graph->vertex_count;
-    // Check whether the new sample node is a duplicate
-    // If it is, don't increment so that we'll find a different node instead
-    bool is_duplicate = false;
-    for (int k = 0; k < i; k++) {
-      if (sample_nodes[k] == sample_nodes[i]) {
-        is_duplicate = true;
-        break;
-      }
-    }
-    if (!is_duplicate) {
-      i++;
-    }
-  }
-  return sample_nodes;
-}
-
-/**
- * Determine the number of sample nodes to use based on the total number
- * of nodes in the graph and the value of epsilon provided.
- * Number of Samples Nodes = Log2(Total Number of Nodes) / Epsilon^2
- */
-inline PRIVATE int get_number_sample_nodes(vid_t vertex_count, double epsilon) {
-  // Compute Log2(Total Number of Nodes) by right shifting until the
-  // value drops below 2, then scale by 1/epsilon^2
-  int number_sample_nodes = 0;
-  while (vertex_count > 1) {
-    number_sample_nodes++;
-    vertex_count >>= 1;
-  } 
-  number_sample_nodes = ((number_sample_nodes)/(epsilon*epsilon));
-  return number_sample_nodes;
-}
-
-/**
  * Implements the core functionality for computing Betweenness Centrality
  * @param[in] graph the graph for which the centrality measure is calculated
  * @param[in] source the source node for the shortest paths
@@ -847,7 +789,9 @@ error_t betweenness_cpu(const graph_t* graph, double epsilon,
                         score_t* betweenness_score) {
   // Sanity check on input
   bool finished = true;
-  error_t rc = check_special_cases(graph, &finished, betweenness_score);
+  error_t rc = betweenness_check_special_cases(graph->vertex_count,
+                                               graph->edge_count,
+                                               &finished, betweenness_score);
   if (finished) return rc;
 
   // Allocate memory for the shortest paths problem
@@ -870,9 +814,11 @@ error_t betweenness_cpu(const graph_t* graph, double epsilon,
   } else {
     // Compute approximate values based on the value of epsilon provided
     // Select a subset of source nodes to make the computation faster
-    int num_samples = get_number_sample_nodes(graph->vertex_count, epsilon);
+    int num_samples = centrality_get_number_sample_nodes(graph->vertex_count,
+                                                         epsilon);
     // Populate the array of indices to sample
-    vid_t* sample_nodes = select_sampling_nodes(graph, num_samples);
+    vid_t* sample_nodes = centrality_select_sampling_nodes(graph->vertex_count,
+                                                           num_samples);
  
     for (int source_index = 0; source_index < num_samples; source_index++) {
       // Get the next sample node in the array to use as a source
@@ -1228,7 +1174,9 @@ error_t betweenness_gpu(const graph_t* graph, double epsilon,
                         score_t* betweenness_score) {
   // Sanity check on input
   bool finished = true;
-  error_t rc = check_special_cases(graph, &finished, betweenness_score);
+  error_t rc = betweenness_check_special_cases(graph->vertex_count, 
+                                               graph->edge_count,
+                                               &finished, betweenness_score);
   if (finished) return rc;
 
   // Initialization stage
@@ -1259,9 +1207,11 @@ error_t betweenness_gpu(const graph_t* graph, double epsilon,
   } else {
     // Compute approximate values based on the value of epsilon provided
     // Select a subset of source nodes to make the computation faster
-    int num_samples = get_number_sample_nodes(graph->vertex_count, epsilon);
+    int num_samples = centrality_get_number_sample_nodes(graph->vertex_count,
+                                                         epsilon);
     // Populate the array of indices to sample
-    vid_t* sample_nodes = select_sampling_nodes(graph, num_samples);
+    vid_t* sample_nodes = centrality_select_sampling_nodes(graph->vertex_count,
+                                                           num_samples);
  
     for (vid_t source_index = 0; source_index < num_samples; source_index++) {
       // Get the next sample node in the array to use as a source
