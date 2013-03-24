@@ -4,8 +4,8 @@
 # Created on: 2011-03-18
 # Author: Abdullah Gharaibeh
 #
-# To compile all test: make
-# To compile a test  : make TEST=unit_test
+# To compile all tests: make
+# To compile a test   : make TEST=unit_test
 #--------------------------------------------------------------------------
 include ../make.defs
 
@@ -21,10 +21,11 @@ GEST_LIB   = -L$(GTEST_PATH)/lib
 
 TOTEM_PATH   = ../totem
 TOTEM_INC    = -I$(TOTEM_PATH)
-TOTEM_CCSRC  = $(filter-out %_benchmark.cc, $(wildcard $(TOTEM_PATH)/*.cc))
-TOTEM_CCOBJS = $(TOTEM_CCSRC:$(TOTEM_PATH)/%.cc=$(TOTEM_PATH)/$(OBJDIR)/%.o)
-TOTEM_CUSRC  = $(filter-out %_benchmark.cu, $(wildcard $(TOTEM_PATH)/*.cu))
-TOTEM_CUOBJS = $(TOTEM_CUSRC:$(TOTEM_PATH)/%.cu=$(TOTEM_PATH)/$(OBJDIR)/%.cu_o)
+TOTEM_LIB    = -ltotem -L$(TOTEM_PATH)
+
+ALG_PATH   = ../alg
+ALG_INC    = -I$(ALG_PATH)
+ALG_LIB    =  -lalg -L$(ALG_PATH)
 
 ifdef TEST
 CCSRC = $(filter-out %.cu, $(TEST_FILE))
@@ -34,16 +35,12 @@ CUOBJS = $(CUSRC:%.cu=$(OBJDIR)/%.cu_o)
 endif
 ALL_OBJS = $(CCOBJS) $(CUOBJS)
 
+NVCCFLAGS += $(GTEST_INC) $(TOTEM_INC) $(ALG_INC)
+CCFLAGS   += $(GTEST_INC) $(TOTEM_INC) $(ALG_INC)
+LFLAGS    += $(TOTEM_LIB) $(ALG_LIB)
+BUILD_LINE = $(ALL_OBJS) $(GTEST_SRC) $(GTEST_INC) $(LFLAGS)
 
-NVCCFLAGS += $(GTEST_INC) $(TOTEM_INC)
-CCFLAGS   += $(GTEST_INC) $(TOTEM_INC)
-BUILD_LINE = $(GTEST_SRC) $(TOTEM_INC) $(GTEST_INC) $(CCFLAGS) $(LFLAGS) \
-             -lpthread $(TOTEM_CCOBJS) $(TOTEM_CUOBJS) $(ALL_OBJS)
-
-
-
-# TODO(abdullah) compile all tests
-all: environment objects
+all: environment totem alg objects
 ifndef TEST
 	@printf "\nBuilding all unit tests ...\n"
 	$(CC) $(BUILD_LINE) -o all$(EXE_EXT)
@@ -61,7 +58,6 @@ ifndef GTEST
 	@echo "GTEST environment variable is not defined"
 	@exit 2
 endif
-	@$(MAKE) -C $(TOTEM_PATH) objects MP=$(MP)
 
 objects: $(OBJDIR) $(CCOBJS) $(CUOBJS)
 
@@ -74,11 +70,16 @@ $(CCOBJS): $(OBJDIR)/%.o: %.cc $(CCDEPS)
 $(CUOBJS): $(OBJDIR)/%.cu_o: %.cu $(CDEPS) $(CUDEPS)
 	$(NVCC) $(NVCCFLAGS) $(TOTEM_FEATURES) -c $< -o $@
 
-# TODO(abdullah) clean tests binaries
+totem:
+	@$(MAKE) -C $(TOTEM_PATH)
+
+alg:
+	@$(MAKE) -C $(ALG_PATH)
+
 clean:
 	@$(CLEAN_CMD) *$(EXE_EXT)
 
 clean-all: clean
 	@$(CLEAN_ALL_CMD)
 	@$(MAKE) -C $(TOTEM_PATH) clean
-
+	@$(MAKE) -C $(ALG_PATH) clean

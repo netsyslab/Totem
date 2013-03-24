@@ -1,12 +1,15 @@
 #--------------------------------------------------------------------------
 # Main makefile
 #
-# Created on: 2011-02-28
+# Created on: 2013-03-24
 # Author: Abdullah Gharaibeh
 #--------------------------------------------------------------------------
 include ../make.defs
 
-TARGET  = totem
+TARGET  = alg
+
+TOTEM_PATH   = ../totem
+TOTEM_INC    = -I$(TOTEM_PATH)
 
 .PHONY: objects clean clean-all tags
 
@@ -23,10 +26,10 @@ $(OBJDIR):
 	@if test ! -d $(OBJDIR); then mkdir $(OBJDIR); fi
 
 $(CCOBJS): $(OBJDIR)/%.o: %.cc $(CCDEPS)
-	$(CC) $(CCFLAGS) $(TOTEM_FEATURES) -c $< -o $@
+	$(CC) $(CCFLAGS) $(TOTEM_INC) -c $< -o $@
 
 $(CUOBJS): $(OBJDIR)/%.cu_o: %.cu $(CCDEPS) $(CUDEPS)
-	$(NVCC) $(NVCCFLAGS) $(TOTEM_FEATURES) -c $< -o $@
+	$(NVCC) $(NVCCFLAGS) $(TOTEM_INC) -c $< -o $@
 
 clean:
 	@$(CLEAN_CMD) lib$(TARGET).a
