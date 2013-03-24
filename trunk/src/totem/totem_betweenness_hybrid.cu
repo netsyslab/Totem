@@ -36,7 +36,7 @@ typedef struct betweenness_global_state_s {
   score_t*   betweenness_score_h; // used as a temporary buffer
   vid_t     src;                  // source vertex id (id after partitioning)
 } betweenness_global_state_t;
-betweenness_global_state_t state_g = {NULL, NULL, 0};
+PRIVATE betweenness_global_state_t state_g = {NULL, NULL, 0};
 
 /**
  * This structure is used by the virtual warp-based implementation. It stores a

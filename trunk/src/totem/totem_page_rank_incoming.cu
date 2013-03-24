@@ -113,10 +113,7 @@ error_t page_rank_incoming_gpu(graph_t* graph, rank_t *rank_i, rank_t* rank) {
   error_t rc = check_special_cases(graph, rank, &finished);
   if (finished) return rc;
 
-  /* had to define them at the beginning to avoid a compilation problem with
-     goto-label error handling mechanism */
-  dim3 blocks;
-  dim3 threads_per_block;
+  totem_mem_t type = TOTEM_MEM_DEVICE;
 
   // will be passed to the kernel
   graph_t* graph_d;
@@ -124,31 +121,30 @@ error_t page_rank_incoming_gpu(graph_t* graph, rank_t *rank_i, rank_t* rank) {
 
   // allocate inbox and outbox device buffers
   rank_t *inbox_d;
-  CHK_CU_SUCCESS(cudaMalloc((void**)&inbox_d, graph->vertex_count *
-                       sizeof(rank_t)), err_free_graph_d);
+  CHK_SUCCESS(totem_malloc(graph->vertex_count * sizeof(rank_t), type, 
+                           (void**)&inbox_d), err_free_graph_d);
   rank_t *outbox_d;
-  CHK_CU_SUCCESS(cudaMalloc((void**)&outbox_d, graph->vertex_count *
-                       sizeof(rank_t)), err_free_inbox);
-
-  /* set the number of blocks, TODO(abdullah) handle the case when
-     vertex_count is larger than number of threads. */
-  assert(graph->vertex_count <= MAX_THREAD_COUNT);
-  KERNEL_CONFIGURE(graph->vertex_count, blocks, threads_per_block);
+  CHK_SUCCESS(totem_malloc(graph->vertex_count * sizeof(rank_t), type, 
+                           (void**)&outbox_d), err_free_inbox);
 
   // Initialize the intial state of the random walk (i.e., the initial
   // probabilities that the random walker will stop at a given node)
   if (rank_i == NULL) {
-    rank_t initial_value;
-    initial_value = 1 / (rank_t)graph->vertex_count;
-    memset_device<<<blocks, threads_per_block>>>
-        (inbox_d, initial_value, graph->vertex_count);
-    CHK_CU_SUCCESS(cudaGetLastError(), err_free_outbox);
+    rank_t initial_value = 1 / (rank_t)graph->vertex_count;
+    totem_memset(inbox_d, initial_value, graph->vertex_count, TOTEM_MEM_DEVICE);
   } else {
-    CHK_CU_SUCCESS(cudaMemcpy(inbox_d, rank_i,
-        graph->vertex_count * sizeof(rank_t), cudaMemcpyHostToDevice),
-        err_free_outbox);
+    CHK_CU_SUCCESS(cudaMemcpy(inbox_d, rank_i, graph->vertex_count * 
+                              sizeof(rank_t), cudaMemcpyHostToDevice),
+                   err_free_outbox);
   }
 
+  {
+  /* set the number of blocks, TODO(abdullah) handle the case when
+     vertex_count is larger than number of threads. */
+  assert(graph->vertex_count <= MAX_THREAD_COUNT);
+  dim3 blocks;
+  dim3 threads_per_block;
+  KERNEL_CONFIGURE(graph->vertex_count, blocks, threads_per_block);
   for (uint32_t round = 0; round < PAGE_RANK_ROUNDS - 1; round++) {
     // call the kernel
     page_rank_kernel<<<blocks, threads_per_block>>>
@@ -164,24 +160,24 @@ error_t page_rank_incoming_gpu(graph_t* graph, rank_t *rank_i, rank_t* rank) {
     (*graph_d, inbox_d, outbox_d);
   CHK_CU_SUCCESS(cudaGetLastError(), err_free_outbox);
   cudaThreadSynchronize();
-
+  }
   // copy back the final result from the outbox
   CHK_CU_SUCCESS(cudaMemcpy(rank, outbox_d, graph->vertex_count * 
                             sizeof(rank_t), cudaMemcpyDeviceToHost), 
                  err_free_all);
 
   // we are done! set the output and clean up
-  cudaFree(outbox_d);
-  cudaFree(inbox_d);
+  totem_free(outbox_d, type);
+  totem_free(inbox_d, type);
   graph_finalize_device(graph_d);
   return SUCCESS;
 
   // error handlers
  err_free_all:
  err_free_outbox:
-  cudaFree(outbox_d);
+  totem_free(outbox_d, type);
  err_free_inbox:
-  cudaFree(inbox_d);
+  totem_free(inbox_d, type);
  err_free_graph_d:
   graph_finalize_device(graph_d);
  err:
@@ -195,17 +191,20 @@ error_t page_rank_incoming_cpu(graph_t* graph, rank_t *rank_i, rank_t* rank) {
   if (finished) return rc;
 
   // allocate buffers
-  rank_t* inbox = (rank_t*)malloc(graph->vertex_count * sizeof(rank_t));
-  rank_t* outbox = (rank_t*)malloc(graph->vertex_count * sizeof(rank_t));
+  totem_mem_t type = TOTEM_MEM_HOST;
+  rank_t* inbox = NULL;
+  CALL_SAFE(totem_malloc(graph->vertex_count * sizeof(rank_t), type, 
+                         (void**)&inbox));
+  rank_t* outbox = NULL;
+  CALL_SAFE(totem_malloc(graph->vertex_count * sizeof(rank_t), type, 
+                         (void**)&outbox));
 
   // initialize the rank of each vertex
   if (rank_i == NULL) {
-    rank_t initial_value;
-    initial_value = 1 / (rank_t)graph->vertex_count;
-    for (vid_t vertex_id = 0; vertex_id < graph->vertex_count; vertex_id++) {
-      outbox[vertex_id] = initial_value;
-    }
+    rank_t initial_value = 1 / (rank_t)graph->vertex_count;
+    totem_memset(outbox, initial_value, graph->vertex_count, type);
   } else {
+    OMP(omp parallel for schedule(static))
     for (vid_t vertex_id = 0; vertex_id < graph->vertex_count; vertex_id++) {
       outbox[vertex_id] = rank_i[vertex_id];
     }
@@ -241,8 +240,10 @@ error_t page_rank_incoming_cpu(graph_t* graph, rank_t *rank_i, rank_t* rank) {
     }
   }
 
-  memcpy(rank, outbox, graph->vertex_count * sizeof(rank_t));
-  free(inbox);
-  free(outbox);
+  OMP(omp parallel for schedule(static))
+  for (vid_t v = 0; v < graph->vertex_count; v++) rank[v] = outbox[v];
+
+  totem_free(inbox, type);
+  totem_free(outbox, type);
   return SUCCESS;
 }
