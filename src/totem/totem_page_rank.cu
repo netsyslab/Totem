@@ -64,42 +64,32 @@ error_t check_special_cases(const graph_t* graph, rank_t* rank,
 PRIVATE
 error_t initialize_gpu(const graph_t* graph, rank_t* rank_i, vid_t rank_length, 
                        graph_t** graph_d, rank_t **rank_d, rank_t** mailbox_d) {
-  /* had to define them at the beginning to avoid a compilation problem with
-     goto-label error handling mechanism */
-  dim3 blocks;
-  dim3 threads_per_block;
+  totem_mem_t type = TOTEM_MEM_DEVICE;
 
   // will be passed to the kernel
   CHK_SUCCESS(graph_initialize_device(graph, graph_d), err);
 
   // allocate mailbox and outbox device buffers
-  CHK_CU_SUCCESS(cudaMalloc((void**)mailbox_d, graph->vertex_count *
-                            sizeof(rank_t)), err_free_graph_d);
-  CHK_CU_SUCCESS(cudaMalloc((void**)rank_d, rank_length * sizeof(rank_t)),
-                 err_free_mailbox);
+  CHK_SUCCESS(totem_calloc(graph->vertex_count * sizeof(rank_t), type,
+                           (void**)mailbox_d), err_free_graph_d);
+  CHK_SUCCESS(totem_malloc(rank_length * sizeof(rank_t), type,
+                           (void**)rank_d), err_free_mailbox);
 
   if (rank_i == NULL) {
     rank_t initial_value = 1 / (rank_t)graph->vertex_count;
-    KERNEL_CONFIGURE(rank_length, blocks, threads_per_block);
-    memset_device<<<blocks, threads_per_block>>>
-        (*rank_d, initial_value, rank_length);
-    CHK_CU_SUCCESS(cudaGetLastError(), err_free_all);
+    totem_memset(*rank_d, initial_value, rank_length, type);
   } else {
     CHK_CU_SUCCESS(cudaMemcpy(*rank_d, rank_i, rank_length * sizeof(rank_t),
         cudaMemcpyHostToDevice), err_free_all);
   }
 
-  memset_device<<<blocks, threads_per_block>>>
-    (*mailbox_d, (rank_t)0.0, graph->vertex_count);
-  CHK_CU_SUCCESS(cudaGetLastError(), err_free_all);
-
   return SUCCESS;
 
   // error handlers
  err_free_all:
-  cudaFree(rank_d);
+  totem_free(rank_d, type);
  err_free_mailbox:
-  cudaFree(mailbox_d);
+  totem_free(mailbox_d, type);
  err_free_graph_d:
   graph_finalize_device(*graph_d);
  err:
@@ -117,8 +107,8 @@ error_t finalize_gpu(graph_t* graph_d, rank_t* rank_d, rank_t* mailbox_d,
   // Copy back the final result
   CHK_CU_SUCCESS(cudaMemcpy(rank, rank_d, graph_d->vertex_count *
                             sizeof(rank_t), cudaMemcpyDeviceToHost), err);
-  cudaFree(rank_d);
-  cudaFree(mailbox_d);
+  totem_free(rank_d, TOTEM_MEM_DEVICE);
+  totem_free(mailbox_d, TOTEM_MEM_DEVICE);
   graph_finalize_device(graph_d);
   return SUCCESS;
 
@@ -374,8 +364,8 @@ error_t page_rank_gpu(graph_t* graph, rank_t* rank_i, rank_t* rank) {
 
   // error handlers
  err_free_all:
-  cudaFree(rank_d);
-  cudaFree(mailbox_d);
+  totem_free(rank_d, TOTEM_MEM_DEVICE);
+  totem_free(mailbox_d, TOTEM_MEM_DEVICE);
   graph_finalize_device(graph_d);
  err:
   return FAILURE;
@@ -388,7 +378,9 @@ error_t page_rank_cpu(graph_t* graph, rank_t* rank_i, rank_t* rank) {
   if (finished) return rc;
 
   // allocate buffers
-  rank_t* mailbox = (rank_t*)malloc(graph->vertex_count * sizeof(rank_t));
+  rank_t* mailbox;
+  CALL_SAFE(totem_malloc(graph->vertex_count * sizeof(rank_t), TOTEM_MEM_HOST, 
+                         (void**)&mailbox));
 
   // initialize the rank of each vertex
   if (rank_i == NULL) {
@@ -439,6 +431,6 @@ error_t page_rank_cpu(graph_t* graph, rank_t* rank_i, rank_t* rank) {
   }
 
   // we are done! set the output and clean up.
-  free(mailbox);
+  totem_free(mailbox, TOTEM_MEM_HOST);
   return SUCCESS;
 }

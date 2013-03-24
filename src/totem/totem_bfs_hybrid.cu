@@ -36,7 +36,7 @@ typedef struct bfs_global_state_s {
   vid_t     src;    // source vertex id (the id after partitioning)  
 
 } bfs_global_state_t;
-bfs_global_state_t state_g = {NULL, NULL, 0};
+PRIVATE bfs_global_state_t state_g = {NULL, NULL, 0};
 
 /**
  * Checks for input parameters and special cases. This is invoked at the

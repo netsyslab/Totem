@@ -225,59 +225,36 @@ PRIVATE void page_rank_aggr(partition_t* partition) {
   }
 }
 
-PRIVATE void page_rank_init_gpu(partition_t* par, page_rank_state_t* ps,
-                                rank_t init_value) {
-  vid_t vcount = par->subgraph.vertex_count;
-  CALL_CU_SAFE(cudaMalloc((void**)&(ps->rank), vcount * sizeof(rank_t)));
-  CALL_CU_SAFE(cudaMalloc((void**)&(ps->rank_s), vcount * sizeof(rank_t)));
-  KERNEL_CONFIGURE(VWARP_WARP_SIZE * VWARP_BATCH_COUNT(vcount),
-                   ps->blocks_sum, ps->threads_sum);
-  KERNEL_CONFIGURE(vcount, ps->blocks_rank, ps->threads_rank);
-  // TODO(abdullah): Use user provided initialization values
-  memset_device<<<ps->blocks_rank, ps->threads_rank, 0,
-    par->streams[1]>>>(ps->rank, init_value, vcount);
-  CALL_CU_SAFE(cudaGetLastError());
-  memset_device<<<ps->blocks_rank, ps->threads_rank, 0,
-    par->streams[1]>>>(ps->rank_s, (rank_t)0.0, vcount);
-  CALL_CU_SAFE(cudaGetLastError());
-}
-
-PRIVATE void page_rank_init_cpu(partition_t* par, page_rank_state_t* ps,
-                                rank_t init_value) {
-  vid_t vcount = par->subgraph.vertex_count;
-  assert(par->processor.type == PROCESSOR_CPU);
-  ps->rank = (rank_t*)calloc(vcount, sizeof(rank_t));
-  ps->rank_s = (rank_t*)calloc(vcount, sizeof(rank_t));
-  assert(ps->rank && ps->rank_s);
-  for (vid_t v = 0; v < vcount; v++) ps->rank[v] = init_value;
-}
-
 PRIVATE void page_rank_init(partition_t* par) {
-  if (!par->subgraph.vertex_count) return;
-  page_rank_state_t* ps = (page_rank_state_t*)malloc(sizeof(page_rank_state_t));
-  assert(ps);
-  rank_t init_value = 1 / (rank_t)engine_vertex_count();
+  vid_t vcount = par->subgraph.vertex_count;
+  if (vcount == 0) return;
+  page_rank_state_t* ps = NULL;
+  CALL_SAFE(totem_calloc(sizeof(page_rank_state_t), TOTEM_MEM_HOST, 
+                         (void**)&ps));
+  totem_mem_t type = TOTEM_MEM_HOST;
   if (par->processor.type == PROCESSOR_GPU) {
-    page_rank_init_gpu(par, ps, init_value);
-  } else {
-    page_rank_init_cpu(par, ps, init_value);
+    type = TOTEM_MEM_DEVICE;
+    KERNEL_CONFIGURE(VWARP_WARP_SIZE * VWARP_BATCH_COUNT(vcount),
+                     ps->blocks_sum, ps->threads_sum);
+    KERNEL_CONFIGURE(vcount, ps->blocks_rank, ps->threads_rank);
   }
+  CALL_SAFE(totem_calloc(vcount * sizeof(rank_t), type, (void**)&(ps->rank_s)));
+  CALL_SAFE(totem_malloc(vcount * sizeof(rank_t), type, (void**)&(ps->rank)));
+  rank_t init_value = 1 / (rank_t)engine_vertex_count();
+  totem_memset(ps->rank, init_value, vcount, type, par->streams[1]);
   par->algo_state = ps;
 }
 
 PRIVATE void page_rank_finalize(partition_t* partition) {
   assert(partition->algo_state);
   page_rank_state_t* ps = (page_rank_state_t*)partition->algo_state;
+  totem_mem_t type = TOTEM_MEM_HOST;
   if (partition->processor.type == PROCESSOR_GPU) {
-    CALL_CU_SAFE(cudaFree(ps->rank));
-    CALL_CU_SAFE(cudaFree(ps->rank_s));
-  } else {
-    assert(partition->processor.type == PROCESSOR_CPU);
-    assert(ps->rank && ps->rank_s);
-    free(ps->rank);
-    free(ps->rank_s);
-  }
-  free(ps);
+    type = TOTEM_MEM_DEVICE;
+  } 
+  totem_free(ps->rank, type);
+  totem_free(ps->rank_s, type);
+  totem_free(ps, TOTEM_MEM_HOST);
   partition->algo_state = NULL;
 }
 
@@ -292,23 +269,17 @@ error_t page_rank_hybrid(rank_t *rank_i, rank_t* rank) {
 
   // initialize the engine
   engine_config_t config = {
-    NULL,
-    page_rank,
-    page_rank_scatter,
-    NULL,
-    page_rank_init,
-    page_rank_finalize,
-    page_rank_aggr,
-    GROOVES_PUSH,
+    NULL, page_rank, page_rank_scatter, NULL, page_rank_init, 
+    page_rank_finalize, page_rank_aggr, GROOVES_PUSH
   };
   engine_config(&config);
   if (engine_largest_gpu_partition()) {
-    rank_h = (rank_t*)mem_alloc(engine_largest_gpu_partition() * 
-                                sizeof(rank_t));
+    CALL_SAFE(totem_malloc(engine_largest_gpu_partition() * sizeof(rank_t), 
+                           TOTEM_MEM_HOST_PINNED, (void**)&rank_h));
   }
   engine_execute();
 
   // clean up and return
-  if (engine_largest_gpu_partition()) mem_free(rank_h);
+  if (engine_largest_gpu_partition()) totem_free(rank_h, TOTEM_MEM_HOST_PINNED);
   return SUCCESS;
 }

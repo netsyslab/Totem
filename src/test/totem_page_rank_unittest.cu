@@ -35,104 +35,89 @@ class PageRankTest : public TestWithParam<page_rank_param_t*> {
   virtual void SetUp() {
     // Ensure the minimum CUDA architecture is supported
     CUDA_CHECK_VERSION();
-    page_rank_param = GetParam();
+    _page_rank_param = GetParam();
+    _rank = NULL;
+    _graph = NULL;
   }
 
-  error_t TestGraph(graph_t* graph, rank_t* rank_i, rank_t* rank) {
-    if (page_rank_param->hybrid) {
+  virtual void TearDown() {
+    if (_graph) graph_finalize(_graph);
+    if (_rank) totem_free(_rank, TOTEM_MEM_HOST_PINNED);
+  }
+
+  error_t TestGraph() {
+    // the graph should be undirected because the test is shared between the
+    // two versions of the PageRank algorithm: incoming- and outgoing- based.
+    EXPECT_FALSE(_graph->directed);
+    CALL_SAFE(totem_malloc(_graph->vertex_count * sizeof(rank_t), 
+                           TOTEM_MEM_HOST_PINNED, (void**)&_rank));
+    if (_page_rank_param->hybrid) {
       totem_attr_t attr = TOTEM_DEFAULT_ATTR;
       attr.push_msg_size = sizeof(rank_t) * BITS_PER_BYTE;
-      if (totem_init(graph, &attr) == FAILURE) {
+      if (totem_init(_graph, &attr) == FAILURE) {
         return FAILURE;
       }
-      error_t err = page_rank_hybrid(rank_i, rank);
+      error_t err = page_rank_hybrid(NULL, _rank);
       totem_finalize();
       return err;
     }
-    return page_rank_param->func(graph, rank_i, rank);
+    return _page_rank_param->func(_graph, NULL, _rank);
   }
+
  protected:
-  page_rank_param_t* page_rank_param;
+  page_rank_param_t* _page_rank_param;
+  rank_t* _rank;
+  graph_t* _graph;
 };
 
 // Tests PageRank for empty graphs.
 TEST_P(PageRankTest, Empty) {
-  graph_t graph;
-  graph.directed = false;
-  graph.vertex_count = 0;
-  graph.edge_count = 0;
-  EXPECT_EQ(FAILURE, TestGraph(&graph, NULL, NULL));
+  _graph = (graph_t*)calloc(sizeof(graph_t), 1);
+  EXPECT_EQ(FAILURE, TestGraph());
+  free(_graph);
+  _graph = NULL;
 }
 
 // Tests PageRank for single node graphs.
 TEST_P(PageRankTest, SingleNode) {
-  graph_t* graph;
   EXPECT_EQ(SUCCESS, graph_initialize(DATA_FOLDER("single_node.totem"),
-                                      false, &graph));
-  rank_t* rank = (rank_t*)mem_alloc(graph->vertex_count * sizeof(rank_t));
-  EXPECT_EQ(SUCCESS, TestGraph(graph, NULL, rank));
-  EXPECT_EQ(1, rank[0]);
-  mem_free(rank);
-  EXPECT_EQ(SUCCESS, graph_finalize(graph));
+                                      false, &_graph));
+  _graph->directed = false;
+  EXPECT_EQ(SUCCESS, TestGraph());
+  EXPECT_EQ(1, _rank[0]);
 }
 
 // Tests PageRank for a chain of 1000 nodes.
 TEST_P(PageRankTest, Chain) {
-  graph_t* graph;
   EXPECT_EQ(SUCCESS, graph_initialize(DATA_FOLDER("chain_1000_nodes.totem"),
-                                      false, &graph));
-  rank_t* rank = (rank_t*)mem_alloc(graph->vertex_count * sizeof(rank_t));
-
-  // the graph should be undirected because the test is shared between the
-  // two versions of the PageRank algorithm: incoming- and outgoing- based.
-  EXPECT_FALSE(graph->directed);
-
-  EXPECT_EQ(SUCCESS, TestGraph(graph, NULL, rank));
-  for(vid_t vertex = 0; vertex < graph->vertex_count/2; vertex++){
-    EXPECT_FLOAT_EQ(rank[vertex], rank[graph->vertex_count - vertex - 1]);
+                                      false, &_graph));
+  EXPECT_EQ(SUCCESS, TestGraph());
+  for(vid_t vertex = 0; vertex < _graph->vertex_count/2; vertex++){
+    EXPECT_FLOAT_EQ(_rank[vertex], _rank[_graph->vertex_count - vertex - 1]);
   }
-  mem_free(rank);
-  EXPECT_EQ(SUCCESS, graph_finalize(graph));
 }
 
 // Tests PageRank for a complete graph of 300 nodes.
 TEST_P(PageRankTest, CompleteGraph) {
-  graph_t* graph;
   EXPECT_EQ(SUCCESS,
             graph_initialize(DATA_FOLDER("complete_graph_300_nodes.totem"),
-                             false, &graph));
-  rank_t* rank = (rank_t*)mem_alloc(graph->vertex_count * sizeof(rank_t));
-  // the graph should be undirected because the test is shared between the
-  // two versions of the PageRank algorithm: incoming- and outgoing- based.
-  EXPECT_FALSE(graph->directed);
-
-  EXPECT_EQ(SUCCESS, TestGraph(graph, NULL, rank));
-  for(vid_t vertex = 0; vertex < graph->vertex_count; vertex++){
-    EXPECT_FLOAT_EQ(rank[0], rank[vertex]);
+                             false, &_graph));
+  EXPECT_EQ(SUCCESS, TestGraph());
+  for(vid_t vertex = 0; vertex < _graph->vertex_count; vertex++){
+    EXPECT_FLOAT_EQ(_rank[0], _rank[vertex]);
   }
-  mem_free(rank);
-  EXPECT_EQ(SUCCESS, graph_finalize(graph));
 }
 
 // Tests PageRank for a complete graph of 300 nodes.
 TEST_P(PageRankTest, Star) {
-  graph_t* graph;
   EXPECT_EQ(SUCCESS,
             graph_initialize(DATA_FOLDER("star_1000_nodes.totem"),
-                             false, &graph));
-  rank_t* rank = (rank_t*)mem_alloc(graph->vertex_count * sizeof(rank_t));
-
-  // the graph should be undirected because the test is shared between the
-  // two versions of the PageRank algorithm: incoming- and outgoing- based.
-  EXPECT_FALSE(graph->directed);
-
-  EXPECT_EQ(SUCCESS, TestGraph(graph, NULL, rank));
-  for(vid_t vertex = 1; vertex < graph->vertex_count; vertex++){
-    EXPECT_FLOAT_EQ(rank[1], rank[vertex]);
-    EXPECT_GT(rank[0], rank[vertex]);
+                             false, &_graph));
+  EXPECT_EQ(SUCCESS, TestGraph());
+  for(vid_t vertex = 1; vertex < _graph->vertex_count; vertex++){
+    EXPECT_FLOAT_EQ(_rank[1], _rank[vertex]);
+    EXPECT_GT(_rank[0], _rank[vertex]);
   }
-  mem_free(rank);
-  EXPECT_EQ(SUCCESS, graph_finalize(graph));
 }
 
 // TODO(abdullah): Add test cases for not well defined structures.

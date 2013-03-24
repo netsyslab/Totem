@@ -165,60 +165,34 @@ PRIVATE void page_rank_incoming_aggr(partition_t* partition) {
   }
 }
 
-PRIVATE void page_rank_incoming_init_gpu(partition_t* par, 
-                                         page_rank_state_t* ps,
-                                         rank_t init_value) {
-  vid_t vcount = par->subgraph.vertex_count;
-  CALL_CU_SAFE(cudaMalloc((void**)&(ps->rank), vcount * sizeof(rank_t)));
-  CALL_CU_SAFE(cudaMalloc((void**)&(ps->rank_s), vcount * sizeof(rank_t)));
-  KERNEL_CONFIGURE(vcount, ps->blocks, ps->threads);
-  memset_device<<<ps->blocks, ps->threads, 0, 
-    par->streams[1]>>>(ps->rank, init_value, vcount);
-  CALL_CU_SAFE(cudaGetLastError());
-}
-
-PRIVATE void page_rank_incoming_init_cpu(partition_t* par, 
-                                         page_rank_state_t* ps,
-                                         rank_t init_value) {
-  assert(par->processor.type == PROCESSOR_CPU);
-  ps->rank = (rank_t*)calloc(par->subgraph.vertex_count, sizeof(rank_t));
-  ps->rank_s = (rank_t*)calloc(par->subgraph.vertex_count, sizeof(rank_t));
-  assert(ps->rank && ps->rank_s);
-  // The loop has no load balancing issues, hence the choice of dividing
-  // the iterations between the threads statically via the static schedule 
-  // clause
-  OMP(omp parallel for schedule(static))
-  for (vid_t v = 0; v < par->subgraph.vertex_count; v++) { 
-    ps->rank[v] = init_value;
-  }
-}
-
 PRIVATE void page_rank_incoming_init(partition_t* par) {
-  if (!par->subgraph.vertex_count) return;
-  page_rank_state_t* ps = (page_rank_state_t*)malloc(sizeof(page_rank_state_t));
-  assert(ps);
-  rank_t init_value = 1 / (rank_t)engine_vertex_count();
+  vid_t vcount = par->subgraph.vertex_count;
+  if (vcount == 0) return;
+  page_rank_state_t* ps = NULL;
+  CALL_SAFE(totem_calloc(sizeof(page_rank_state_t), TOTEM_MEM_HOST, 
+                         (void**)&ps));
+  totem_mem_t type = TOTEM_MEM_HOST;
   if (par->processor.type == PROCESSOR_GPU) {
-    page_rank_incoming_init_gpu(par, ps, init_value);
-  } else {
-    page_rank_incoming_init_cpu(par, ps, init_value);
+    type = TOTEM_MEM_DEVICE;
+    KERNEL_CONFIGURE(vcount, ps->blocks, ps->threads);
   }
+  CALL_SAFE(totem_calloc(vcount * sizeof(rank_t), type, (void**)&(ps->rank_s)));
+  CALL_SAFE(totem_malloc(vcount * sizeof(rank_t), type, (void**)&(ps->rank)));
+  rank_t init_value = 1 / (rank_t)engine_vertex_count();
+  totem_memset(ps->rank, init_value, vcount, type, par->streams[1]);
   par->algo_state = ps;
 }
 
 PRIVATE void page_rank_incoming_finalize(partition_t* partition) {
   assert(partition->algo_state);
   page_rank_state_t* ps = (page_rank_state_t*)partition->algo_state;
+  totem_mem_t type = TOTEM_MEM_HOST;
   if (partition->processor.type == PROCESSOR_GPU) {
-    CALL_CU_SAFE(cudaFree(ps->rank));
-    CALL_CU_SAFE(cudaFree(ps->rank_s));
-  } else {
-    assert(partition->processor.type == PROCESSOR_CPU);
-    assert(ps->rank && ps->rank_s);
-    free(ps->rank);
-    free(ps->rank_s);
-  }
-  free(ps);
+    type = TOTEM_MEM_DEVICE;
+  } 
+  totem_free(ps->rank, type);
+  totem_free(ps->rank_s, type);
+  totem_free(ps, TOTEM_MEM_HOST);
   partition->algo_state = NULL;
 }
 
@@ -239,12 +213,14 @@ error_t page_rank_incoming_hybrid(float *rank_i, float* rank) {
   };
   engine_config(&config);
   if (engine_largest_gpu_partition()) {
-    rank_host = (float*)mem_alloc(engine_largest_gpu_partition() * 
-                                  sizeof(float));
+    CALL_SAFE(totem_malloc(engine_largest_gpu_partition() * sizeof(float), 
+                           TOTEM_MEM_HOST_PINNED, (void**)&rank_host));
   }
   engine_execute();
 
   // clean up and return
-  if (engine_largest_gpu_partition()) mem_free(rank_host);
+  if (engine_largest_gpu_partition()) {
+    totem_free(rank_host, TOTEM_MEM_HOST_PINNED);
+  }
   return SUCCESS;
 }
