@@ -30,17 +30,19 @@ class DijkstraTest : public TestWithParam<DijkstraFunction> {
     dijkstra = GetParam();
     _distances = NULL;
     _graph = NULL;
+    _mem_type = TOTEM_MEM_HOST_PINNED;
   }
 
   virtual void TearDown() {
     if (_graph) graph_finalize(_graph);
-    if (_distances) mem_free(_distances);
+    if (_distances) totem_free(_distances, _mem_type);
   }
 
  protected:
   DijkstraFunction dijkstra;
   graph_t* _graph;
   weight_t* _distances;
+  totem_mem_t _mem_type;
 };
 
 
@@ -66,7 +68,8 @@ TEST_P(DijkstraTest, EmptyEdgeSet) {
   graph.weighted = true;
   graph.weights = NULL;
 
-  _distances = (weight_t*)mem_alloc(graph.vertex_count * sizeof(weight_t));
+  CALL_SAFE(totem_malloc(graph.vertex_count * sizeof(weight_t), _mem_type, 
+                         (void**)&_distances));
   EXPECT_EQ(SUCCESS, dijkstra(&graph, 0, _distances));
   EXPECT_EQ((weight_t)0, _distances[0]);
   for (vid_t vertex_id = 1; vertex_id < graph.vertex_count; vertex_id++) {
@@ -77,7 +80,8 @@ TEST_P(DijkstraTest, EmptyEdgeSet) {
 // Tests Dijkstra for single node graphs.
 TEST_P(DijkstraTest, SingleNode) {
   graph_initialize(DATA_FOLDER("single_node.totem"), true, &_graph);
-  _distances = (weight_t*)mem_alloc(_graph->vertex_count * sizeof(weight_t));
+  CALL_SAFE(totem_malloc(_graph->vertex_count * sizeof(weight_t), _mem_type, 
+                         (void**)&_distances));
   EXPECT_EQ(SUCCESS, dijkstra(_graph, 0, _distances));
   EXPECT_EQ(0, _distances[0]);
 }
@@ -85,8 +89,8 @@ TEST_P(DijkstraTest, SingleNode) {
 // Tests Dijkstra implementation for a single node graph that contains a loop.
 TEST_P(DijkstraTest, SingleNodeLoopWeighted) {
   graph_initialize(DATA_FOLDER("single_node_loop_weight.totem"), true, &_graph);
-  _distances = (weight_t*)mem_alloc(_graph->vertex_count * sizeof(weight_t));
-
+  CALL_SAFE(totem_malloc(_graph->vertex_count * sizeof(weight_t), _mem_type, 
+                         (void**)&_distances));
   EXPECT_EQ(SUCCESS, dijkstra(_graph, 0, _distances));
   EXPECT_EQ((weight_t)0, _distances[0]);
 
@@ -96,7 +100,8 @@ TEST_P(DijkstraTest, SingleNodeLoopWeighted) {
 // Tests SSSP algorithm for a chain of 1000 nodes.
 TEST_P(DijkstraTest, Chain) {
   graph_initialize(DATA_FOLDER("chain_1000_nodes_weight.totem"), true, &_graph);
-  _distances = (weight_t*)mem_alloc(_graph->vertex_count * sizeof(weight_t));
+  CALL_SAFE(totem_malloc(_graph->vertex_count * sizeof(weight_t), _mem_type, 
+                         (void**)&_distances));
 
   // First vertex as source
   vid_t source = 0;
@@ -127,7 +132,8 @@ TEST_P(DijkstraTest, Chain) {
 // Tests SSSP algorithm in star graph with 1000 nodes.
 TEST_P(DijkstraTest, Star) {
   graph_initialize(DATA_FOLDER("star_1000_nodes_weight.totem"), true, &_graph);
-  _distances = (weight_t*)mem_alloc(_graph->vertex_count * sizeof(weight_t));
+  CALL_SAFE(totem_malloc(_graph->vertex_count * sizeof(weight_t), _mem_type, 
+                         (void**)&_distances));
 
   // First vertex as source
   vid_t source = 0;
@@ -154,7 +160,8 @@ TEST_P(DijkstraTest, Star) {
 TEST_P(DijkstraTest, Complete) {
   graph_initialize(DATA_FOLDER("complete_graph_300_nodes_weight.totem"), 
                    true, &_graph);
-  _distances = (weight_t*)mem_alloc(_graph->vertex_count * sizeof(weight_t));
+  CALL_SAFE(totem_malloc(_graph->vertex_count * sizeof(weight_t), _mem_type, 
+                         (void**)&_distances));
 
   // First vertex as source
   vid_t source = 0;
@@ -180,7 +187,8 @@ TEST_P(DijkstraTest, Complete) {
 TEST_P(DijkstraTest, StarDiffWeight) {
   graph_initialize(DATA_FOLDER("star_1000_nodes_diff_weight.totem"), true, 
                    &_graph);
-  _distances = (weight_t*)mem_alloc(_graph->vertex_count * sizeof(weight_t));
+  CALL_SAFE(totem_malloc(_graph->vertex_count * sizeof(weight_t), _mem_type, 
+                         (void**)&_distances));
 
   // First vertex as source
   vid_t source = 0;
@@ -208,7 +216,8 @@ TEST_P(DijkstraTest, StarDiffWeight) {
 TEST_P(DijkstraTest, CompleteDiffWeight) {
   graph_initialize(DATA_FOLDER("complete_graph_300_nodes_diff_weight.totem"),
     true, &_graph);
-  _distances = (weight_t*)mem_alloc(_graph->vertex_count * sizeof(weight_t));
+  CALL_SAFE(totem_malloc(_graph->vertex_count * sizeof(weight_t), _mem_type, 
+                         (void**)&_distances));
 
   // First vertex as source
   vid_t source = 0;
