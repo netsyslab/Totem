@@ -77,36 +77,27 @@ error_t initialize_gpu(const graph_t* graph, vid_t source_id,
                        bool** changed_d, bool** has_true_d,
                        weight_t** distances_d, weight_t** new_distances_d) {
 
-  // Kernel configuration parameters.
-  dim3 block_count;
-  dim3 threads_per_block;
+  totem_mem_t type = TOTEM_MEM_DEVICE;
 
   // Allocate and transfer the vertex array to the device.
   CHK_SUCCESS(graph_initialize_device(graph, graph_d), err);
 
   // The distance array from the source vertex to every node in the graph.
-  CHK_CU_SUCCESS(cudaMalloc((void**)distances_d,
-                            distance_length * sizeof(weight_t)),
-                 err_free_graph);
+  CHK_SUCCESS(totem_malloc(distance_length * sizeof(weight_t), type, 
+                           (void**)distances_d), err_free_graph);
 
   // An array that contains the newly computed array of distances.
-  CHK_CU_SUCCESS(cudaMalloc((void**)new_distances_d,
-                            distance_length * sizeof(weight_t)),
-                 err_free_distances);
+  CHK_SUCCESS(totem_malloc(distance_length * sizeof(weight_t), type, 
+                           (void**)new_distances_d), err_free_distances);
 
   // An entry in this array indicate whether the corresponding vertex should
   // try to compute new distances.
-  CHK_CU_SUCCESS(cudaMalloc((void **)changed_d, distance_length * sizeof(bool)),
-                 err_free_new_distances);
-
-  // Compute the number of blocks.
-  KERNEL_CONFIGURE(distance_length, block_count, threads_per_block);
+  CHK_SUCCESS(totem_malloc(distance_length * sizeof(bool), type, 
+                           (void **)changed_d), err_free_new_distances);
 
   // Set all distances to infinite.
-  memset_device<<<block_count, threads_per_block>>>
-      (*distances_d, WEIGHT_MAX, distance_length);
-  memset_device<<<block_count, threads_per_block>>>
-      (*new_distances_d, WEIGHT_MAX, distance_length);
+  totem_memset(*distances_d, WEIGHT_MAX, distance_length, type);
+  totem_memset(*new_distances_d, WEIGHT_MAX, distance_length, type);
 
   // Set the distance to the source to zero.
   CHK_CU_SUCCESS(cudaMemset(&((*distances_d)[source_id]), (weight_t)0,
@@ -119,20 +110,16 @@ error_t initialize_gpu(const graph_t* graph, vid_t source_id,
                  err_free_new_distances);
 
   // Initialize the flags that indicate whether the distances were updated
-  CHK_CU_SUCCESS(cudaMalloc((void **)has_true_d, sizeof(bool)),
-            err_free_new_distances);
-  CHK_CU_SUCCESS(cudaMemset(*has_true_d, false, sizeof(bool)),
-            err_free_all);
+  CHK_SUCCESS(totem_calloc(sizeof(bool), type, (void **)has_true_d),
+              err_free_new_distances);
 
   return SUCCESS;
 
   // error handlers
-  err_free_all:
-    cudaFree(*has_true_d);
   err_free_new_distances:
-    cudaFree(*new_distances_d);
+    totem_free(*new_distances_d, type);
   err_free_distances:
-    cudaFree(*distances_d);
+    totem_free(*distances_d, type);
   err_free_graph:
     graph_finalize_device(*graph_d);
   err:
@@ -154,9 +141,9 @@ error_t finalize_gpu(graph_t* graph_d, weight_t* distances_d, bool* changed_d,
                             cudaMemcpyDeviceToHost), err);
 
   // Release the allocated memory
-  cudaFree(distances_d);
-  cudaFree(changed_d);
-  cudaFree(new_distances_d);
+  totem_free(distances_d, TOTEM_MEM_DEVICE);
+  totem_free(changed_d, TOTEM_MEM_DEVICE);
+  totem_free(new_distances_d, TOTEM_MEM_DEVICE);
   graph_finalize_device(graph_d);
   return SUCCESS;
 
@@ -315,10 +302,10 @@ error_t dijkstra_gpu(const graph_t* graph, vid_t source_id,
 
   // error handlers
   err_free_all:
-   cudaFree(changed_d);
-   cudaFree(has_true_d);
-   cudaFree(distances_d);
-   cudaFree(new_distances_d);
+   totem_free(changed_d, TOTEM_MEM_DEVICE);
+   totem_free(has_true_d, TOTEM_MEM_DEVICE);
+   totem_free(distances_d, TOTEM_MEM_DEVICE);
+   totem_free(new_distances_d, TOTEM_MEM_DEVICE);
    graph_finalize_device(graph_d);
   err:
     return FAILURE;
@@ -375,10 +362,10 @@ error_t dijkstra_vwarp_gpu(const graph_t* graph, vid_t source_id,
 
   // error handlers
   err_free_all:
-   cudaFree(changed_d);
-   cudaFree(has_true_d);
-   cudaFree(distances_d);
-   cudaFree(new_distances_d);
+   totem_free(changed_d, TOTEM_MEM_DEVICE);
+   totem_free(has_true_d, TOTEM_MEM_DEVICE);
+   totem_free(distances_d, TOTEM_MEM_DEVICE);
+   totem_free(new_distances_d, TOTEM_MEM_DEVICE);
    graph_finalize_device(graph_d);
   err:
     return FAILURE;
