@@ -171,8 +171,9 @@ PRIVATE void benchmark_run() {
   CALL_SAFE(graph_initialize(options->graph_file, 
                              (options->benchmark == BENCHMARK_DIJKSTRA),
                              &graph));
-  void* benchmark_state = 
-    mem_alloc(graph->vertex_count * BENCHMARKS[options->benchmark].output_size);
+  void* benchmark_state = NULL;
+  totem_malloc(graph->vertex_count * BENCHMARKS[options->benchmark].output_size,
+               TOTEM_MEM_HOST_PINNED, (void**)&benchmark_state);
   assert(benchmark_state || (BENCHMARKS[options->benchmark].output_size == 0));
 
   bool totem_based = BENCHMARKS[options->benchmark].has_totem && 
@@ -207,7 +208,7 @@ PRIVATE void benchmark_run() {
   if (totem_based) {
     totem_finalize();
   }
-  mem_free(benchmark_state);
+  totem_free(benchmark_state, TOTEM_MEM_HOST_PINNED);
   CALL_SAFE(graph_finalize(graph));
 }
 
