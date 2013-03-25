@@ -6,11 +6,8 @@
  */
 
 // totem includes
+#include "totem_alg.h"
 #include "totem_centrality.h"
-#include "totem_comdef.h"
-#include "totem_comkernel.cuh"
-#include "totem_graph.h"
-#include "totem_mem.h"
 
 /**
  * Allocates and initializes memory on the GPU for the successors implementation

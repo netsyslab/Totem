@@ -8,7 +8,11 @@
 #define TOTEM_ALG_H
 
 // totem includes
+#include "totem_bitmap.cuh"
 #include "totem_comdef.h"
+#include "totem_comkernel.cuh"
+#include "totem_graph.h"
+#include "totem_mem.h"
 
 /**
  * A type for bfs cost. This is useful to allow changes in size.
@@ -93,14 +97,17 @@ error_t dijkstra_vwarp_gpu(const graph_t* graph, vid_t src_id,
  * Given a weighted graph \f$G = (V, E, w)\f$, the All Pairs Shortest Path
  * algorithm computes the distance from every vertex to every other vertex
  * in a weighted graph with no negative cycles.
+ * The distances array must be of size vertex_count^2. It mimics a static 
+ * array to avoid the overhead of creating an array of pointers. Thus, 
+ * accessing index [i][j] will be done as distances[(i * vertex_count) + j]
  *
  * @param[in] graph an instance of the graph structure
- * @param[out] path_ret the length of the computed shortest paths for each
+ * @param[out] distances the length of the computed shortest paths for each
  *                      vertex
  * @return generic success or failure
  */
-error_t apsp_cpu(graph_t* graph, weight_t** path_ret);
-error_t apsp_gpu(graph_t* graph, weight_t** path_ret);
+error_t apsp_cpu(graph_t* graph, weight_t** distances);
+error_t apsp_gpu(graph_t* graph, weight_t** distances);
 
 /**
  * Implements a version of the simple PageRank algorithm described in
@@ -111,7 +118,7 @@ error_t apsp_gpu(graph_t* graph, weight_t** path_ret);
  * @param[in]  graph the graph to run PageRank on
  * @param[in]  rank_i the initial rank for each node in the graph (NULL
  *                    indicates uniform initial rankings as default)
- * @param[out] rank the PageRank output array (must be freed via mem_free)
+ * @param[out] rank the PageRank output array
  * @return generic success or failure
  */
 error_t page_rank_cpu(graph_t* graph, float* rank_i, float* rank);

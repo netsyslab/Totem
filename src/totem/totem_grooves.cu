@@ -204,13 +204,17 @@ PRIVATE void init_outbox_table(partition_t* partition, uint32_t pcount,
         // Allocate the values array for the cpu-based partitions. The gpu-based
         // partitions will have their values array allocated later when their
         // state is initialized on the gpu
-        if (push_msg_size > 0) {
-          outbox[rmt_pid].push_values = 
-            mem_alloc(bits_to_bytes(outbox[rmt_pid].count * push_msg_size));
+        if (push_msg_size > 0) {           
+          CALL_SAFE(totem_malloc(bits_to_bytes(outbox[rmt_pid].count * 
+                                               push_msg_size),
+                                 TOTEM_MEM_HOST_PINNED,
+                                 &(outbox[rmt_pid].push_values)));
         }
         if (pull_msg_size > 0) {
-          outbox[rmt_pid].pull_values = 
-            mem_alloc(bits_to_bytes(outbox[rmt_pid].count * pull_msg_size));
+          CALL_SAFE(totem_malloc(bits_to_bytes(outbox[rmt_pid].count * 
+                                               pull_msg_size),
+                                 TOTEM_MEM_HOST_PINNED, 
+                                 &(outbox[rmt_pid].pull_values)));
         }
       }
     }
@@ -268,15 +272,17 @@ PRIVATE void init_inbox(partition_set_t* pset) {
       if (remote_par->processor.type == PROCESSOR_GPU) {
         // if the remote processor is GPU, then a values array for this inbox
         // needs to be allocated on the host
-        if (pset->push_msg_size > 0) {
-          partition->inbox[src_pid].push_values =
-            mem_alloc(bits_to_bytes(partition->inbox[src_pid].count * 
-                                    pset->push_msg_size));
+        if (pset->push_msg_size > 0) {          
+          CALL_SAFE(totem_malloc(bits_to_bytes(partition->inbox[src_pid].count *
+                                               pset->push_msg_size), 
+                                 TOTEM_MEM_HOST_PINNED, 
+                                 &(partition->inbox[src_pid].push_values)));
         }
         if (pset->pull_msg_size > 0) {
-          partition->inbox[src_pid].pull_values =
-            mem_alloc(bits_to_bytes(partition->inbox[src_pid].count * 
-                                    pset->pull_msg_size));
+          CALL_SAFE(totem_malloc(bits_to_bytes(partition->inbox[src_pid].count *
+                                               pset->pull_msg_size), 
+                                 TOTEM_MEM_HOST_PINNED, 
+                                 &(partition->inbox[src_pid].pull_values)));
         }
       }
     }
@@ -406,10 +412,12 @@ PRIVATE void finalize_outbox(partition_set_t* pset) {
         if (partition->outbox[rmt_pid].count) {
           free(partition->outbox[rmt_pid].rmt_nbrs);
           if (pset->push_msg_size > 0) {
-            mem_free(partition->outbox[rmt_pid].push_values);
+            totem_free(partition->outbox[rmt_pid].push_values,
+                       TOTEM_MEM_HOST_PINNED);
           }
           if (pset->pull_msg_size > 0) {
-            mem_free(partition->outbox[rmt_pid].pull_values);
+            totem_free(partition->outbox[rmt_pid].pull_values, 
+                       TOTEM_MEM_HOST_PINNED);
           }
         }
       }
@@ -437,10 +445,12 @@ PRIVATE void finalize_inbox(partition_set_t* pset) {
             partition->inbox[rmt_pid].count) {
           free(partition->inbox[rmt_pid].rmt_nbrs);
           if (pset->push_msg_size > 0) {
-            mem_free(partition->inbox[rmt_pid].push_values);
+            totem_free(partition->inbox[rmt_pid].push_values, 
+                       TOTEM_MEM_HOST_PINNED);
           }
           if (pset->pull_msg_size > 0) {
-            mem_free(partition->inbox[rmt_pid].pull_values);
+            totem_free(partition->inbox[rmt_pid].pull_values, 
+                       TOTEM_MEM_HOST_PINNED);
           }
         }
       }

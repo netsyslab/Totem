@@ -7,10 +7,7 @@
  */
 
 // totem includes
-#include "totem_comdef.h"
-#include "totem_comkernel.cuh"
-#include "totem_graph.h"
-#include "totem_mem.h"
+#include "totem_alg.h"
 
 __host__
 error_t stcon_gpu(const graph_t* graph, vid_t source_id, vid_t destination_id,

@@ -6,6 +6,7 @@
  */
 
 // totem includes
+#include "totem_alg.h"
 #include "totem_centrality.h"
 
 /**

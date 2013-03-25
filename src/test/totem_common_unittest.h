@@ -15,6 +15,7 @@
 #include "totem.h"
 #include "totem_comdef.h"
 #include "totem_graph.h"
+#include "totem_alg.h"
 #include "totem_mem.h"
 #include "totem_util.h"
 

@@ -167,7 +167,7 @@ error_t hash_table_get_cpu(hash_table_t* hash_table, uint32_t key, int* value);
  * @param[in] hash_table a reference to the hash table
  * @param[in] keys a reference to the group of keys to be looked up
  * @param[in] count number of keys
- * @param[out] values the list of values retrieved (allocated via mem_alloc)
+ * @param[out] values the list of values retrieved
  * @return SUCCESS if all are found, FAILURE otherwise
  */
 error_t hash_table_get_cpu(hash_table_t* hash_table, uint32_t* keys,
@@ -229,7 +229,7 @@ error_t hash_table_finalize_gpu(hash_table_t* hash_table);
  * @param[in] hash_table a reference to the hash table
  * @param[in] keys the list of keys to be looked up
  * @param[in] count number of keys
- * @param[out] values the list of retrieved values (allocated via mem_alloc)
+ * @param[out] values the list of retrieved values
  * @return SUCCESS if all are found, FAILURE otherwise
  */
 error_t hash_table_get_gpu(hash_table_t* hash_table, uint32_t* keys,

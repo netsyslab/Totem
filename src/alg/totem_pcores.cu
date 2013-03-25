@@ -1,5 +1,4 @@
 /**
- *
  * Implements a parallel version of a variation of the k-cores algorithm
  * described in [Batagelj2002] V. Batagelj and M. Zaversnik, "An O(m)
  * Algorithm for Cores Decomposition of Networks".
@@ -19,10 +18,7 @@
  */
 
 // totem includes
-#include "totem_comdef.h"
-#include "totem_comkernel.cuh"
-#include "totem_graph.h"
-#include "totem_mem.h"
+#include "totem_alg.h"
 
 // indicates an active vertex
 #define ACTIVE_FLAG ((uint32_t)-1)
@@ -117,7 +113,7 @@ error_t verify_input(const graph_t* graph, uint32_t start, uint32_t step) {
 }
 
 error_t pcore_gpu(const graph_t* graph, uint32_t start, uint32_t step,
-                  uint32_t** round_out) {
+                  uint32_t** round) {
 
   // kernel configuration parameters
   dim3 block_count;
@@ -127,8 +123,9 @@ error_t pcore_gpu(const graph_t* graph, uint32_t start, uint32_t step,
 
   // simple optimization for a single node graph
   if (graph->vertex_count == 1) {
-    *round_out = (uint32_t*)mem_alloc(sizeof(uint32_t));
-    (*round_out)[0] = graph->edge_count;
+    CALL_SAFE(totem_malloc(sizeof(uint32_t), TOTEM_MEM_HOST_PINNED, 
+                           (void**)round));
+    (*round)[0] = graph->edge_count;
     return SUCCESS;
   }
 
@@ -138,14 +135,15 @@ error_t pcore_gpu(const graph_t* graph, uint32_t start, uint32_t step,
 
   // allocate algorithm-specific state
   int* weights_sum_d;
-  CHK_CU_SUCCESS(cudaMalloc((void**)&weights_sum_d, graph->vertex_count *
-                            sizeof(int)), err_free_graph);
+  CALL_SAFE(totem_malloc(graph->vertex_count * sizeof(int), 
+                         TOTEM_MEM_DEVICE, (void**)&weights_sum_d));
   uint32_t* round_d;
-  CHK_CU_SUCCESS(cudaMalloc((void**)&round_d, graph->vertex_count *
-                            sizeof(uint32_t)), err_free_weights_sum);
+  CALL_SAFE(totem_malloc(graph->vertex_count * sizeof(uint32_t), 
+                         TOTEM_MEM_DEVICE, (void**)&round_d));
+
   bool* finish_flags_d;
-  CHK_CU_SUCCESS(cudaMalloc((void**)&finish_flags_d, 2 * sizeof(bool)),
-                 err_free_round);
+  CALL_SAFE(totem_malloc(2 * sizeof(bool), TOTEM_MEM_DEVICE,
+                         (void**)&finish_flags_d));
 
   // compute the number of blocks
   KERNEL_CONFIGURE(graph_d->vertex_count, block_count, threads_per_block);
@@ -160,14 +158,14 @@ error_t pcore_gpu(const graph_t* graph, uint32_t start, uint32_t step,
      finishes when all vertices are deactivated (i.e., all vertices have been
      assigned a round). */
   bool*    finish_flags;
-  finish_flags = (bool*)mem_alloc(2 * sizeof(bool));
+  CALL_SAFE(totem_malloc(2 * sizeof(bool), TOTEM_MEM_HOST_PINNED,
+                         (void**)&finish_flags));
   uint32_t cur_round;
   uint32_t cur_threshold;
   finish_flags[OVERALL_INDEX] = false;
   cur_round       = 0;
   cur_threshold   = start;
   while (!finish_flags[OVERALL_INDEX]) {
-
     finish_flags[ROUND_INDEX] = false;
     while (!finish_flags[ROUND_INDEX]) {
       CHK_CU_SUCCESS(cudaMemset(finish_flags_d, true, 2 * sizeof(bool)),
@@ -183,54 +181,53 @@ error_t pcore_gpu(const graph_t* graph, uint32_t start, uint32_t step,
     cur_round++;
   } // while !finished
 
-  uint32_t* round;
-  round  = (uint32_t*)mem_alloc(graph->vertex_count * sizeof(uint32_t));
-  CHK_CU_SUCCESS(cudaMemcpy(round, round_d,
+  CALL_SAFE(totem_malloc(graph->vertex_count * sizeof(uint32_t), 
+                         TOTEM_MEM_HOST_PINNED, (void**)round));
+  CHK_CU_SUCCESS(cudaMemcpy(*round, round_d,
                             graph->vertex_count * sizeof(uint32_t),
                             cudaMemcpyDeviceToHost), err_free_all);
-  *round_out = round;
 
   // release allocated memory
   graph_finalize_device(graph_d);
-  cudaFree(round_d);
-  cudaFree(weights_sum_d);
-  cudaFree(finish_flags_d);
-  mem_free(finish_flags);
+  totem_free(round_d, TOTEM_MEM_DEVICE);
+  totem_free(weights_sum_d, TOTEM_MEM_DEVICE);
+  totem_free(finish_flags_d, TOTEM_MEM_DEVICE);
+  totem_free(finish_flags, TOTEM_MEM_HOST_PINNED);
 
   return SUCCESS;
 
  err_free_all:
   mem_free(round);
  err_free_finish_flags:
-  cudaFree(finish_flags_d);
-  mem_free(finish_flags);
- err_free_round:
-  cudaFree(round_d);
- err_free_weights_sum:
-  cudaFree(weights_sum_d);
- err_free_graph:
+  totem_free(round_d, TOTEM_MEM_DEVICE);
+  totem_free(weights_sum_d, TOTEM_MEM_DEVICE);
+  totem_free(finish_flags_d, TOTEM_MEM_DEVICE);
+  totem_free(finish_flags, TOTEM_MEM_HOST_PINNED);
   graph_finalize_device(graph_d);
  err:
-  *round_out = NULL;
+  *round = NULL;
   return FAILURE;
 }
 
 error_t pcore_cpu(const graph_t* graph, uint32_t start, uint32_t step,
                   uint32_t** round_out) {
+  totem_mem_t mem_type = TOTEM_MEM_HOST_PINNED;
   CHK_SUCCESS(verify_input(graph, start, step), err);
 
   // simple optimization for a single node graph
   if (graph->vertex_count == 1) {
-    *round_out = (uint32_t*)mem_alloc(sizeof(uint32_t));
+    CALL_SAFE(totem_malloc(sizeof(uint32_t), mem_type, (void**)round_out));
     (*round_out)[0] = graph->edge_count;
     return SUCCESS;
   }
 
   // allocate and initialize state
   int* weights_sum;
-  weights_sum = (int*)mem_alloc(graph->vertex_count * sizeof(int));
+  CALL_SAFE(totem_malloc(graph->vertex_count * sizeof(int), mem_type,
+                         (void**)&weights_sum));
   uint32_t* round;
-  round  = (uint32_t*)mem_alloc(graph->vertex_count * sizeof(uint32_t));
+  CALL_SAFE(totem_malloc(graph->vertex_count * sizeof(uint32_t), mem_type,
+                         (void**)&round));
 
   OMP(omp parallel for)
   for (vid_t vertex_id = 0; vertex_id < graph->vertex_count; vertex_id++) {

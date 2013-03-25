@@ -18,9 +18,7 @@
  *  Author: Abdullah Gharaibeh
  */
 
-#include "totem_comkernel.cuh"
-#include "totem_graph.h"
-#include "totem_mem.h"
+#include "totem_alg.h"
 
 /**
  * Checks for input parameters and special cases. This is invoked at the

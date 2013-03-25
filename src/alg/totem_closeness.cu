@@ -6,11 +6,8 @@
  */
 
 // totem includes
+#include "totem_alg.h"
 #include "totem_centrality.h"
-#include "totem_comdef.h"
-#include "totem_comkernel.cuh"
-#include "totem_graph.h"
-#include "totem_mem.h"
 
 extern __global__
 void vwarp_bfs_kernel(graph_t graph, cost_t level, bool* finished,

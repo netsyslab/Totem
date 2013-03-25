@@ -18,10 +18,7 @@
  *  Author: Abdullah Gharaibeh
  */
 
-#include "totem_comkernel.cuh"
-#include "totem_graph.h"
-#include "totem_mem.h" 
-
+#include "totem_alg.h"
 
 /**
    This structure is used by virtual warp-based implementation. It stores a
@@ -314,8 +311,8 @@ error_t page_rank_vwarp_gpu(graph_t* graph, rank_t* rank_i, rank_t* rank) {
 
   // error handlers
  err_free_all:
-  cudaFree(rank_d);
-  cudaFree(mailbox_d);
+  totem_free(rank_d, TOTEM_MEM_DEVICE);
+  totem_free(mailbox_d, TOTEM_MEM_DEVICE);
   graph_finalize_device(graph_d);
  err:
   return FAILURE;

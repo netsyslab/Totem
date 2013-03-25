@@ -18,10 +18,8 @@
  *  Author: Abdullah Gharaibeh
  */
 
-#include "totem_comkernel.cuh"
+#include "totem_alg.h"
 #include "totem_engine.cuh"
-#include "totem_graph.h"
-#include "totem_mem.h"
 
 /**
  * PageRank specific state
