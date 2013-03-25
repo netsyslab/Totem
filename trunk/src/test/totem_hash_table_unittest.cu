@@ -74,7 +74,7 @@ TEST_P(HashTableTest, BuildAndRetrieveRandom) {
 
   // clean up
   EXPECT_EQ(SUCCESS, hash_table_funcs->finalize(hash_table));
-  mem_free(values);
+  totem_free(values, TOTEM_MEM_HOST);
   free(keys);
 }
 

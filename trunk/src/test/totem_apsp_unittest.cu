@@ -29,39 +29,48 @@ class APSPTest : public TestWithParam<APSPFunction> {
     // Ensure the minimum CUDA architecture is supported
     CUDA_CHECK_VERSION();
     apsp = GetParam();
+    graph = NULL;
+    mem_type = TOTEM_MEM_HOST_PINNED;
+    distances = NULL;
+  }
+
+  virtual void TearDown() {
+    if (graph) graph_finalize(graph);
+    if (distances) totem_free(distances, TOTEM_MEM_HOST_PINNED);
   }
 
  protected:
   APSPFunction apsp;
   graph_t* graph;
+  totem_mem_t mem_type;
+  weight_t* distances;
 };
 
 
 // Tests Alll Pairs Shortest Path for an empty vertex set graph.
 TEST_P(APSPTest, EmptyVertexSet) {
-  graph = (graph_t*)mem_alloc(sizeof(graph_t));
+  graph = (graph_t*)malloc(sizeof(graph_t));
   graph->directed = false;
   graph->edge_count = 0;
   graph->vertex_count = 0;
   graph->weighted = false;
   graph->weights = NULL;
 
-  weight_t* distances;
   EXPECT_EQ(FAILURE, apsp(graph, &distances));
   EXPECT_EQ((weight_t*)NULL, distances);
-  mem_free(graph);
+  free(graph);
+  graph = NULL;
 }
 
 // Tests APSP for a graph with an empty edge set.
 TEST_P(APSPTest, EmptyEdgeSet) {
-  graph = (graph_t*)mem_alloc(sizeof(graph_t));
+  graph = (graph_t*)malloc(sizeof(graph_t));
   graph->directed = false;
   graph->edge_count = 0;
   graph->vertex_count = 123;
   graph->weighted = true;
   graph->weights = NULL;
 
-  weight_t* distances;
   EXPECT_EQ(SUCCESS, apsp(graph, &distances));
   EXPECT_FALSE(NULL == distances);
   for (vid_t src = 0; src < graph->vertex_count; src++) {
@@ -73,39 +82,32 @@ TEST_P(APSPTest, EmptyEdgeSet) {
         EXPECT_EQ((weight_t)WEIGHT_MAX, base[dest]);
     }
   }
-  mem_free(graph);
-  mem_free(distances);
+  free(graph);
+  graph = NULL;
 }
 
 // Tests APSP for single node graphs.
 TEST_P(APSPTest, SingleNode) {
   graph_initialize(DATA_FOLDER("single_node.totem"), true, &graph);
 
-  weight_t* distances;
   EXPECT_EQ(SUCCESS, apsp(graph, &distances));
   EXPECT_FALSE(NULL == distances);
   EXPECT_EQ(0, distances[0]);
-  mem_free(distances);
-  graph_finalize(graph);
 }
 
 // Tests APSP for a single node graph that contains a loop.
 TEST_P(APSPTest, SingleNodeLoopWeighted) {
   graph_initialize(DATA_FOLDER("single_node_loop_weight.totem"), true, &graph);
 
-  weight_t* distances;
   EXPECT_EQ(SUCCESS, apsp(graph, &distances));
   EXPECT_FALSE(NULL == distances);
   EXPECT_EQ((weight_t)0, distances[0]);
-  mem_free(distances);
-  graph_finalize(graph);
 }
 
 // Tests APSP algorithm in star graph with 1000 nodes.
 TEST_P(APSPTest, Star) {
   graph_initialize(DATA_FOLDER("star_1000_nodes_weight.totem"), true, &graph);
 
-  weight_t* distances;
   EXPECT_EQ(SUCCESS, apsp(graph, &distances));
   EXPECT_FALSE(NULL == distances);
   // Test all vertices
@@ -120,8 +122,6 @@ TEST_P(APSPTest, Star) {
          EXPECT_EQ((weight_t)2, base[dest]);
     }
   }
-  mem_free(distances);
-  graph_finalize(graph);
 }
 
 // Tests APSP algorithm a complete graph with 300 nodes.
@@ -129,7 +129,6 @@ TEST_P(APSPTest, Complete) {
   graph_initialize(DATA_FOLDER("complete_graph_300_nodes_weight.totem"), true,
                    &graph);
 
-  weight_t* distances;
   EXPECT_EQ(SUCCESS, apsp(graph, &distances));
   EXPECT_FALSE(NULL == distances);
   // Test all vertices
@@ -142,8 +141,6 @@ TEST_P(APSPTest, Complete) {
          EXPECT_EQ((weight_t)1, base[dest]);
     }
   }
-  mem_free(distances);
-  graph_finalize(graph);
 }
 
 // Tests APSP algorithm a star graph with 1K nodes with different edge weights.
@@ -151,7 +148,6 @@ TEST_P(APSPTest, StarDiffWeight) {
   graph_initialize(DATA_FOLDER("star_1000_nodes_diff_weight.totem"), true,
                    &graph);
 
-  weight_t* distances;
   EXPECT_EQ(SUCCESS, apsp(graph, &distances));
   EXPECT_FALSE(NULL == distances);
   // Test all vertices
@@ -166,8 +162,6 @@ TEST_P(APSPTest, StarDiffWeight) {
         EXPECT_EQ((weight_t)(src + 2), base[dest]);
     }
   }
-  mem_free(distances);
-  graph_finalize(graph);
 }
 
 // Tests APSP algorithm a complete graph with 300 nodes, different edge weights.
@@ -175,7 +169,6 @@ TEST_P(APSPTest, CompleteDiffWeight) {
   graph_initialize(DATA_FOLDER("complete_graph_300_nodes_diff_weight.totem"),
                    true, &graph);
 
-  weight_t* distances;
   EXPECT_EQ(SUCCESS, apsp(graph, &distances));
   EXPECT_FALSE(NULL == distances);
   // Test all vertices
@@ -188,8 +181,6 @@ TEST_P(APSPTest, CompleteDiffWeight) {
         EXPECT_EQ((weight_t)(src + 1), base[dest]);
     }
   }
-  mem_free(distances);
-  graph_finalize(graph);
 }
 
 INSTANTIATE_TEST_CASE_P(APSPGPUAndCPUTest, APSPTest,

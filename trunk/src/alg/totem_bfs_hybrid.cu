@@ -6,11 +6,8 @@
  *  Author: Abdullah Gharaibeh
  */
 
-#include "totem_bitmap.cuh"
+#include "totem_alg.h"
 #include "totem_engine.cuh"
-#include "totem_comkernel.cuh"
-#include "totem_graph.h"
-#include "totem_mem.h"
 
 /**
  * per-partition specific state

@@ -139,11 +139,14 @@ class EngineTest : public TestWithParam<totem_attr_t*> {
     EXPECT_EQ(SUCCESS, engine_config(&config_));
     degree_g = (int*)calloc(graph_->vertex_count, sizeof(int));
     if (engine_largest_gpu_partition()) {
-      degree_h = (int*)mem_alloc(engine_largest_gpu_partition() * sizeof(int));
+      totem_malloc(engine_largest_gpu_partition() * sizeof(int), 
+                   TOTEM_MEM_HOST_PINNED, (void**)&degree_h);
     }
     EXPECT_EQ(SUCCESS, engine_execute());
     engine_finalize();
-    if (engine_largest_gpu_partition()) mem_free(degree_h);
+    if (engine_largest_gpu_partition()) { 
+      totem_free(degree_h, TOTEM_MEM_HOST_PINNED);
+    }
     for (vid_t v = 0; v < graph_->vertex_count; v++) {
       int nbr_count = graph_->vertices[v + 1] - graph_->vertices[v];
       EXPECT_EQ(nbr_count, degree_g[v]);

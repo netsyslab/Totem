@@ -507,7 +507,8 @@ PRIVATE
 void graph_match_bidirected_edges(graph_t* graph, eid_t** reverse_indices) {
   // Calculate the array of indexes matching each edge to its
   // counterpart reverse edge
-  (*reverse_indices) = (eid_t*)mem_alloc(graph->edge_count * 2 * sizeof(eid_t));
+  totem_malloc(graph->edge_count * 2 * sizeof(eid_t), TOTEM_MEM_HOST, 
+               (void**)reverse_indices);
   for (vid_t v = 0; v < graph->vertex_count; v++) {
     for (eid_t edge_id = graph->vertices[v];
          edge_id < graph->vertices[v + 1]; edge_id++) {
@@ -606,12 +607,10 @@ graph_t* graph_create_bidirectional(graph_t* graph, eid_t** reverse_indices) {
 
 error_t graph_finalize(graph_t* graph) {
   assert(graph);
-  // those buffers are allocated via mem_alloc
   if (graph->vertex_count != 0) free(graph->vertices);
   if (graph->edge_count != 0) free(graph->edges);
   if (graph->weighted && graph->edge_count != 0) free(graph->weights);
   if (graph->valued && graph->vertex_count != 0) free(graph->values);
-  // this is always allocated via malloc
   free(graph);
   return SUCCESS;
 }

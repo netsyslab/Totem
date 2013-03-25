@@ -6,11 +6,8 @@
  */
 
 // totem includes
+#include "totem_alg.h"
 #include "totem_centrality.h"
-#include "totem_comdef.h"
-#include "totem_comkernel.cuh"
-#include "totem_graph.h"
-#include "totem_mem.h"
 
 /**
  * Checks for input parameters and special cases. This is invoked at the

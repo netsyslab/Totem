@@ -12,11 +12,7 @@
  */
 
 // totem includes
-#include "totem_bitmap.cuh"
-#include "totem_comdef.h"
-#include "totem_comkernel.cuh"
-#include "totem_graph.h"
-#include "totem_mem.h"
+#include "totem_alg.h"
 
 /**
  * This structure is used by the virtual warp-based implementation. It stores a

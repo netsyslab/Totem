@@ -117,7 +117,7 @@ error_t hash_table_get_cpu(hash_table_t* hash_table, uint32_t key, int* value) {
 
 error_t hash_table_get_cpu(hash_table_t* hash_table, uint32_t* keys,
                            uint32_t count, int** values) {
-  *values = (int*)mem_alloc(count * sizeof(int));
+  CALL_SAFE(totem_malloc(count * sizeof(int), TOTEM_MEM_HOST, (void**)values));
   for (int k = 0; k < count; k++) {
     CHK_SUCCESS(hash_table_get_cpu(hash_table, keys[k], &((*values)[k])), err);
   }
@@ -181,7 +181,7 @@ error_t hash_table_get_gpu(hash_table_t* hash_table, uint32_t* keys,
   get_kernel<<<blocks, threads_per_block>>>(*hash_table, keys_d, count,
                                             values_d);
   CHK_CU_SUCCESS(cudaGetLastError(), err_free_values_d);
-  *values = (int*)mem_alloc(count * sizeof(int));
+  CALL_SAFE(totem_malloc(count * sizeof(int), TOTEM_MEM_HOST, (void**)values));
   CHK_CU_SUCCESS(cudaMemcpy(*values, values_d, count * sizeof(int),
                             cudaMemcpyDeviceToHost), err_free_values);
   }
@@ -192,7 +192,7 @@ error_t hash_table_get_gpu(hash_table_t* hash_table, uint32_t* keys,
 
   // error handling
  err_free_values:
-  mem_free(*values);
+  totem_free(*values, TOTEM_MEM_HOST);
  err_free_values_d:
   CALL_CU_SAFE(cudaFree(values_d));
  err_free_keys_d:

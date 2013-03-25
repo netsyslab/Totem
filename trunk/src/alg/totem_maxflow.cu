@@ -10,14 +10,8 @@
  *      Author: Greg Redekop
  */
 
-// system includes
-#include <cuda.h>
-
 // totem includes
-#include "totem_comdef.h"
-#include "totem_comkernel.cuh"
-#include "totem_graph.h"
-#include "totem_mem.h"
+#include "totem_alg.h"
 
 // For each stage of the algorithm, a kernel loops over each vertex this many
 // times attempting pushes and relabels. This will also control the frequency
@@ -64,6 +58,7 @@ error_t initialize_gpu(graph_t* graph, vid_t source_id, vid_t vwarp_length,
                        weight_t** flow_d, weight_t** excess_d,
                        uint32_t** height_d, eid_t** reverse_indices_d,
                        bool** finished_d) {
+
   dim3 blocks;
   dim3 threads_per_block;
 
@@ -75,34 +70,24 @@ error_t initialize_gpu(graph_t* graph, vid_t source_id, vid_t vwarp_length,
     source_excess -= graph->weights[edge_id];
   }
   // Allocate space on GPU
+  totem_mem_t mem_type = TOTEM_MEM_DEVICE;
   CHK_SUCCESS(graph_initialize_device(graph, graph_d), err);
-  CHK_CU_SUCCESS(cudaMalloc((void**)flow_d, graph->edge_count *
-                            sizeof(weight_t)), err_free_graph_d);
-  CHK_CU_SUCCESS(cudaMalloc((void**)reverse_indices_d, graph->edge_count *
-                            sizeof(eid_t)), err_free_flow_d);
-  CHK_CU_SUCCESS(cudaMalloc((void**)excess_d, graph->vertex_count *
-                            sizeof(weight_t)), err_free_reverse_indices_d);
-  CHK_CU_SUCCESS(cudaMalloc((void**)height_d, vwarp_length * sizeof(uint32_t)),
-                 err_free_excess_d);
-  // Initialize flow, height, and excess to 0.
-  KERNEL_CONFIGURE(graph->edge_count, blocks, threads_per_block);
-  memset_device<<<blocks, threads_per_block>>>((*flow_d), (weight_t)0,
-                                               graph->edge_count);
-  CHK_CU_SUCCESS(cudaGetLastError(), err_free_all_d);
-  KERNEL_CONFIGURE(vwarp_length, blocks, threads_per_block);
-  memset_device<<<blocks, threads_per_block>>>((*height_d), (uint32_t)0,
-                                               vwarp_length);
-  KERNEL_CONFIGURE(graph->vertex_count, blocks, threads_per_block);
-  memset_device<<<blocks, threads_per_block>>>((*excess_d), (weight_t)0,
-                                               graph->vertex_count);
-  CHK_CU_SUCCESS(cudaGetLastError(), err_free_all_d);
+  CHK_SUCCESS(totem_calloc(graph->edge_count * sizeof(eid_t), mem_type, 
+                           (void**)reverse_indices_d), err_free_flow_d);
+  CHK_SUCCESS(totem_calloc(graph->edge_count * sizeof(weight_t), mem_type,
+                           (void**)flow_d), err_free_graph_d);
+  CHK_SUCCESS(totem_calloc(graph->vertex_count * sizeof(weight_t), mem_type, 
+                           (void**)excess_d), err_free_reverse_indices_d);
+  CHK_SUCCESS(totem_calloc(vwarp_length * sizeof(uint32_t), mem_type, 
+                           (void**)height_d), err_free_excess_d);
+  // Initialize flow, height, and excess to 0
   CHK_CU_SUCCESS(cudaMemcpy((*reverse_indices_d), reverse_indices,
                             graph->edge_count * sizeof(eid_t),
                             cudaMemcpyHostToDevice), err_free_all_d);
 
   // From the source vertex, initialize preflow
-  CHK_CU_SUCCESS(cudaMemset(&((*height_d)[source_id]), graph->vertex_count,
-                            sizeof(uint32_t)), err_free_all_d);
+  totem_memset(&((*height_d)[source_id]), (uint32_t)graph->vertex_count,
+               1, mem_type);
   KERNEL_CONFIGURE((graph->vertices[source_id + 1] -
                     graph->vertices[source_id]), blocks, threads_per_block);
   init_preflow<<<blocks, threads_per_block>>>
@@ -110,22 +95,22 @@ error_t initialize_gpu(graph_t* graph, vid_t source_id, vid_t vwarp_length,
      *flow_d, *excess_d, *reverse_indices_d);
   CHK_CU_SUCCESS(cudaGetLastError(), err_free_all_d);
 
-  CHK_CU_SUCCESS(cudaMemset(&((*excess_d)[source_id]), source_excess,
-                            sizeof(weight_t)), err_free_all_d);
+  totem_memset(&((*excess_d)[source_id]), (weight_t)source_excess, 1, mem_type);
+
   // Allocate the termination flag
-  CHK_CU_SUCCESS(cudaMalloc((void**)finished_d, sizeof(bool)),
-                 err_free_all_d);
+  CHK_SUCCESS(totem_malloc(sizeof(bool), mem_type, (void**)finished_d),
+              err_free_all_d);
 
   return SUCCESS;
 
   err_free_all_d:
-    cudaFree(height_d);
+    totem_free(height_d, mem_type);
   err_free_excess_d:
-    cudaFree(excess_d);
+    totem_free(excess_d, mem_type);
   err_free_reverse_indices_d:
-    cudaFree(reverse_indices_d);
+    totem_free(reverse_indices_d, mem_type);
   err_free_flow_d:
-    cudaFree(flow_d);
+    totem_free(flow_d, mem_type);
   err_free_graph_d:
     graph_finalize_device(*graph_d);
   err:
@@ -317,14 +302,15 @@ PRIVATE
 error_t finalize_gpu(graph_t* graph_d, weight_t* flow_d, weight_t* excess_d,
                      uint32_t* height_d, eid_t* reverse_indices_d,
                      bool* finished_d, weight_t* flow_ret, vid_t sink_id) {
+  totem_mem_t mem_type = TOTEM_MEM_DEVICE;
   CHK_CU_SUCCESS(cudaMemcpy(flow_ret, (weight_t*)&(excess_d[sink_id]),
                             sizeof(weight_t), cudaMemcpyDeviceToHost), err);
   graph_finalize_device(graph_d);
-  cudaFree(flow_d);
-  cudaFree(excess_d);
-  cudaFree(height_d);
-  cudaFree(reverse_indices_d);
-  cudaFree(finished_d);
+  totem_free(flow_d, mem_type);
+  totem_free(excess_d, mem_type);
+  totem_free(height_d, mem_type);
+  totem_free(reverse_indices_d, mem_type);
+  totem_free(finished_d, mem_type);
   return SUCCESS;
  err:
   return FAILURE;
@@ -346,13 +332,6 @@ error_t maxflow_vwarp_gpu(graph_t* graph, vid_t source_id, vid_t sink_id,
   // any other allocations/initialization.
   eid_t* reverse_indices = NULL;
   graph_t* local_graph = graph_create_bidirectional(graph, &reverse_indices);
-
-  uint32_t* height = (uint32_t*)mem_alloc(local_graph->vertex_count *
-                                          sizeof(uint32_t));
-  weight_t* excess = (weight_t*)mem_alloc(local_graph->vertex_count *
-                                         sizeof(weight_t));
-  weight_t* flow = (weight_t*)mem_alloc(local_graph->edge_count *
-                                        sizeof(weight_t));
 
   // Create and initialize state on GPU
   uint64_t vwarp_length = VWARP_BATCH_SIZE *
@@ -399,26 +378,20 @@ error_t maxflow_vwarp_gpu(graph_t* graph, vid_t source_id, vid_t sink_id,
   CHK_SUCCESS(finalize_gpu(graph_d, flow_d, excess_d, height_d,
                            reverse_indices_d, finished_d, flow_ret, sink_id),
               err_free_all);
-  mem_free(height);
-  mem_free(excess);
-  mem_free(flow);
-  mem_free(reverse_indices);
+  totem_free(reverse_indices, TOTEM_MEM_HOST);
   graph_finalize(local_graph);
 
   return SUCCESS;
 
   // error handlers
   err_free_all:
-    cudaFree(finished_d);
-    cudaFree(height_d);
-    cudaFree(excess_d);
-    cudaFree(flow_d);
-    cudaFree(reverse_indices_d);
+    totem_free(flow_d, TOTEM_MEM_DEVICE);
+    totem_free(excess_d, TOTEM_MEM_DEVICE);
+    totem_free(height_d, TOTEM_MEM_DEVICE);
+    totem_free(reverse_indices_d, TOTEM_MEM_DEVICE);
+    totem_free(finished_d, TOTEM_MEM_DEVICE);
     graph_finalize_device(graph_d);
-    mem_free(height);
-    mem_free(excess);
-    mem_free(flow);
-    mem_free(reverse_indices);
+    totem_free(reverse_indices, TOTEM_MEM_HOST);
     graph_finalize(local_graph);
     return FAILURE;
 }
@@ -438,13 +411,6 @@ error_t maxflow_gpu(graph_t* graph, vid_t source_id, vid_t sink_id,
   // any other allocations/initialization.
   eid_t* reverse_indices = NULL;
   graph_t* local_graph = graph_create_bidirectional(graph, &reverse_indices);
-
-  uint32_t* height = (uint32_t*)mem_alloc(local_graph->vertex_count *
-                                          sizeof(uint32_t));
-  weight_t* excess = (weight_t*)mem_alloc(local_graph->vertex_count *
-                                         sizeof(weight_t));
-  weight_t* flow = (weight_t*)mem_alloc(local_graph->edge_count *
-                                        sizeof(weight_t));
 
   // Create and initialize state on GPU
   graph_t* graph_d;
@@ -486,26 +452,20 @@ error_t maxflow_gpu(graph_t* graph, vid_t source_id, vid_t sink_id,
   CHK_SUCCESS(finalize_gpu(graph_d, flow_d, excess_d, height_d,
                            reverse_indices_d, finished_d, flow_ret, sink_id),
               err_free_all);
-  mem_free(height);
-  mem_free(excess);
-  mem_free(flow);
-  mem_free(reverse_indices);
+  totem_free(reverse_indices, TOTEM_MEM_HOST);
   graph_finalize(local_graph);
 
   return SUCCESS;
 
   // error handlers
   err_free_all:
-    cudaFree(finished_d);
-    cudaFree(height_d);
-    cudaFree(excess_d);
-    cudaFree(flow_d);
-    cudaFree(reverse_indices_d);
+    totem_free(flow_d, TOTEM_MEM_DEVICE);
+    totem_free(excess_d, TOTEM_MEM_DEVICE);
+    totem_free(height_d, TOTEM_MEM_DEVICE);
+    totem_free(reverse_indices_d, TOTEM_MEM_DEVICE);
+    totem_free(finished_d, TOTEM_MEM_DEVICE);
     graph_finalize_device(graph_d);
-    mem_free(height);
-    mem_free(excess);
-    mem_free(flow);
-    mem_free(reverse_indices);
+    totem_free(reverse_indices, TOTEM_MEM_HOST);
     graph_finalize(local_graph);
     return FAILURE;
 }
@@ -566,17 +526,16 @@ error_t maxflow_cpu(graph_t* graph, vid_t source_id, vid_t sink_id,
   eid_t* reverse_indices = NULL;
   graph_t* local_graph = graph_create_bidirectional(graph, &reverse_indices);
 
-  weight_t* excess = (weight_t*)mem_alloc(local_graph->vertex_count *
-                                          sizeof(weight_t));
-  uint32_t* height = (uint32_t*)mem_alloc(local_graph->vertex_count *
-                                          sizeof(uint32_t));
-  weight_t* flow = (weight_t*)mem_alloc(local_graph->edge_count *
-                                        sizeof(weight_t));
+  weight_t* excess = NULL;
+  CALL_SAFE(totem_calloc(local_graph->vertex_count * sizeof(weight_t), 
+                         TOTEM_MEM_HOST, (void**)&excess));
+  uint32_t* height = NULL;
+  CALL_SAFE(totem_calloc(local_graph->vertex_count * sizeof(uint32_t),
+                         TOTEM_MEM_HOST, (void**)&height));
+  weight_t* flow = NULL;
+  CALL_SAFE(totem_calloc(local_graph->edge_count * sizeof(weight_t), 
+                         TOTEM_MEM_HOST, (void**)&flow));
 
-  // Initialize flows, height, and excess to 0
-  memset(excess, 0, local_graph->vertex_count * sizeof(weight_t));
-  memset(height, 0, local_graph->vertex_count * sizeof(uint32_t));
-  memset(flow, 0, local_graph->edge_count * sizeof(weight_t));
   // Initialize source's height to the vertex count
   height[source_id] = (uint32_t) local_graph->vertex_count;
 
@@ -611,10 +570,10 @@ error_t maxflow_cpu(graph_t* graph, vid_t source_id, vid_t sink_id,
   // value at the sink node)
   *flow_ret = excess[sink_id];
 
-  mem_free(reverse_indices);
-  mem_free(height);
-  mem_free(excess);
-  mem_free(flow);
+  totem_free(reverse_indices, TOTEM_MEM_HOST);
+  totem_free(excess, TOTEM_MEM_HOST);
+  totem_free(height, TOTEM_MEM_HOST);
+  totem_free(flow, TOTEM_MEM_HOST);
   // Free our modified new graph
   graph_finalize(local_graph);
 
