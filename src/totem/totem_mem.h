@@ -14,6 +14,7 @@
 typedef enum {
   TOTEM_MEM_HOST,
   TOTEM_MEM_HOST_PINNED,
+  TOTEM_MEM_HOST_MAPPED,
   TOTEM_MEM_DEVICE
 } totem_mem_t;
 
@@ -79,7 +80,8 @@ void totem_memset(T* ptr, T value, size_t size, totem_mem_t type,
                   cudaStream_t stream = 0) {
   switch (type) {
     case TOTEM_MEM_HOST:
-    case TOTEM_MEM_HOST_PINNED: {
+    case TOTEM_MEM_HOST_PINNED: 
+    case TOTEM_MEM_HOST_MAPPED: {
       OMP(omp parallel for schedule(static))
       for (size_t i = 0; i < size; i++) {
         ptr[i] = value;
