@@ -47,6 +47,12 @@ error_t totem_malloc(size_t size, totem_mem_t type, void** ptr) {
         err = FAILURE;
       }
       break;
+    case TOTEM_MEM_HOST_MAPPED:
+      if (cudaMallocHost(ptr, size, cudaHostAllocPortable | cudaHostAllocMapped)
+          != cudaSuccess) {
+        err = FAILURE;
+      }
+      break;
     case TOTEM_MEM_DEVICE:
       if (cudaMalloc(ptr, size) != cudaSuccess) {
         err = FAILURE;
@@ -67,9 +73,10 @@ error_t totem_calloc(size_t size, totem_mem_t type, void** ptr) {
   switch (type) {
     case TOTEM_MEM_HOST:
     case TOTEM_MEM_HOST_PINNED:
+    case TOTEM_MEM_HOST_MAPPED:
       memset(*ptr, 0, size);
       break;
-    case TOTEM_MEM_DEVICE:      
+    case TOTEM_MEM_DEVICE:
       if (cudaMemset(*ptr, 0, size) != cudaSuccess) {
         err = FAILURE;
       }
@@ -87,10 +94,11 @@ void totem_free(void* ptr, totem_mem_t type) {
       free(ptr);
       break;
     case TOTEM_MEM_HOST_PINNED:
-      cudaFreeHost(ptr);
+    case TOTEM_MEM_HOST_MAPPED:
+      CALL_CU_SAFE(cudaFreeHost(ptr));
       break;
     case TOTEM_MEM_DEVICE:
-      cudaFree(ptr);
+      CALL_CU_SAFE(cudaFree(ptr));
       break;
     default:
       fprintf(stderr, "Error: invalid memory type\n");
