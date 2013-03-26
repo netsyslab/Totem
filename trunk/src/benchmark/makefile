@@ -11,13 +11,16 @@ TARGET  = benchmark
 TOTEM_PATH   = ../totem
 TOTEM_INC    = -I$(TOTEM_PATH)
 TOTEM_LIB    = -ltotem -L$(TOTEM_PATH)
+TOTEM_DEPS   = $(wildcard $(TOTEM_PATH)/*.[cuh,h])
 
 ALG_PATH   = ../alg
 ALG_INC    = -I$(ALG_PATH)
 ALG_LIB    =  -lalg -L$(ALG_PATH)
+ALG_DEPS   = $(wildcard $(ALG_PATH)/*.[cuh,h])
 
 NVCCFLAGS += $(GTEST_INC) $(TOTEM_INC) $(ALG_INC)
 CCFLAGS   += $(GTEST_INC) $(TOTEM_INC) $(ALG_INC)
+DEPS = $(CCDEPS) $(CUDEPS) $(TOTEM_DEPS) $(ALG_DEPS)
 
 .PHONY: objects clean clean-all tags
 
@@ -32,10 +35,10 @@ objects: $(OBJDIR) $(CCOBJS) $(CUOBJS)
 $(OBJDIR):
 	@if test ! -d $(OBJDIR); then mkdir $(OBJDIR); fi
 
-$(CCOBJS): $(OBJDIR)/%.o: %.cc $(CCDEPS)
+$(CCOBJS): $(OBJDIR)/%.o: %.cc $(DEPS)
 	$(CC) $(CCFLAGS) $(TOTEM_FEATURES) -c $< -o $@
 
-$(CUOBJS): $(OBJDIR)/%.cu_o: %.cu $(CCDEPS) $(CUDEPS)
+$(CUOBJS): $(OBJDIR)/%.cu_o: %.cu $(DEPS)
 	$(NVCC) $(NVCCFLAGS) $(TOTEM_FEATURES) -c $< -o $@
 
 totem:
@@ -49,6 +52,8 @@ clean:
 
 clean-all:
 	@$(CLEAN_ALL_CMD) lib$(TARGET).a
+	@$(MAKE) -C $(TOTEM_PATH) clean-all
+	@$(MAKE) -C $(ALG_PATH) clean-all
 
 tags:
 	@$(ETAGS_CMD)
