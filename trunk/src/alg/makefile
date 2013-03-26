@@ -10,6 +10,9 @@ TARGET  = alg
 
 TOTEM_PATH   = ../totem
 TOTEM_INC    = -I$(TOTEM_PATH)
+TOTEM_DEPS   = $(wildcard $(TOTEM_PATH)/*.[cuh,h])
+
+DEPS = $(CCDEPS) $(CUDEPS) $(TOTEM_DEPS)
 
 .PHONY: objects clean clean-all tags
 
@@ -25,10 +28,10 @@ objects: $(OBJDIR) $(CCOBJS) $(CUOBJS)
 $(OBJDIR):
 	@if test ! -d $(OBJDIR); then mkdir $(OBJDIR); fi
 
-$(CCOBJS): $(OBJDIR)/%.o: %.cc $(CCDEPS)
+$(CCOBJS): $(OBJDIR)/%.o: %.cc $(DEPS)
 	$(CC) $(CCFLAGS) $(TOTEM_INC) -c $< -o $@
 
-$(CUOBJS): $(OBJDIR)/%.cu_o: %.cu $(CCDEPS) $(CUDEPS)
+$(CUOBJS): $(OBJDIR)/%.cu_o: %.cu $(DEPS)
 	$(NVCC) $(NVCCFLAGS) $(TOTEM_INC) -c $< -o $@
 
 clean:

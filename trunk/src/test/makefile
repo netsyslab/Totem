@@ -22,10 +22,12 @@ GEST_LIB   = -L$(GTEST_PATH)/lib
 TOTEM_PATH   = ../totem
 TOTEM_INC    = -I$(TOTEM_PATH)
 TOTEM_LIB    = -ltotem -L$(TOTEM_PATH)
+TOTEM_DEPS   = $(wildcard $(TOTEM_PATH)/*.[cuh,h])
 
 ALG_PATH   = ../alg
 ALG_INC    = -I$(ALG_PATH)
 ALG_LIB    =  -lalg -L$(ALG_PATH)
+ALG_DEPS   = $(wildcard $(ALG_PATH)/*.[cuh,h])
 
 ifdef TEST
 CCSRC = $(filter-out %.cu, $(TEST_FILE))
@@ -39,6 +41,8 @@ NVCCFLAGS += $(GTEST_INC) $(TOTEM_INC) $(ALG_INC)
 CCFLAGS   += $(GTEST_INC) $(TOTEM_INC) $(ALG_INC)
 LFLAGS    += $(TOTEM_LIB) $(ALG_LIB)
 BUILD_LINE = $(ALL_OBJS) $(GTEST_SRC) $(GTEST_INC) $(LFLAGS)
+
+DEPS = $(CCDEPS) $(CUDEPS) $(TOTEM_DEPS) $(ALG_DEPS)
 
 all: environment totem alg objects
 ifndef TEST
@@ -64,10 +68,10 @@ objects: $(OBJDIR) $(CCOBJS) $(CUOBJS)
 $(OBJDIR):
 	@if test ! -d $(OBJDIR); then mkdir $(OBJDIR); fi
 
-$(CCOBJS): $(OBJDIR)/%.o: %.cc $(CCDEPS)
+$(CCOBJS): $(OBJDIR)/%.o: %.cc $(DEPS)
 	$(CC) $(CCFLAGS) $(TOTEM_FEATURES) -c $< -o $@
 
-$(CUOBJS): $(OBJDIR)/%.cu_o: %.cu $(CDEPS) $(CUDEPS)
+$(CUOBJS): $(OBJDIR)/%.cu_o: %.cu $(DEPS)
 	$(NVCC) $(NVCCFLAGS) $(TOTEM_FEATURES) -c $< -o $@
 
 totem:
