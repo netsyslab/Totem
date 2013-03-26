@@ -168,29 +168,40 @@ totem.plot.breakdown <- function(data, filename, alpha, cpu_count = 1,
     phases = c("Computation", "Communication", "Result Aggregation");
     d = data.frame(PHASE = factor(phases, levels = rev(phases)),
                    TIME = c(data_point$COMP, data_point$COMM,
-                            data_point$AGGR));
+                            data_point$AGGR),
+                   GROUP = "Total");
+
+    gpu = data.frame(PHASE = c("Computation"),
+                     TIME = c(data_point$GPUCOMP),
+                     GROUP = "GPU");
+    d = rbind(d, gpu);
+
     d$PAR = par;
     data_all = rbind(data_all, d);
   }
 
   ## Plot as stacked bars
-  plot = ggplot(data_all, aes(x = PAR, y = TIME, fill = PHASE, width = .5)) +
-         geom_bar(stat = "identity");
+  plot = ggplot(data_all, aes(x = GROUP, y = TIME, fill = PHASE)) +
+         geom_bar(stat = "identity", colour = "black", width = 1.5) +
+         facet_grid(. ~ PAR);
 
   ## The axes labels and limits
-  plot = plot + scale_x_discrete("") + scale_colour_grey() +
+  plot = plot + scale_x_discrete("", expand = c(.5,.5)) + scale_colour_grey() +
          scale_y_continuous("Time (ms)");
 
   ## Set the theme
   theme_set(theme_bw());
   plot = plot + theme(panel.border = element_blank(),
                       legend.title = element_blank(),
-                      legend.text = element_text(size = 15),
+                      legend.text = element_text(size = 10),
                       legend.position = legend_position,
-                      axis.line = element_line(size = 1),
+                      axis.line = element_line(size = 0),
                       axis.title = element_text(size = 15),
                       axis.ticks = element_line(size = 1),
                       axis.text = element_text(size = 15));
+
+  plot = plot + theme(axis.text.x = element_text(angle = 45, hjust = 1),
+                      panel.margin = unit(2, "lines"));
 
   ## Save the plot
   ggsave(filename, plot, width = 7, height = 4.7);
