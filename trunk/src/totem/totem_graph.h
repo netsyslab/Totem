@@ -163,6 +163,25 @@ error_t graph_initialize(const char* graph_file, bool weighted,
 error_t graph_finalize(graph_t* graph);
 
 /**
+ * Initialize a graph structure (graph_d) to be passed as a parameter to GPU
+ * kernels. Both graph_d and graph_h structs reside in host memory. The
+ * vertices, edges and weights pointers in graph_d will point to buffers in
+ * device memory allocated by the routine. Also, the routine will copy-in the
+ * data to the aforementioned three buffers from the corresponding buffers in
+ * graph_h.
+ * @param[in] graph_h source graph which hosts references to main memory buffers
+ * @param[out] graph_d allocated graph that hosts references to device buffers
+ * @return generic success or failure
+ */
+error_t graph_initialize_device(const graph_t* graph_h, graph_t** graph_d);
+
+/**
+ * Free allocated device buffers associated with the graph
+ * @param[in] graph_d the graph to be finalized
+ */
+void graph_finalize_device(graph_t* graph_d);
+
+/**
  * Prints out a graph to standard output in totem format
  * @param[in] graph the graph data structure to print out
  */
