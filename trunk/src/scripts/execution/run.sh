@@ -92,7 +92,7 @@ MIN_ALPHA=5
 MAX_ALPHA=95
 BENCHMARK=${BFS}
 RESULT_BASE="../../results"
-TOTEM_EXE="../../totem/totem"
+TOTEM_EXE="../../benchmark/benchmark"
 MAX_GPU_COUNT=1
 REPEAT_COUNT=
 OMP_SCHED=${OMP_SCHED_STATIC}
@@ -191,8 +191,10 @@ fi
 
 # Configure OpenMP to bind OMP threads to specific hardware threads such that
 # the first half is on socket one, and the other on socket two
-# TODO(abdullah): detect the mapping automatically
-export GOMP_CPU_AFFINITY="0-5 12-17 6-11 18-23"
+export GOMP_CPU_AFFINITY=`cat /proc/cpuinfo | grep "physical id" | \
+    cut -d" " -f 3 | uniq -c | \
+    awk 'BEGIN{cur = 0}{printf("%d %d-%d\n", $2, cur, (cur + $1 - 1)); \
+    cur = cur + $1}' | sort -k1n -k2n | awk '{p = p " " $2}END{print p}'`
 export OMP_PROC_BIND=true
 
 # Invokes totem executable for a specific set of parameters
