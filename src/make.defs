@@ -11,18 +11,15 @@
 #
 #--------------------------------------------------------------------------
 
-# Command line options
-# defines totem's compile time features
-TOTEM_FEATURES =
-
-# 64bit edge IDs
-ifeq ($(EID), 64)
-  TOTEM_FEATURES += -DFEATURE_64BIT_EDGE_ID
-endif
-
 # Set compilation options
 NVCCFLAGS =
 CCFLAGS =
+# 64bit edge IDs
+ifeq ($(EID), 64)
+  NVCCFLAGS += -DFEATURE_64BIT_EDGE_ID
+  CCFLAGS += -DFEATURE_64BIT_EDGE_ID
+endif
+
 # enable verbose output
 ifeq ($(VERBOSE), YES)
   NVCCFLAGS  += --ptxas-options=-v

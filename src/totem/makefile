@@ -23,10 +23,10 @@ $(OBJDIR):
 	@if test ! -d $(OBJDIR); then mkdir $(OBJDIR); fi
 
 $(CCOBJS): $(OBJDIR)/%.o: %.cc $(CCDEPS)
-	$(CC) $(CCFLAGS) $(TOTEM_FEATURES) -c $< -o $@
+	$(CC) $(CCFLAGS) -c $< -o $@
 
 $(CUOBJS): $(OBJDIR)/%.cu_o: %.cu $(CCDEPS) $(CUDEPS)
-	$(NVCC) $(NVCCFLAGS) $(TOTEM_FEATURES) -c $< -o $@
+	$(NVCC) $(NVCCFLAGS) -c $< -o $@
 
 clean:
 	@$(CLEAN_CMD) lib$(TARGET).a
