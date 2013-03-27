@@ -69,10 +69,10 @@ $(OBJDIR):
 	@if test ! -d $(OBJDIR); then mkdir $(OBJDIR); fi
 
 $(CCOBJS): $(OBJDIR)/%.o: %.cc $(DEPS)
-	$(CC) $(CCFLAGS) $(TOTEM_FEATURES) -c $< -o $@
+	$(CC) $(CCFLAGS) -c $< -o $@
 
 $(CUOBJS): $(OBJDIR)/%.cu_o: %.cu $(DEPS)
-	$(NVCC) $(NVCCFLAGS) $(TOTEM_FEATURES) -c $< -o $@
+	$(NVCC) $(NVCCFLAGS) -c $< -o $@
 
 totem:
 	@$(MAKE) -C $(TOTEM_PATH)
