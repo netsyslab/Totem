@@ -75,6 +75,7 @@ typedef struct totem_timing_s {
   double alg_scatter;  /**< The scatter step in communication (push mode) */
   double alg_gather;   /**< The gather step in communication (pull mode) */
   double alg_gpu_comp; /**< GPU computation (included in alg_comp) */
+  double alg_cpu_comp; /**< CPU computation (included in alg_comp) */
   double alg_init;     /**< Algorithm initialization */
   double alg_finalize; /**< Algorithm finalization */
 } totem_timing_t;
