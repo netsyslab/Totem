@@ -24,6 +24,7 @@ inline PRIVATE void reset_algorithm_timers() {
   context.timing.alg_scatter  = 0;
   context.timing.alg_gather   = 0;
   context.timing.alg_gpu_comp = 0;
+  context.timing.alg_cpu_comp = 0;
   context.timing.alg_init     = 0;
   context.timing.alg_finalize = 0;
 }
@@ -40,6 +41,7 @@ inline PRIVATE void superstep_compute_synchronize() {
     float time;
     cudaEventElapsedTime(&time, par->event_start, par->event_end);
     // in a multi-gpu setup, we time the slowest one
+    printf("g%d:%0.2f\t", par->processor.id, time);
     max_gpu_time = time > max_gpu_time ? time : max_gpu_time;
   }
   context.timing.alg_gpu_comp += max_gpu_time;
@@ -55,22 +57,32 @@ inline PRIVATE void superstep_compute() {
   if (context.config.ss_kernel_func) {
     context.config.ss_kernel_func();
   }
+  printf("\t");
   for (int pid = 0; pid < context.pset->partition_count; pid++) {
     // The kernel for GPU partitions is supposed not to block. The client is
     // supposedly invoking the GPU kernel asynchronously, and using the compute
     // "stream" available for each partition
     partition_t* par = &context.pset->partitions[pid];
+    stopwatch_t stopwatch_cpu;
     if (par->processor.type == PROCESSOR_GPU) {
       CALL_CU_SAFE(cudaEventRecord(par->event_start, par->streams[1]));
       set_processor(par);
+    } else {
+      stopwatch_start(&stopwatch_cpu);
     }
     context.config.par_kernel_func(par);
     if (par->processor.type == PROCESSOR_GPU) {
       CALL_CU_SAFE(cudaEventRecord(par->event_end, par->streams[1]));
+    } else {
+      double time = stopwatch_elapsed(&stopwatch_cpu);
+      printf("c%d:%0.2f\t", par->processor.id, time);
+      context.timing.alg_cpu_comp += time;
     }
   }
   superstep_compute_synchronize();
-  context.timing.alg_comp += stopwatch_elapsed(&stopwatch);
+  double time = stopwatch_elapsed(&stopwatch);
+  printf("t:%0.2f\n", time);
+  context.timing.alg_comp += time;
 }
 
 /**
