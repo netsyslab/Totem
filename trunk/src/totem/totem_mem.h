@@ -11,11 +11,18 @@
 // totem includes
 #include "totem_comkernel.cuh"
 
+/**
+ * Buffer types that can be allocated via the memory interface
+ */
 typedef enum {
-  TOTEM_MEM_HOST,
-  TOTEM_MEM_HOST_PINNED,
-  TOTEM_MEM_HOST_MAPPED,
-  TOTEM_MEM_DEVICE
+  TOTEM_MEM_HOST,        /**< allocates pageable memory buffers using malloc */
+  TOTEM_MEM_HOST_PINNED, /**< allocates pinned memory on the host */
+  TOTEM_MEM_HOST_MAPPED, /**< allocates pinned memory on the host that is mapped
+                              to the address space of the GPUs. Note that the 
+                              pointer returned is in the host address space. To 
+                              get the corresponding pointer in the GPU address 
+                              space, use cudaHostGetDevicePointer function */
+  TOTEM_MEM_DEVICE       /**< allocates space on the currently in use device */
 } totem_mem_t;
 
 /**

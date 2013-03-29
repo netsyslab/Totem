@@ -43,12 +43,21 @@ error_t totem_malloc(size_t size, totem_mem_t type, void** ptr) {
       }
       break;
     case TOTEM_MEM_HOST_PINNED:
+      // cudaHostAllocPortable allocates buffers on the host that are
+      // accessible by all CUDA contexts (i.e., all devices).
       if (cudaMallocHost(ptr, size, cudaHostAllocPortable) != cudaSuccess) {
         err = FAILURE;
       }
       break;
     case TOTEM_MEM_HOST_MAPPED:
-      if (cudaMallocHost(ptr, size, cudaHostAllocPortable | cudaHostAllocMapped)
+      // cudaHostAllocMapped specifies that the allocated space is mapped
+      // to the device address space, which enables the device to directly
+      // address that space
+      // cudaHostAllocWriteCombined specifies that the buffer is write-combined
+      // space, which potentially allows for faster read access from the device
+      // at the expense of less efficient read access by the CPU
+      if (cudaMallocHost(ptr, size, cudaHostAllocPortable | 
+                         cudaHostAllocMapped | cudaHostAllocWriteCombined)
           != cudaSuccess) {
         err = FAILURE;
       }
