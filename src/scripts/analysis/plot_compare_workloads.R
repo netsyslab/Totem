@@ -43,21 +43,12 @@ if (length(arg_list) == 3) {
   workloads_pattern = arg_list[3];
 }
 
-## Thermal Design Power (TDP). This is used to produce a processing rate
-## normalized by power consumption
-TDP_CPU = 95
-TDP_GPU = 225
-
 ## Returns a data frame with the best processing rate for each possible hardware
 ## configuration.
 totem.process.workload <- function(workload) {
 
   print(sprintf("Processing workload %s", workload));
-  
-  ## Get the best rate for each hardware configuration
   data = subset(totem.summary(workload), CPU_COUNT != 0);
-  data = aggregate(data["RATE"], by = data[c("CPU_COUNT", "GPU_COUNT")],
-                   FUN=max);
 
   ## Add a column that represent the number of processing elements. This is
   ## useful to order the data later
@@ -71,10 +62,6 @@ totem.process.workload <- function(workload) {
   data[data$GPU_COUNT == 0, ]$CONFIG =
     paste(data[data$GPU_COUNT == 0, ]$CPU_COUNT, "S", sep="");
 
-  ## Produce a processing rate normalized by TDP. The unit: Millions TEPS / watt
-  data$POWER = 1000 * data$RATE/(TDP_CPU * data$CPU_COUNT +
-                                 TDP_GPU * data$GPU_COUNT);
-
   ## Get an identifier (workload type and number of edges) for the workload
   ## from its subdirectory name
   workload_name = unlist(strsplit(workload, "/"));
@@ -82,16 +69,20 @@ totem.process.workload <- function(workload) {
   data$WL_TYPE = toupper(workload_name[1]);
   data$WL_EDGES = as.numeric(substr(workload_name[3], 1,
                              nchar(workload_name[3]) - 1));
+
+  ## Get the best rate for each hardware configuration
+  data = data[order(data$RATE,decreasing=T),];
+  data = data[!duplicated(data$CONFIG),];
   
   return(data[c("WL_TYPE", "WL_EDGES", "PROC_COUNT", "CPU_COUNT", "GPU_COUNT",
-                "CONFIG", "POWER", "RATE")]);
+                "CONFIG", "RATE", "RATE_CI")]);
 }
 
 ## Create an empty frame where the data of all workloads will be aggregated
 data = data.frame(WL_TYPE = character(0), WL_EDGES = numeric(0),
                   PROC_COUNT = numeric(0), CPU_COUNT = numeric(0),
                   GPU_COUNT = numeric(0), CONFIG = character(0),
-                  POWER = numeric (0), RATE = numeric (0));
+                  RATE = numeric (0), RATE_CI = numeric (0));
 
 ## Get the list of subdirectories (workloads)
 workloads = list.files(workloads_dir, workloads_pattern, full.names = T);
@@ -110,9 +101,14 @@ workloads = factor(data$WL_EDGES, lab = sapply(levels(factor(data$WL_EDGES)),
 
 ## Plot the processing rate on the y axis and the configuration on the x-axis
 ## grouping by workload (identified by the number of edges)
-plot = ggplot(data, aes(CONFIG, RATE)) +
-       aes(color = workloads) + geom_line(aes(group = workloads)) +
-       geom_point(aes(shape = workloads), size = 4);
+dodge = position_dodge(width=0.9);
+plot = ggplot(data, aes(CONFIG, RATE), aes(group = workloads)) +
+       aes(fill = workloads) +
+       geom_bar(colour = "black", position = dodge,
+                stat="identity") +
+       geom_errorbar(aes(ymin = RATE - RATE_CI, ymax = RATE + RATE_CI),
+                     color = "lightgray", width = .5,
+                     position = dodge);
 
 ## Ensure a multiple of .2 limit on the y-axis
 ylimit = .2 * as.integer(5 * max(data$RATE) + 1);
