@@ -185,6 +185,7 @@ PRIVATE void benchmark_run() {
     attr.cpu_par_share = (float)options->alpha / 100.0;
     attr.platform = options->platform;
     attr.gpu_count = options->gpu_count;
+    attr.mapped = options->mapped;
     attr.push_msg_size = BENCHMARKS[options->benchmark].push_msg_size;
     attr.pull_msg_size = BENCHMARKS[options->benchmark].pull_msg_size;
     CALL_SAFE(totem_init(graph, &attr));

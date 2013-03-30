@@ -19,7 +19,9 @@ PRIVATE benchmark_options_t options = {
   omp_sched_static,      // static scheduling
   5,                     // repeat
   50,                    // alpha
-  PAR_RANDOM             // partitioning algorithm
+  PAR_RANDOM,            // partitioning algorithm
+  false,                 // use mapped memory for vertices array of 
+                         // GPU partitions
 };
 
 /**
@@ -36,7 +38,8 @@ const int REPEAT_MAX = 100;
 PRIVATE void display_help(char* exe_name, int exit_err) {
   printf("Usage: %s [options] graph_file\n"
          "Options\n"
-         "  -aNUM [0-100] Percentage of edges in CPU partition (default 50\\%)\n"
+         "  -aNUM [0-100] Percentage of edges allocated to CPU partition "
+         "(default 50\\%)\n"
          "  -bNUM Benchmark\n"
          "     %d: BFS (default)\n"
          "     %d: PageRank\n"
@@ -48,6 +51,8 @@ PRIVATE void display_help(char* exe_name, int exit_err) {
          "     %d: Random (default)\n"
          "     %d: High degree nodes on CPU\n"
          "     %d: Low degree nodes on CPU\n"
+         "  -m Enables allocating the vertices array of the GPU partitions\n"
+         "     as a memory mapped buffer on the host (default FALSE)\n"
          "  -pNUM Platform\n"
          "     %d: Execute on CPU only (default)\n"
          "     %d: Execute on GPUs only\n"
@@ -76,7 +81,7 @@ PRIVATE void display_help(char* exe_name, int exit_err) {
 benchmark_options_t* benchmark_cmdline_parse(int argc, char** argv) {
   optarg = NULL;
   int ch, benchmark, platform, par_algo;
-  while(((ch = getopt(argc, argv, "a:b:g:i:p:r:s:t:h")) != EOF)) {
+  while(((ch = getopt(argc, argv, "a:b:g:i:mp:r:s:t:h")) != EOF)) {
     switch (ch) {
       case 'a':
         options.alpha = atoi(optarg);
@@ -107,6 +112,9 @@ benchmark_options_t* benchmark_cmdline_parse(int argc, char** argv) {
           display_help(argv[0], -1);
         }
         options.par_algo = (partition_algorithm_t)par_algo;
+        break;
+      case 'm':
+        options.mapped = true;
         break;
       case 'p':
         platform = atoi(optarg);
