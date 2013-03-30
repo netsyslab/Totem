@@ -182,15 +182,31 @@ TEST_P(EngineTest, InvalidGPUCount) {
 // are defined here, and a pointer to each of them is used.
 const float CPU_SHARE_ZERO = 0;
 const float CPU_SHARE_ONE_THIRD = 0.33;
+const bool MAPPED_MEMPRY_DISABLED = false;
+const bool MAPPED_MEMPRY_ENABLED = true;
+const int   GPU_COUNT_ONE = 1;
 totem_attr_t engine_params[] = {
-  {PAR_RANDOM, PLATFORM_CPU, 1, CPU_SHARE_ZERO, MSG_SIZE_ZERO, MSG_SIZE_ZERO},
-  {PAR_RANDOM, PLATFORM_GPU, 1, CPU_SHARE_ZERO, MSG_SIZE_ZERO, MSG_SIZE_ZERO},
-  {PAR_RANDOM, PLATFORM_GPU, get_gpu_count(), 
-   CPU_SHARE_ZERO, MSG_SIZE_WORD, MSG_SIZE_WORD}, // All GPUs
-  {PAR_RANDOM, PLATFORM_HYBRID, 1, CPU_SHARE_ONE_THIRD, 
-   MSG_SIZE_WORD, MSG_SIZE_WORD}, // 1 CPU + 1 GPU
-  {PAR_RANDOM, PLATFORM_HYBRID, get_gpu_count(), CPU_SHARE_ONE_THIRD, 
-   MSG_SIZE_WORD, MSG_SIZE_WORD} // 1 CPU + All GPUs
+  // CPU only
+  {PAR_RANDOM, PLATFORM_CPU, GPU_COUNT_ONE, MAPPED_MEMPRY_DISABLED, 
+   CPU_SHARE_ZERO, MSG_SIZE_ZERO, MSG_SIZE_ZERO},
+  // GPU only
+  {PAR_RANDOM, PLATFORM_GPU, GPU_COUNT_ONE, MAPPED_MEMPRY_DISABLED, 
+   CPU_SHARE_ZERO, MSG_SIZE_ZERO, MSG_SIZE_ZERO},
+  // Multi GPU
+  {PAR_RANDOM, PLATFORM_GPU, get_gpu_count(), MAPPED_MEMPRY_DISABLED,
+   CPU_SHARE_ZERO, MSG_SIZE_WORD, MSG_SIZE_WORD},
+  // Hybrid 1 CPU + 1 GPU, memory mapped GPU partition disabled
+  {PAR_RANDOM, PLATFORM_HYBRID, GPU_COUNT_ONE, MAPPED_MEMPRY_DISABLED,
+   CPU_SHARE_ONE_THIRD, MSG_SIZE_WORD, MSG_SIZE_WORD},
+  // Hybrid 1 CPU + all GPU, memory mapped GPU partition disabled
+  {PAR_RANDOM, PLATFORM_HYBRID, get_gpu_count(), MAPPED_MEMPRY_DISABLED,
+   CPU_SHARE_ONE_THIRD, MSG_SIZE_WORD, MSG_SIZE_WORD},
+  // Hybrid 1 CPU + 1 GPU, memory mapped GPU partition enabled
+  {PAR_RANDOM, PLATFORM_HYBRID, GPU_COUNT_ONE, MAPPED_MEMPRY_ENABLED,
+   CPU_SHARE_ONE_THIRD, MSG_SIZE_WORD, MSG_SIZE_WORD},
+  // Hybrid 1 CPU + all GPU, memory mapped GPU partition enabled
+  {PAR_RANDOM, PLATFORM_HYBRID, get_gpu_count(), MAPPED_MEMPRY_ENABLED,
+   CPU_SHARE_ONE_THIRD, MSG_SIZE_WORD, MSG_SIZE_WORD}
 };
 
 // From Google documentation:
@@ -204,7 +220,9 @@ INSTANTIATE_TEST_CASE_P(EngineTestAllPlatforms, EngineTest,
                                &engine_params[1],
                                &engine_params[2],
                                &engine_params[3],
-                               &engine_params[4]));
+                               &engine_params[4],
+                               &engine_params[5],
+                               &engine_params[6]));
 
 #else
 

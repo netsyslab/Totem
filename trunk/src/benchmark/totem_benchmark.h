@@ -54,6 +54,10 @@ typedef struct benchmark_options_s {
   int                   alpha;        /**< Percentage of edges left on the CPU
                                            for hybrid platforms */
   partition_algorithm_t par_algo;     /**< Partitioning algorithm */
+  bool                  mapped;       /**< Whether the vertice array of GPU 
+                                           partitions is allocated as memory
+                                           mapped buffer on the host or on the
+                                           GPU memory */
 } benchmark_options_t;
 
 /**

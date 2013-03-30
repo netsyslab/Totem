@@ -41,25 +41,26 @@ typedef struct totem_attr_s {
   partition_algorithm_t par_algo;      /**< partitioning algorithm */
   platform_t            platform;      /**< the execution platform */
   uint32_t              gpu_count;     /**< number of GPUs to use  */
-  float                 cpu_par_share; /**< the percentage of edges
-                                            assigned to the CPU
-                                            partition. Note that the
-                                            value of this member is
-                                            relevant only in platforms
-                                            that include a CPU with at
-                                            least one GPU. The GPUs
-                                            will be assigned equal
-                                            shares after deducting
-                                            the CPU share. If this
-                                            is assigned to zero, then
-                                            the graph is divided among
-                                            all processors equally. */
+  bool                  mapped;        /**< whether the vertices array of GPU 
+                                            partitions is allocated as memory
+                                            mapped buffer on the host or on the
+                                            GPU memory */
+  float                 cpu_par_share; /**< the percentage of edges assigned
+                                            to the CPU partition. Note that this
+                                            value is relevant only in hybrid 
+                                            platforms. The GPUs will be assigned
+                                            equal shares after deducting the CPU
+                                            share. If this is set to zero, then
+                                            the graph is divided among all 
+                                            processors equally. */
   size_t                push_msg_size; /**< push comm. message size in bits*/
   size_t                pull_msg_size; /**< pull comm. message size in bits*/
 } totem_attr_t;
 
-// default attributes
-#define TOTEM_DEFAULT_ATTR {PAR_RANDOM, PLATFORM_HYBRID, 1, 0.5, \
+// default attributes: hybrid (one GPU + CPU) platform, random 50-50 
+// partitioning, no mapped memory, push message size is word and zero
+// pull message size
+#define TOTEM_DEFAULT_ATTR {PAR_RANDOM, PLATFORM_HYBRID, 1, false, 0.5,  \
       MSG_SIZE_WORD, MSG_SIZE_ZERO}
 
 /**
