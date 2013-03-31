@@ -43,9 +43,9 @@ const benchmark_attr_t BENCHMARKS[] = {
     benchmark_betweenness,
     "BETWEENNESS",
     sizeof(weight_t),
-    false,
-    MSG_SIZE_ZERO,
-    MSG_SIZE_ZERO
+    true,
+    sizeof(uint32_t) * BITS_PER_BYTE,
+    sizeof(betweenness_backward_t) * BITS_PER_BYTE
   }
 };
 
@@ -154,11 +154,9 @@ PRIVATE void benchmark_betweenness(graph_t* graph, void* betweenness_score,
   if (options->platform == PLATFORM_CPU) {
     CALL_SAFE(betweenness_cpu(graph, CENTRALITY_APPROXIMATE, 
                               (score_t*)betweenness_score));
-  } else if (options->platform == PLATFORM_GPU && options->gpu_count == 1) {
-      CALL_SAFE(betweenness_gpu(graph, CENTRALITY_APPROXIMATE,
-                                (score_t*)betweenness_score));
   } else {
-    assert(false);
+    CALL_SAFE(betweenness_hybrid(CENTRALITY_APPROXIMATE,
+                                 (score_t*)betweenness_score));
   }
 }
 
