@@ -145,6 +145,21 @@ TEST_P(BetweennessCentralityTest, CompleteGraphUnweighted) {
   }
 }
 
+// Tests BetwCentrality for a star graph.
+TEST_P(BetweennessCentralityTest, StarGraphUnweighted) {
+  EXPECT_EQ(SUCCESS, graph_initialize(DATA_FOLDER("star_1000_nodes.totem"),
+                                      false, &graph));
+  centrality_score = (score_t*)mem_alloc(graph->vertex_count * 
+                                         sizeof(score_t));
+
+  EXPECT_EQ(SUCCESS, TestGraph(graph, centrality_score));
+  EXPECT_FLOAT_EQ((graph->vertex_count - 1) * (graph->vertex_count - 2), 
+                  centrality_score[0]);
+  for(vid_t vertex = 1; vertex < graph->vertex_count; vertex++){
+    EXPECT_FLOAT_EQ(0.0, centrality_score[vertex]);
+  }
+}
+
 // Functions to test in framework
 betweenness_param_t betweenness_params[] = {
   {false, &betweenness_unweighted_cpu},
