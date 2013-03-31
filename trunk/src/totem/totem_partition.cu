@@ -373,7 +373,7 @@ PRIVATE void init_sort_nbrs(partition_set_t* pset) {
   }
 }
 
-PRIVATE void init_build_partitions_gpu(partition_set_t* pset) {
+PRIVATE void init_build_partitions_gpu(partition_set_t* pset, bool mapped) {
   uint32_t pcount = pset->partition_count;
   for (uint32_t pid = 0; pid < pcount; pid++) {
     partition_t* partition = &pset->partitions[pid];
@@ -387,7 +387,7 @@ PRIVATE void init_build_partitions_gpu(partition_set_t* pset) {
     assert(subgraph_h);
     memcpy(subgraph_h, &partition->subgraph, sizeof(graph_t));
     graph_t* subgraph_d = NULL;
-    CALL_SAFE(graph_initialize_device(subgraph_h, &subgraph_d));
+    CALL_SAFE(graph_initialize_device(subgraph_h, &subgraph_d, mapped));
     graph_finalize(subgraph_h);
     memcpy(&partition->subgraph, subgraph_d, sizeof(graph_t));
     free(subgraph_d);
@@ -395,7 +395,7 @@ PRIVATE void init_build_partitions_gpu(partition_set_t* pset) {
 }
 
 error_t partition_set_initialize(graph_t* graph, vid_t* plabels,
-                                 processor_t* pproc, int pcount,
+                                 processor_t* pproc, int pcount, bool mapped,
                                  size_t push_msg_size, size_t pull_msg_size,
                                  partition_set_t** pset) {
   assert(graph && plabels && pproc);
@@ -421,7 +421,7 @@ error_t partition_set_initialize(graph_t* graph, vid_t* plabels,
   grooves_initialize(*pset);
 
   // Build the state on the GPU(s) for GPU residing partitions
-  init_build_partitions_gpu(*pset);
+  init_build_partitions_gpu(*pset, mapped);
 
   return SUCCESS;
  err:
@@ -440,8 +440,14 @@ error_t partition_set_finalize(partition_set_t* pset) {
       CALL_CU_SAFE(cudaStreamDestroy(partition->streams[1]));
       CALL_CU_SAFE(cudaEventDestroy(partition->event_start));
       CALL_CU_SAFE(cudaEventDestroy(partition->event_end));
+      // TODO(abdullah): use graph_finalize instead of manually
+      // freeing the buffers
       CALL_CU_SAFE(cudaFree(subgraph->edges));
-      CALL_CU_SAFE(cudaFree(subgraph->vertices));
+      if (subgraph->mapped) {
+        totem_free(subgraph->vertices, TOTEM_MEM_HOST_MAPPED);
+      } else {
+        CALL_CU_SAFE(cudaFree(subgraph->mapped_vertices));
+      }
       if (subgraph->weighted && subgraph->weights)
         CALL_CU_SAFE(cudaFree(subgraph->weights));
     } else {

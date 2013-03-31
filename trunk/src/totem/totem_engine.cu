@@ -217,11 +217,12 @@ PRIVATE void init_partition(int pcount, double* shares,
   vid_t* par_labels;
   assert(context.attr.par_algo < PAR_MAX);
   CALL_SAFE(PARTITION_FUNC[context.attr.par_algo](context.graph, pcount, 
-                                                  context.attr.platform == PLATFORM_HYBRID ? 
+                                                  context.attr.platform == 
+                                                  PLATFORM_HYBRID ?
                                                   shares : NULL, &par_labels));
   context.timing.engine_par = stopwatch_elapsed(&stopwatch_par);
   CALL_SAFE(partition_set_initialize(context.graph, par_labels,
-                                     processors, pcount,
+                                     processors, pcount, context.attr.mapped,
                                      context.attr.push_msg_size,
                                      context.attr.pull_msg_size,
                                      &context.pset));

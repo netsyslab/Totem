@@ -126,6 +126,16 @@ typedef struct graph_s {
   bool      valued;          /**< indicates if vertices have values. */
   bool      weighted;        /**< indicates if edges have weights. */
   bool      directed;        /**< indicates if the graph is directed. */
+  bool      mapped;          /**< indicates if the vertices array in the graph
+                                  is placed on host mapped memory, which can be
+                                  accessed diretly by a GPU. */
+  eid_t*    mapped_vertices; /**< maintains the host pointer of the vertices
+                                  array in case it is allocated as a memory
+                                  mapped buffer for GPU-resident graphs. Keeping
+                                  this pointer is necessary when freeing the
+                                  buffer. Note that in this case, vertices will 
+                                  maintain the pointer to the buffer in the 
+                                  device address. */
 } graph_t;
 
 /**
@@ -171,9 +181,12 @@ error_t graph_finalize(graph_t* graph);
  * graph_h.
  * @param[in] graph_h source graph which hosts references to main memory buffers
  * @param[out] graph_d allocated graph that hosts references to device buffers
+ * @param[in] mapped an optional parameter that offers the option to allocate 
+ *                   the vertices array as a memory-mapped buffer on the host.
  * @return generic success or failure
  */
-error_t graph_initialize_device(const graph_t* graph_h, graph_t** graph_d);
+error_t graph_initialize_device(const graph_t* graph_h, graph_t** graph_d,
+                                bool mapped = true);
 
 /**
  * Free allocated device buffers associated with the graph
