@@ -382,13 +382,6 @@ error_t betweenness_unweighted_gpu(const graph_t* graph,
                                  betweenness_centrality_d,
                                  betweenness_centrality), err_free_all);
 
-  // If the graph is undirected, divide centrality scores by 2
-  if (graph->directed == false) {
-    for (vid_t v = 0; v < graph->vertex_count; v++) {
-      betweenness_centrality[v] /= 2.0;
-    }
-  }
-
   return SUCCESS;
 
  err_free_all:
@@ -501,13 +494,6 @@ error_t betweenness_unweighted_shi_gpu(const graph_t* graph,
                                  delta_d, finished_d, betweenness_centrality_d,
                                  betweenness_centrality), err_free_all);
   mem_free(r_edges);
-
-  // If the graph is undirected, divide all the centrality scores by two
-  if (graph->directed == false) {
-    for (vid_t v = 0; v < graph->vertex_count; v++) {
-      betweenness_centrality[v] /= 2.0;
-    }
-  }
 
   return SUCCESS;
 
@@ -626,14 +612,6 @@ error_t betweenness_unweighted_cpu(const graph_t* graph,
         betweenness_centrality[w] = betweenness_centrality[w] + dsw;
       }
       phase--;
-    }
-  }
-
-  // If the graph is undirected, divide centrality scores by 2
-  if (graph->directed == false) {
-    OMP(omp parallel for)
-    for (vid_t v = 0; v < graph->vertex_count; v++) {
-      betweenness_centrality[v] /= 2.0;
     }
   }
 
