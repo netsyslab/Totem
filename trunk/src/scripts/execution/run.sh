@@ -57,8 +57,10 @@
 # The Benchmarks
 BFS=0
 PAGERANK=1
-BENCHMARK_STR=("BFS" "PAGERANK")
-BENCHMARK_REPEAT=(64 10)
+SSSP=2
+BETWEENNESS=3
+BENCHMARK_STR=("BFS" "PAGERANK" "SSSP" "BETWEENNESS")
+BENCHMARK_REPEAT=(64 10 64 10)
 
 # Platforms
 CPU=0
@@ -109,6 +111,7 @@ function usage() {
   echo "                      in the CPU partition) to use for experiments on"
   echo "                      hybrid platforms (default ${MIN_ALPHA}%)"
   echo "  -b  <benchmark> BFS=${BFS}, PageRank=${PAGERANK}" \
+      "SSSP=${SSSP}, Betweenness=${BETWEENNESS}" \
       "(default ${BENCHMARK_STR[${BENCHMARK}]})"
   echo "  -d  <results base directory> (default ${RESULT_BASE})"
   echo "  -e  <totem executable> (default ${TOTEM_EXE})"
