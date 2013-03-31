@@ -20,10 +20,12 @@ error_t betweenness_check_special_cases(vid_t vertex_count, eid_t edge_count,
                                         bool* finished,
                                         score_t* betweenness_score) {
   if (vertex_count == 0 || betweenness_score == NULL) {
+    *finished = true;
     return FAILURE;
   }
 
   if (edge_count == 0) {
+    *finished = true;
     memset(betweenness_score, (score_t)0.0, vertex_count * sizeof(score_t));
     return SUCCESS;
   }

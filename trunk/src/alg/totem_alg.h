@@ -58,6 +58,15 @@ typedef float score_t;
 const double CENTRALITY_EXACT = 0.0;
 const double CENTRALITY_APPROXIMATE = 1.0;
 
+/**
+ * Struct used to pass multiple values during the communication phase for
+ * backwards propagation in hybrid betweenness centrality
+ */
+typedef struct betweenness_backward_s {
+  cost_t numSPs;
+  uint32_t delta;
+} betweenness_backward_t;
+
 
 /**
  * Given an undirected, unweighted graph and a source vertex, find the minimum
@@ -231,6 +240,7 @@ error_t betweenness_unweighted_shi_gpu(const graph_t* graph,
  * Calculate betweenness centrality scores for graphs using the algorithm
  * described in Chapter 2 of GPU Computing Gems (Algorithm 1)
  * @param[in] graph the graph for which the centrality measure is calculated
+ *            this is not used for the hybrid version of the algorithm
  * @param[in] epsilon determines how precise the results of the algorithm will
  *            be, and thus also how long it will take to compute
  * @param[out] centrality_score the output list of betweenness centrality
@@ -241,6 +251,7 @@ error_t betweenness_cpu(const graph_t* graph, double epsilon,
                         score_t* centrality_score);
 error_t betweenness_gpu(const graph_t* graph, double epsilon, 
                         score_t* centrality_score);
+error_t betweenness_hybrid(double epsilon, score_t* centrality_score);
 
 /**
  * Implements the parallel Brandes closeness centrality algorithm using
