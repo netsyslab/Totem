@@ -545,8 +545,8 @@ PRIVATE inline void betweenness_gather_cpu(grooves_box_table_t* inbox,
   OMP(omp parallel for schedule(static))
   for (vid_t index = 0; index < inbox->count; index++) {
     vid_t vid = inbox->rmt_nbrs[index];
-    // Check whether the vertex's distance is equal to level + 2
-    if (state->distance[vid] == (state->level + 2)) {
+    // Check whether the vertex's distance is equal to level + 1
+    if (state->distance[vid] == (state->level + 1)) {
       // If it is, we'll pass the vertex's delta and numSPs values to
       // neighbouring nodes to be used during their backward propagation phase
       values[index].delta  = state->delta[vid];
@@ -570,8 +570,8 @@ __global__ void betweenness_gather_kernel(grooves_box_table_t inbox,
   vid_t index = THREAD_GLOBAL_INDEX;
   if (index >= inbox.count) return;
   vid_t vid = inbox.rmt_nbrs[index];
-  // Check whether the vertex's distance is equal to level + 2
-  if (distance[vid] == level + 2) {
+  // Check whether the vertex's distance is equal to level + 1
+  if (distance[vid] == level + 1) {
     // If it is, we'll pass the vertex's delta and numSPs values to
     // neighbouring nodes to be used during their backward propagation phase
     values[index].delta  = delta[vid];
