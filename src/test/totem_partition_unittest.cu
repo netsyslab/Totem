@@ -221,6 +221,7 @@ class GraphPartitionTest : public TestWithParam<PartitionFunction> {
     EXPECT_EQ(SUCCESS, partition_set_initialize(graph_, partitions_, 
                                                 partition_processor_,
                                                 partition_count_,
+                                                false,
                                                 MSG_SIZE_WORD,
                                                 MSG_SIZE_ZERO,
                                                 &partition_set_));
@@ -311,6 +312,7 @@ TEST_P(GraphPartitionTest , GetPartitionsSingleNodeGraph) {
   EXPECT_EQ(SUCCESS, partition_set_initialize(graph_, partitions_,
                                               partition_processor_,
                                               partition_count_,
+                                              false,
                                               MSG_SIZE_WORD,
                                               MSG_SIZE_ZERO,
                                               &partition_set_));
@@ -350,6 +352,7 @@ TEST_P(GraphPartitionTest, GetPartitionsImbalancedChainGraph) {
   EXPECT_EQ(SUCCESS, partition_set_initialize(graph_, partitions_,
                                               partition_processor_,
                                               partition_count_,
+                                              false,
                                               MSG_SIZE_WORD,
                                               MSG_SIZE_ZERO,
                                               &partition_set_));
