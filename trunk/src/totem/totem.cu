@@ -14,6 +14,10 @@ const totem_timing_t* totem_timing() {
   return &(context.timing);
 }
 
+void totem_timing_reset() {
+  engine_reset_bsp_timers();
+}
+
 uint32_t totem_partition_count() {
   return engine_partition_count();
 }

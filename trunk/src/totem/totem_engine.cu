@@ -16,19 +16,6 @@ inline PRIVATE void set_processor(partition_t* par) {
   }
 }
 
-inline PRIVATE void reset_algorithm_timers() {
-  context.timing.alg_exec     = 0;
-  context.timing.alg_comp     = 0;
-  context.timing.alg_comm     = 0;
-  context.timing.alg_aggr     = 0;
-  context.timing.alg_scatter  = 0;
-  context.timing.alg_gather   = 0;
-  context.timing.alg_gpu_comp = 0;
-  context.timing.alg_cpu_comp = 0;
-  context.timing.alg_init     = 0;
-  context.timing.alg_finalize = 0;
-}
-
 /**
  * Blocks until all kernels initiated by the client have finished.
  */
@@ -123,7 +110,7 @@ PRIVATE void engine_aggregate() {
       context.config.par_aggr_func(&context.pset->partitions[pid]);
     }
   }
-  context.timing.alg_aggr = stopwatch_elapsed(&stopwatch); 
+  context.timing.alg_aggr += stopwatch_elapsed(&stopwatch); 
 }
 
 error_t engine_execute() {
@@ -137,7 +124,7 @@ error_t engine_execute() {
     if (*context.finished) break; // check for termination
   }
   engine_aggregate();
-  context.timing.alg_exec = stopwatch_elapsed(&stopwatch);
+  context.timing.alg_exec += stopwatch_elapsed(&stopwatch);
   stopwatch_start(&stopwatch);
   if (context.config.par_finalize_func) {
     for (int pid = 0; pid < context.pset->partition_count; pid++) {
@@ -145,7 +132,7 @@ error_t engine_execute() {
       context.config.par_finalize_func(&context.pset->partitions[pid]);
     }
   }
-  context.timing.alg_finalize = stopwatch_elapsed(&stopwatch); 
+  context.timing.alg_finalize += stopwatch_elapsed(&stopwatch); 
   return SUCCESS;
 }
 
@@ -286,7 +273,6 @@ error_t engine_init(graph_t* graph, totem_attr_t* attr) {
 error_t engine_config(engine_config_t* config) {
   if (!context.initialized || !config->par_kernel_func) return FAILURE;
   context.config = *config;
-  reset_algorithm_timers();
   stopwatch_t stopwatch;
   stopwatch_start(&stopwatch);
   context.superstep = 0;
@@ -298,7 +284,7 @@ error_t engine_config(engine_config_t* config) {
       context.config.par_init_func(&context.pset->partitions[pid]);
     }
   }
-  context.timing.alg_init = stopwatch_elapsed(&stopwatch);
+  context.timing.alg_init += stopwatch_elapsed(&stopwatch);
   return SUCCESS;
 }
 
@@ -307,4 +293,17 @@ void engine_finalize() {
   context.initialized = false;
   CALL_CU_SAFE(cudaFreeHost(context.finished));
   CALL_SAFE(partition_set_finalize(context.pset));
+}
+
+void engine_reset_bsp_timers() {
+  context.timing.alg_exec     = 0;
+  context.timing.alg_comp     = 0;
+  context.timing.alg_comm     = 0;
+  context.timing.alg_aggr     = 0;
+  context.timing.alg_scatter  = 0;
+  context.timing.alg_gather   = 0;
+  context.timing.alg_gpu_comp = 0;
+  context.timing.alg_cpu_comp = 0;
+  context.timing.alg_init     = 0;
+  context.timing.alg_finalize = 0;
 }
