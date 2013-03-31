@@ -252,6 +252,11 @@ vid_t* engine_vertex_id_in_partition();
 vid_t engine_vertex_id_in_partition(vid_t);
 
 /**
+ * Resets the timers that measure the phases of the BSP cycle
+ */
+void engine_reset_bsp_timers();
+
+/**
  * Scatters the messages in the inbox table to the corresponding vertices. The
  * assumption is that each vertex in the partition has a position in the array
  * "dst". The message to a vertex in the inbox is added to the vertex's state

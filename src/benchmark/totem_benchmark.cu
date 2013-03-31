@@ -197,6 +197,7 @@ PRIVATE void benchmark_run() {
 
   srand(SEED);
   for (int s = 0; s < options->repeat; s++) {
+    totem_timing_reset();
     stopwatch_t stopwatch;
     stopwatch_start(&stopwatch);
     BENCHMARKS[options->benchmark].func(graph, benchmark_state, &attr);

@@ -104,6 +104,11 @@ void totem_finalize();
 const totem_timing_t* totem_timing();
 
 /**
+ * Resets the timers that measure the internals of the engine
+ */
+void totem_timing_reset();
+
+/**
  * Returns the number of partitions
  */
 uint32_t totem_partition_count();
