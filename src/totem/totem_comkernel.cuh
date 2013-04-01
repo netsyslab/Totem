@@ -34,33 +34,33 @@
 /**
  * the number of threads a warp consists of
  */
-#define VWARP_WARP_SIZE 32
+const int VWARP_WARP_SIZE = 32;
 
 /**
  * the size of the batch of work assigned to each virtual warp
  */
-#define VWARP_BATCH_SIZE 32
+const int VWARP_BATCH_SIZE = 32;
 
 /**
  * Determines the maximum number of threads per block.
  */
-#define MAX_THREADS_PER_BLOCK 512
+const int MAX_THREADS_PER_BLOCK = 512;
 
 /**
  * Determines the maximum number of dimensions of a grid block.
  */
-#define MAX_BLOCK_DIMENSION 2
+const int MAX_BLOCK_DIMENSION = 2;
 
 /**
  * Determines the maximum number of blocks that fit in a grid dimension.
  */
-#define MAX_BLOCK_PER_DIMENSION 1024
+const int MAX_BLOCK_PER_DIMENSION = 65535;
 
 /**
  * Determines the maximum number of threads a kernel can be configured with.
  */
-#define MAX_THREAD_COUNT \
-  MAX_THREADS_PER_BLOCK * pow(MAX_BLOCK_PER_DIMENSION, MAX_BLOCK_DIMENSION)
+const int MAX_THREAD_COUNT =
+  (MAX_THREADS_PER_BLOCK * pow(MAX_BLOCK_PER_DIMENSION, MAX_BLOCK_DIMENSION));
 
 /**
  * Global linear thread index
@@ -75,6 +75,7 @@
 
 /**
  * number of batches of size "VWARP_BATCH_SIZE" vertices
+ * TODO(abdullah): change this to an inline function
  */
 #define VWARP_BATCH_COUNT(vertex_count) \
   (((vertex_count) / VWARP_BATCH_SIZE) + \
@@ -84,15 +85,16 @@
  * Computes a kernel configuration based on the number of vertices.
  * It assumes a 2D grid. vertex_count is input paramter, while blocks
  * and threads_per_block are output of type dim3.
+ * TODO(abdullah): change this to an inline function
  */
-#define KERNEL_CONFIGURE(vertex_count, blocks, threads_per_block)       \
+#define KERNEL_CONFIGURE(thread_count, blocks, threads_per_block)       \
   do {                                                                  \
-    assert(vertex_count <= MAX_THREAD_COUNT);                           \
-    threads_per_block = (vertex_count) >= MAX_THREADS_PER_BLOCK ?       \
-      MAX_THREADS_PER_BLOCK : vertex_count;                             \
-    uint32_t blocks_left = (((vertex_count) % MAX_THREADS_PER_BLOCK == 0) ? \
-                            (vertex_count) / MAX_THREADS_PER_BLOCK :    \
-                            (vertex_count) / MAX_THREADS_PER_BLOCK + 1); \
+    assert(thread_count <= MAX_THREAD_COUNT);                           \
+    threads_per_block = (thread_count) >= MAX_THREADS_PER_BLOCK ?       \
+      MAX_THREADS_PER_BLOCK : thread_count;                             \
+    uint32_t blocks_left = (((thread_count) % MAX_THREADS_PER_BLOCK == 0) ? \
+                            (thread_count) / MAX_THREADS_PER_BLOCK :    \
+                            (thread_count) / MAX_THREADS_PER_BLOCK + 1); \
     uint32_t x_blocks = (blocks_left >= MAX_BLOCK_PER_DIMENSION) ?      \
       MAX_BLOCK_PER_DIMENSION : blocks_left;                            \
     blocks_left = (((blocks_left) % x_blocks == 0) ?                    \
