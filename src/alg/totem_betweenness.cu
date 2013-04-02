@@ -416,7 +416,9 @@ error_t betweenness_unweighted_shi_gpu(const graph_t* graph,
 
   // Construct the reverse edges list (graph->edges is a list of destination
   // vertices, r_edges is a list of source vertices, indexed by edge id)
-  vid_t* r_edges = (vid_t*)mem_alloc(graph->edge_count * sizeof(vid_t));
+  vid_t* r_edges;
+  totem_malloc(graph->edge_count * sizeof(vid_t), 
+               TOTEM_MEM_HOST_PINNED, (void**)&r_edges);
   vid_t v = 0;
   for (eid_t e = 0; e < graph->edge_count; e++) {
     while (v <= graph->vertex_count &&
@@ -493,7 +495,7 @@ error_t betweenness_unweighted_shi_gpu(const graph_t* graph,
   CHK_SUCCESS(finalize_preds_gpu(graph_d, r_edges_d, preds_d, sigma_d, dist_d,
                                  delta_d, finished_d, betweenness_centrality_d,
                                  betweenness_centrality), err_free_all);
-  mem_free(r_edges);
+  totem_free(r_edges, TOTEM_MEM_HOST_PINNED);
 
   return SUCCESS;
 
@@ -507,7 +509,7 @@ error_t betweenness_unweighted_shi_gpu(const graph_t* graph,
   cudaFree(finished_d);
   cudaFree(betweenness_centrality_d);
  err_free_betweenness:
-  mem_free(r_edges);
+  totem_free(r_edges, TOTEM_MEM_HOST_PINNED);
   return FAILURE;
 }
 
@@ -645,11 +647,8 @@ void betweenness_cpu_forward_propagation(const graph_t* graph,
                                          uint32_t* numSPs, cost_t* distance) {
   // Initialize the shortest path count to 0 and distance to infinity given
   // this source node
-  OMP(omp parallel for)
-  for (vid_t v = 0; v < graph->vertex_count; v++) {
-    numSPs[v] = 0;
-    distance[v] = INF_COST;
-  }
+  totem_memset(numSPs, (uint32_t)0, graph->vertex_count, TOTEM_MEM_HOST);
+  totem_memset(distance, (cost_t)INF_COST, graph->vertex_count, TOTEM_MEM_HOST);
   // Set the distance from source to itself to 0
   distance[source] = 0;
   // Set the shortest path count to 1 (from source to itself)
@@ -659,7 +658,7 @@ void betweenness_cpu_forward_propagation(const graph_t* graph,
   while (!done) {
     done = true;
     // In parallel, iterate over vertices which are at the current level
-    OMP(omp parallel for)
+    OMP(omp parallel for schedule(runtime) reduction(& : done))
     for (vid_t v = 0; v < graph->vertex_count; v++) {
       if (distance[v] == level) {
         // For all neighbors of v, iterate over paths
@@ -705,7 +704,7 @@ void betweenness_cpu_backward_propagation(const graph_t* graph,
   while (level > 1) {
     level--;
     // In parallel, iterate over vertices which are at the current level
-    OMP(omp parallel for)
+    OMP(omp parallel for  schedule(runtime))
     for (vid_t v = 0; v < graph->vertex_count; v++) {
       if (distance[v] == level) {
         // For all neighbors of v, iterate over paths
@@ -808,8 +807,8 @@ error_t betweenness_cpu(const graph_t* graph, double epsilon,
     // The scaling value is: (Total Number of Nodes / Subset of Nodes Used)
     OMP(omp parallel for) 
     for (vid_t v = 0; v < graph->vertex_count; v++) {
-      betweenness_score[v] = (score_t)(((double)(graph->vertex_count)
-                             / num_samples)* betweenness_score[v]);
+      betweenness_score[v] *= (score_t)((double)(graph->vertex_count) /
+                                        (double)num_samples);
     }
  
     // Clean up the allocated memory
@@ -851,13 +850,13 @@ void betweenness_gpu_forward_init_kernel(vid_t source, bool* done_d,
                                          uint32_t* numSPs_d) {
   const vid_t vid = THREAD_GLOBAL_INDEX;
   if (vid >= vertex_count) return;
-  if (vid == source) { 
-    distance_d[vid] = 0; 
-    numSPs_d[vid] = 1; 
-    *done_d = false; 
+  if (vid == source) {
+    distance_d[vid] = 0;
+    numSPs_d[vid] = 1;
+    *done_d = false;
   } else {
     distance_d[vid] = INF_COST;
-    numSPs_d[vid] = 0; 
+    numSPs_d[vid] = 0;
   } 
 }
 
