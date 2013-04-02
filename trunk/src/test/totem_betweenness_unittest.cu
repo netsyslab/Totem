@@ -62,10 +62,14 @@ class BetweennessCentralityTest : public TestWithParam<betweenness_param_t*> {
 
   virtual void TearDown() {
     if (graph) graph_finalize(graph);
-    if (centrality_score) mem_free(centrality_score);
+    if (centrality_score) totem_free(centrality_score, TOTEM_MEM_HOST_PINNED);
   }
 
-  error_t TestGraph(graph_t* graph, score_t* score) {
+  error_t TestGraph(graph_t* graph) {
+    if (graph->vertex_count) {
+      totem_malloc(graph->vertex_count * sizeof(score_t), TOTEM_MEM_HOST_PINNED,
+                   (void**)&centrality_score);
+    }
     if (betweenness_param->hybrid) {
       totem_attr_t attr = TOTEM_DEFAULT_ATTR;
       attr.push_msg_size = sizeof(uint32_t) * BITS_PER_BYTE;
@@ -76,11 +80,11 @@ class BetweennessCentralityTest : public TestWithParam<betweenness_param_t*> {
       }
 
       // Will use exact betweenness centrality for test framework
-      error_t err = betweenness_hybrid(CENTRALITY_EXACT, score);
+      error_t err = betweenness_hybrid(CENTRALITY_EXACT, centrality_score);
       totem_finalize();
       return err;
     }
-    return betweenness_param->func(graph, score);
+    return betweenness_param->func(graph, centrality_score);
   }
 
  protected:
@@ -96,19 +100,16 @@ TEST_P(BetweennessCentralityTest, Empty) {
   graph.vertex_count = 0;
   graph.edge_count = 0;
 
-  EXPECT_EQ(FAILURE, TestGraph(&graph, centrality_score));
-  EXPECT_EQ(FAILURE, TestGraph(&graph, centrality_score));
-  EXPECT_EQ(FAILURE, TestGraph(&graph, centrality_score));
+  EXPECT_EQ(FAILURE, TestGraph(&graph));
+  EXPECT_EQ(FAILURE, TestGraph(&graph));
+  EXPECT_EQ(FAILURE, TestGraph(&graph));
 }
 
 // Tests BetwCentrality for single node graphs.
 TEST_P(BetweennessCentralityTest, SingleNodeUnweighted) {
   EXPECT_EQ(SUCCESS, graph_initialize(DATA_FOLDER("single_node.totem"),
                                       false, &graph));
-  centrality_score = (score_t*)mem_alloc(graph->vertex_count * 
-                                          sizeof(score_t));
-
-  EXPECT_EQ(SUCCESS, TestGraph(graph, centrality_score));
+  EXPECT_EQ(SUCCESS, TestGraph(graph));
   EXPECT_EQ((score_t)0.0, centrality_score[0]);
 }
 
@@ -116,11 +117,8 @@ TEST_P(BetweennessCentralityTest, SingleNodeUnweighted) {
 TEST_P(BetweennessCentralityTest, Chain100Unweighted) {
   graph_initialize(DATA_FOLDER("chain_100_nodes_weight_directed.totem"), false,
                    &graph);
-  centrality_score = (score_t*)mem_alloc(graph->vertex_count * 
-                                          sizeof(score_t));
-
   // First vertex as source
-  EXPECT_EQ(SUCCESS, TestGraph(graph, centrality_score));
+  EXPECT_EQ(SUCCESS, TestGraph(graph));
   score_t centrality[50];
   for (vid_t i = 0; i < 50; i++) {
     centrality[i] = (99 - i) * (i);
@@ -136,12 +134,10 @@ TEST_P(BetweennessCentralityTest, CompleteGraphUnweighted) {
   EXPECT_EQ(SUCCESS,
             graph_initialize(DATA_FOLDER("complete_graph_300_nodes.totem"),
                              false, &graph));
-  centrality_score = (score_t*)mem_alloc(graph->vertex_count * 
-                                          sizeof(score_t));
 
-  EXPECT_EQ(SUCCESS, TestGraph(graph, centrality_score));
+  EXPECT_EQ(SUCCESS, TestGraph(graph));
   for(vid_t vertex = 0; vertex < graph->vertex_count; vertex++){
-    EXPECT_FLOAT_EQ(0.0, centrality_score[0]);
+    EXPECT_FLOAT_EQ(0.0, centrality_score[vertex]);
   }
 }
 
@@ -149,10 +145,8 @@ TEST_P(BetweennessCentralityTest, CompleteGraphUnweighted) {
 TEST_P(BetweennessCentralityTest, StarGraphUnweighted) {
   EXPECT_EQ(SUCCESS, graph_initialize(DATA_FOLDER("star_1000_nodes.totem"),
                                       false, &graph));
-  centrality_score = (score_t*)mem_alloc(graph->vertex_count * 
-                                         sizeof(score_t));
 
-  EXPECT_EQ(SUCCESS, TestGraph(graph, centrality_score));
+  EXPECT_EQ(SUCCESS, TestGraph(graph));
   EXPECT_FLOAT_EQ((graph->vertex_count - 1) * (graph->vertex_count - 2), 
                   centrality_score[0]);
   for(vid_t vertex = 1; vertex < graph->vertex_count; vertex++){
