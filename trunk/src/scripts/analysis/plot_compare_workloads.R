@@ -9,9 +9,10 @@
 ## in the plot.
 ##
 ## The scripts assumes that a workload's subdirectory name has the following
-## format: type_num1M_num2M
+## format: name_num1M_num2M
 ##
-## where "type" is the workload type, e.g. RMAT, BTER, TWITTER or FACEBOOK etc.
+## where "name" is a unique workload name that will be used in the plot's
+##              legend to identify the workload (e.g., RMAT25)
 ##       "num1" is the number of vertices in millions
 ##       "num2" is the number of edges in millions
 ##
@@ -28,19 +29,26 @@ source("totem_summary.R")
 
 ## Check command line arguments
 arg_list = commandArgs(T);
-if (length(arg_list) < 2) {
-  print("Error: Invalid number of argumens");
-  print(paste("Usage: Rscript plot_workload.R <workloads' root directory>",
-              "<image file>  [pattern]"));
+if (length(arg_list) < 3) {
+  print("Error: Invalid number of arguments");
+  print(paste("Usage: Rscript plot_workload.R <data directory> <image file>",
+              "<x-axis: w = workload, h = hardware config> [pattern]"));
   q();
 }
 workloads_dir = arg_list[1];
 img_file = arg_list[2];
+x_axis = toupper(arg_list[3]);
+if (x_axis != "W" & x_axis != "H") {
+  print(sprintf("Error: Invalid x-axis argument %s", x_axis));
+  print(paste("Usage: Rscript plot_workload.R <data directory> <image file>",
+              "<x-axis: w = workload, h = hardware config> [pattern]"));
+  q();
+}
 
 ## Get the pattern if specified
 workloads_pattern = NULL;
-if (length(arg_list) == 3) {
-  workloads_pattern = arg_list[3];
+if (length(arg_list) == 4) {
+  workloads_pattern = arg_list[4];
 }
 
 ## Returns a data frame with the best processing rate for each possible hardware
@@ -56,30 +64,29 @@ totem.process.workload <- function(workload) {
 
   ## Add a configuration column. The format is xSyG, where x is the number of
   ## CPU sockets and y is the number of GPU sockets
-  data$CONFIG = paste(paste(data$CPU_COUNT, data$GPU_COUNT, sep = "S"),
-                      "G", sep="");
+  data$CONFIG = factor(data$CPU_COUNT + 2 * data$GPU_COUNT,
+    levels = c("1", "2", "3", "4", "5", "6"),
+    lab = c("1S", "2S", "1S1G", "2S1G", "1S2G", "2S2G"));
+  
   ## CPU-only configurations will have xS format
   data[data$GPU_COUNT == 0, ]$CONFIG =
     paste(data[data$GPU_COUNT == 0, ]$CPU_COUNT, "S", sep="");
 
-  ## Get an identifier (workload type and number of edges) for the workload
-  ## from its subdirectory name
+  ## Get an identifier for the workload from its subdirectory name
   workload_name = unlist(strsplit(workload, "/"));
   workload_name = unlist(strsplit(workload_name[length(workload_name)], "_"));
-  data$WL_TYPE = toupper(workload_name[1]);
-  data$WL_EDGES = as.numeric(substr(workload_name[3], 1,
-                             nchar(workload_name[3]) - 1));
+  data$WL = toupper(workload_name[1]);
 
   ## Get the best rate for each hardware configuration
   data = data[order(data$RATE,decreasing=T),];
   data = data[!duplicated(data$CONFIG),];
   
-  return(data[c("WL_TYPE", "WL_EDGES", "PROC_COUNT", "CPU_COUNT", "GPU_COUNT",
+  return(data[c("WL", "PROC_COUNT", "CPU_COUNT", "GPU_COUNT",
                 "CONFIG", "RATE", "RATE_CI")]);
 }
 
 ## Create an empty frame where the data of all workloads will be aggregated
-data = data.frame(WL_TYPE = character(0), WL_EDGES = numeric(0),
+data = data.frame(WL = character(0),
                   PROC_COUNT = numeric(0), CPU_COUNT = numeric(0),
                   GPU_COUNT = numeric(0), CONFIG = character(0),
                   RATE = numeric (0), RATE_CI = numeric (0));
@@ -88,48 +95,50 @@ data = data.frame(WL_TYPE = character(0), WL_EDGES = numeric(0),
 workloads = list.files(workloads_dir, workloads_pattern, full.names = T);
 workloads = workloads[file.info(workloads)$isdir];
 for (workload in workloads) {
-  data = rbind(data, totem.process.workload(workload));
+  d = totem.process.workload(workload);
+  if (levels(factor(d$WL)) %in% data$WL) {
+    print(sprintf("Error: duplicate workload name %s", levels(factor(d$WL))));
+    q();
+  }
+  data = rbind(data, d);
 }
 
-## Order the data
-data = with(data, data[order(WL_EDGES, WL_TYPE, PROC_COUNT, GPU_COUNT), ]);
+if (x_axis == "H") {
+  ## plot configuration on the x-axis grouping by workload
+  plot = ggplot(data, aes(CONFIG, RATE), aes(group = WL)) + aes(fill = WL);
+  plot = plot + scale_x_discrete("Hardware Configuration");
+} else {
+  ## plot workloads on the x-axis grouping by configuration
+  plot = ggplot(data, aes(WL, RATE), aes(group = CONFIG)) + aes(fill = CONFIG);
+  plot = plot + scale_x_discrete("Workload");
+}
 
-## Create a factor that will be used to group the data by workload
-cat <- function(x) paste("|E| = ", x, "M", sep="");
-workloads = factor(data$WL_EDGES, lab = sapply(levels(factor(data$WL_EDGES)),
-                                               cat));
-
-## Plot the processing rate on the y axis and the configuration on the x-axis
-## grouping by workload (identified by the number of edges)
-dodge = position_dodge(width=0.9);
-plot = ggplot(data, aes(CONFIG, RATE), aes(group = workloads)) +
-       aes(fill = workloads) +
-       geom_bar(colour = "black", position = dodge,
-                stat="identity") +
-       geom_errorbar(aes(ymin = RATE - RATE_CI, ymax = RATE + RATE_CI),
-                     color = "lightgray", width = .5,
-                     position = dodge);
+## Plot the processing rate on the y axis
+dodge = position_dodge(width=0.7);
+plot = plot +
+  geom_bar(colour = "black", position = dodge, width = .7, stat="identity") +
+  geom_errorbar(aes(ymin = RATE - RATE_CI, ymax = RATE + RATE_CI),
+                color = "lightgray", width = .4,
+                position = dodge);
 
 ## Ensure a multiple of .2 limit on the y-axis
-ylimit = .2 * as.integer(5 * max(data$RATE) + 1);
-plot = plot +
-       scale_x_discrete("Hardware Configuration",
-                        limits=c("1S", "2S", "1S1G", "2S1G", "1S2G", "2S2G")) +
-       scale_y_continuous("Billion Traversed Edges Per Second",
-                          limits = c(0, ylimit), breaks = seq(0, ylimit, .2));
+ylimit = .2 * as.integer(5 * max(data$RATE) + 2);
+plot = plot + scale_y_continuous("Billion Traversed Edges Per Second",
+  limits = c(0, ylimit), breaks = seq(0, ylimit, .2));
 
 ## Set the theme of the plot
 theme_set(theme_bw());
 plot = plot + theme(panel.border = element_blank(),
                     legend.title = element_blank(),
-                    legend.position = c(.15, .8),
-                    legend.text = element_text(size = 15),
+                    legend.position = c(.5, .95),
+                    legend.text = element_text(size = 13),
                     axis.line = element_line(size = 1),
                     axis.title = element_text(size = 15),
                     axis.title.x = element_text(vjust = -0.5),
                     axis.title.y = element_text(vjust = 0.25),
                     axis.ticks = element_line(size = 1),
-                    axis.text = element_text(size = 15));
+                    axis.text = element_text(size = 15)) +
+  guides(fill = guide_legend(nrow = 2));
 
 ggsave(img_file, plot, width = 7, height = 4.7);
 
