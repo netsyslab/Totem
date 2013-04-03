@@ -98,6 +98,8 @@ TOTEM_EXE="../../benchmark/benchmark"
 MAX_GPU_COUNT=1
 REPEAT_COUNT=
 OMP_SCHED=${OMP_SCHED_STATIC}
+MAPPED=
+GPU_PAR_RAND=
 
 ###########################################
 # Display usage message and exit the script
@@ -111,12 +113,16 @@ function usage() {
   echo "                      in the CPU partition) to use for experiments on"
   echo "                      hybrid platforms (default ${MIN_ALPHA}%)"
   echo "  -b  <benchmark> BFS=${BFS}, PageRank=${PAGERANK}" \
-      "SSSP=${SSSP}, Betweenness=${BETWEENNESS}" \
-      "(default ${BENCHMARK_STR[${BENCHMARK}]})"
+       "SSSP=${SSSP}, Betweenness=${BETWEENNESS}" \
+       "(default ${BENCHMARK_STR[${BENCHMARK}]})"
   echo "  -d  <results base directory> (default ${RESULT_BASE})"
   echo "  -e  <totem executable> (default ${TOTEM_EXE})"
   echo "  -g  <max gpu count> maximum number of GPUs to use" \
-      "(default ${MAX_GPU_COUNT})"
+       "(default ${MAX_GPU_COUNT})"
+  echo "  -m Enables allocating the vertices array of the GPU partitions" \
+       "as a memory mapped buffer on the host (default FALSE)"
+  echo "  -o Enables random placement of vertices across GPU partitions" \
+       "in case of multi-GPU setups (default FALSE)"
   echo "  -r  <repeat count> number of times an experiment is repeated"
   echo "                     (default BFS:${BENCHMARK_REPEAT[$BFS]}," \
       "PageRank:${BENCHMARK_REPEAT[$PAGERANK]})"
@@ -148,6 +154,10 @@ while getopts 'a:b:d:e:g:hr:s:x:' options; do
     g)MAX_GPU_COUNT="$OPTARG"
       ;;
     h)usage; exit 0;
+      ;;
+    m)MAPPED="-m"
+      ;;
+    n)GPU_PAR_RAND="-n"
       ;;
     r)REPEAT_COUNT="$OPTARG"
       ;;
@@ -221,10 +231,10 @@ function run() {
     DATE=`date`
     printf "${DATE}: ${OUTPUT} b${BENCHMARK} a${ALPHA} p${PLATFORM} " >> ${LOG};
     printf "i${PAR} g${GPU_COUNT} t${THREAD_COUNT} r${REPEAT_COUNT} " >> ${LOG};
-    printf "s${OMP_SCHED} ${WORKLOAD}\n" >> ${LOG};
+    printf "s${OMP_SCHED} ${MAPPED} ${GPU_PAR_RAND} ${WORKLOAD}\n" >> ${LOG};
     ${TOTEM_EXE} -b${BENCHMARK} -a${ALPHA} -p${PLATFORM} -i${PAR} \
-        -g${GPU_COUNT} -t${THREAD_COUNT} -r${REPEAT_COUNT} \
-        -s${OMP_SCHED} ${WORKLOAD} &>> ${RESULT_DIR}/${OUTPUT}
+        -g${GPU_COUNT} -t${THREAD_COUNT} -r${REPEAT_COUNT} -s${OMP_SCHED} \
+        ${MAPPED} ${GPU_PAR_RAND} ${WORKLOAD} &>> ${RESULT_DIR}/${OUTPUT}
 
     # Check the exit status, and log any problems
     exit_status=$?
