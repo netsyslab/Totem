@@ -54,14 +54,16 @@ void print_header(graph_t* graph, benchmark_options_t* options,
   omp_get_schedule(&sched, &sched_modifier);
   printf("file:%s\tbenchmark:%s\tvertices:%llu\tedges:%llu\tpartitioning:%s\t"
          "platform:%s\talpha:%d\trepeat:%d\tgpu_count:%d\t"
-         "thread_count:%d\tthread_sched:%s\tmapped:%s\tthread_bind:%s", 
+         "thread_count:%d\tthread_sched:%s\tthread_bind:%s\t"
+         "mapped:%s\tgpu_par_randomized:%s", 
          options->graph_file, benchmark_name, 
          (uint64_t)graph->vertex_count, (uint64_t)graph->edge_count, 
          PAR_ALGO_STR[options->par_algo], PLATFORM_STR[options->platform], 
          options->alpha, options->repeat, options->gpu_count, 
          omp_get_max_threads(), OMP_SCHEDULE_STR[sched], 
+         OMP_PROC_BIND == NULL ? "false" : OMP_PROC_BIND,
          options->mapped ? "true" : "false",
-         OMP_PROC_BIND == NULL ? "false" : OMP_PROC_BIND);
+         options->gpu_par_randomized ? "true" : "false");
   if (totem_based) {
     // print the time spent on initializing Totem and partitioning the graph
     const totem_timing_t* timers = totem_timing();

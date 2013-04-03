@@ -58,6 +58,9 @@ typedef struct benchmark_options_s {
                                            partitions is allocated as memory
                                            mapped buffer on the host or on the
                                            GPU memory */
+  bool                  gpu_par_randomized; /**< whether the placement of 
+                                                 vertices across GPUs is random
+                                                 or according to par_algo */
 } benchmark_options_t;
 
 /**
