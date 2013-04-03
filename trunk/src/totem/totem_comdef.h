@@ -79,13 +79,17 @@ inline size_t bits_to_bytes(size_t bits) {
   return (((bits / BITS_PER_WORD) + 1) * BYTES_PER_WORD);
 }
 
-/* 
+/*
  * Commonly used communication message sizes
  */
 const size_t MSG_SIZE_ZERO = 0;
 const size_t MSG_SIZE_BYTE = BITS_PER_BYTE;
 const size_t MSG_SIZE_WORD = sizeof(int) * BITS_PER_BYTE;
 
+/*
+ * A global seed value
+ */
+const int GLOBAL_SEED = 1985;
 
 /**
  * A wrapper that asserts the success of totem function calls

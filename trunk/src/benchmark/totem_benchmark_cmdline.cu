@@ -20,7 +20,9 @@ PRIVATE benchmark_options_t options = {
   5,                     // repeat
   50,                    // alpha
   PAR_RANDOM,            // partitioning algorithm
-  false,                 // use mapped memory for vertices array of 
+  false,                 // do not use mapped memory for vertices array of 
+                         // GPU partitions
+  false,                 // do not randomize vertex placement across
                          // GPU partitions
 };
 
@@ -53,6 +55,8 @@ PRIVATE void display_help(char* exe_name, int exit_err) {
          "     %d: Low degree nodes on CPU\n"
          "  -m Enables allocating the vertices array of the GPU partitions\n"
          "     as a memory mapped buffer on the host (default FALSE)\n"
+         "  -o Enables random placement of vertices across GPU partitions\n"
+         "     in case of multi-GPU setups (default FALSE)\n"
          "  -pNUM Platform\n"
          "     %d: Execute on CPU only (default)\n"
          "     %d: Execute on GPUs only\n"
@@ -81,7 +85,7 @@ PRIVATE void display_help(char* exe_name, int exit_err) {
 benchmark_options_t* benchmark_cmdline_parse(int argc, char** argv) {
   optarg = NULL;
   int ch, benchmark, platform, par_algo;
-  while(((ch = getopt(argc, argv, "a:b:g:i:mp:r:s:t:h")) != EOF)) {
+  while(((ch = getopt(argc, argv, "a:b:g:i:mop:r:s:t:h")) != EOF)) {
     switch (ch) {
       case 'a':
         options.alpha = atoi(optarg);
@@ -115,6 +119,9 @@ benchmark_options_t* benchmark_cmdline_parse(int argc, char** argv) {
         break;
       case 'm':
         options.mapped = true;
+        break;
+      case 'o':
+        options.gpu_par_randomized = true;
         break;
       case 'p':
         platform = atoi(optarg);
