@@ -112,32 +112,33 @@ void degree_aggr(partition_t* par) {
 
 class EngineTest : public TestWithParam<totem_attr_t*> {
  protected:
-  graph_t* graph_;
-  engine_config_t config_;
-  totem_attr_t attr_;
+  graph_t* _graph;
+  engine_config_t _config;
+  totem_attr_t _attr;
   virtual void SetUp() {
     // Ensure the minimum CUDA architecture is supported
     CUDA_CHECK_VERSION();
-    graph_ = NULL;
+    _graph = NULL;
     engine_config_t config  = {
       NULL, degree, degree_scatter, NULL, degree_init, degree_finalize, 
       degree_aggr, GROOVES_PUSH};
-    config_ = config;
-    attr_ = *GetParam();
+    _config = config;
+    _attr = *GetParam();
+    _attr.push_msg_size = MSG_SIZE_WORD;
   }
 
   virtual void TearDown() {
-    if (graph_ != NULL) {
-      graph_finalize(graph_);
+    if (_graph != NULL) {
+      graph_finalize(_graph);
     }
   }
 
   void TestGraph(const char* graph_str) {
-    graph_initialize(graph_str, false, &graph_);
-    EXPECT_FALSE(graph_->directed);
-    EXPECT_EQ(SUCCESS, engine_init(graph_, &attr_));
-    EXPECT_EQ(SUCCESS, engine_config(&config_));
-    degree_g = (int*)calloc(graph_->vertex_count, sizeof(int));
+    graph_initialize(graph_str, false, &_graph);
+    EXPECT_FALSE(_graph->directed);
+    EXPECT_EQ(SUCCESS, engine_init(_graph, &_attr));
+    EXPECT_EQ(SUCCESS, engine_config(&_config));
+    degree_g = (int*)calloc(_graph->vertex_count, sizeof(int));
     if (engine_largest_gpu_partition()) {
       totem_malloc(engine_largest_gpu_partition() * sizeof(int), 
                    TOTEM_MEM_HOST_PINNED, (void**)&degree_h);
@@ -147,8 +148,8 @@ class EngineTest : public TestWithParam<totem_attr_t*> {
     if (engine_largest_gpu_partition()) { 
       totem_free(degree_h, TOTEM_MEM_HOST_PINNED);
     }
-    for (vid_t v = 0; v < graph_->vertex_count; v++) {
-      int nbr_count = graph_->vertices[v + 1] - graph_->vertices[v];
+    for (vid_t v = 0; v < _graph->vertex_count; v++) {
+      int nbr_count = _graph->vertices[v + 1] - _graph->vertices[v];
       EXPECT_EQ(nbr_count, degree_g[v]);
     }
     free(degree_g);
@@ -168,51 +169,15 @@ TEST_P(EngineTest, CompleteGraph) {
 }
 
 TEST_P(EngineTest, InvalidGPUCount) {
-  graph_initialize(DATA_FOLDER("chain_1000_nodes.totem"), false, &graph_);
+  graph_initialize(DATA_FOLDER("chain_1000_nodes.totem"), false, &_graph);
   totem_attr_t attr = {
     PAR_RANDOM, PLATFORM_HYBRID, get_gpu_count() + 1, 
     .3, sizeof(int) * BITS_PER_BYTE
   };
-  EXPECT_EQ(FAILURE, engine_init(graph_, &attr));
+  EXPECT_EQ(FAILURE, engine_init(_graph, &attr));
   attr.platform = PLATFORM_GPU;
-  EXPECT_EQ(FAILURE, engine_init(graph_, &attr));
+  EXPECT_EQ(FAILURE, engine_init(_graph, &attr));
 }
-
-// Values() seems to accept only pointers, hence the possible parameters
-// are defined here, and a pointer to each of them is used.
-const float CPU_SHARE_ZERO = 0;
-const float CPU_SHARE_ONE_THIRD = 0.33;
-const bool MAPPED_MEMPRY_DISABLED = false;
-const bool MAPPED_MEMPRY_ENABLED = true;
-const bool GPU_PAR_RANDOMIZED_DISABLED = false;
-const int  GPU_COUNT_ONE = 1;
-totem_attr_t engine_params[] = {
-  // CPU only
-  {PAR_RANDOM, PLATFORM_CPU, GPU_COUNT_ONE, MAPPED_MEMPRY_DISABLED, 
-   GPU_PAR_RANDOMIZED_DISABLED, CPU_SHARE_ZERO, MSG_SIZE_ZERO, MSG_SIZE_ZERO},
-  // GPU only
-  {PAR_RANDOM, PLATFORM_GPU, GPU_COUNT_ONE, MAPPED_MEMPRY_DISABLED, 
-   GPU_PAR_RANDOMIZED_DISABLED, CPU_SHARE_ZERO, MSG_SIZE_ZERO, MSG_SIZE_ZERO},
-  // Multi GPU
-  {PAR_RANDOM, PLATFORM_GPU, get_gpu_count(), MAPPED_MEMPRY_DISABLED,
-   GPU_PAR_RANDOMIZED_DISABLED, CPU_SHARE_ZERO, MSG_SIZE_WORD, MSG_SIZE_WORD},
-  // Hybrid 1 CPU + 1 GPU, memory mapped GPU partition disabled
-  {PAR_RANDOM, PLATFORM_HYBRID, GPU_COUNT_ONE, MAPPED_MEMPRY_DISABLED,
-   GPU_PAR_RANDOMIZED_DISABLED, CPU_SHARE_ONE_THIRD, MSG_SIZE_WORD, 
-   MSG_SIZE_WORD},
-  // Hybrid 1 CPU + all GPU, memory mapped GPU partition disabled
-  {PAR_RANDOM, PLATFORM_HYBRID, get_gpu_count(), MAPPED_MEMPRY_DISABLED,
-   GPU_PAR_RANDOMIZED_DISABLED, CPU_SHARE_ONE_THIRD, MSG_SIZE_WORD, 
-   MSG_SIZE_WORD},
-  // Hybrid 1 CPU + 1 GPU, memory mapped GPU partition enabled
-  {PAR_RANDOM, PLATFORM_HYBRID, GPU_COUNT_ONE, MAPPED_MEMPRY_ENABLED,
-   GPU_PAR_RANDOMIZED_DISABLED, CPU_SHARE_ONE_THIRD, MSG_SIZE_WORD, 
-   MSG_SIZE_WORD},
-  // Hybrid 1 CPU + all GPU, memory mapped GPU partition enabled
-  {PAR_RANDOM, PLATFORM_HYBRID, get_gpu_count(), MAPPED_MEMPRY_ENABLED,
-   GPU_PAR_RANDOMIZED_DISABLED, CPU_SHARE_ONE_THIRD, MSG_SIZE_WORD, 
-   MSG_SIZE_WORD}
-};
 
 // From Google documentation:
 // In order to run value-parameterized tests, we need to instantiate them,
@@ -221,13 +186,13 @@ totem_attr_t engine_params[] = {
 // Values() receives a list of parameters and the framework will execute the
 // whole set of tests BFSTest for each element of Values()
 INSTANTIATE_TEST_CASE_P(EngineTestAllPlatforms, EngineTest,
-                        Values(&engine_params[0],
-                               &engine_params[1],
-                               &engine_params[2],
-                               &engine_params[3],
-                               &engine_params[4],
-                               &engine_params[5],
-                               &engine_params[6]));
+                        Values(&totem_attrs[0],
+                               &totem_attrs[1],
+                               &totem_attrs[2],
+                               &totem_attrs[3],
+                               &totem_attrs[4],
+                               &totem_attrs[5],
+                               &totem_attrs[6]));
 
 #else
 

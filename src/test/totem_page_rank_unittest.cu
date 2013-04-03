@@ -25,9 +25,8 @@ typedef error_t(*PageRankFunction)(graph_t*, rank_t*, rank_t*);
 // that is based on the framework. Note that have a different signature
 // of the hybrid algorithm forced this work-around.
 typedef struct page_rank_param_s {
-  bool             hybrid; // true when using the hybrid algorithm
-  PageRankFunction func;   // the vanilla page_rank function if hybrid
-                           // flag is false
+  totem_attr_t* attr;    // totem attributes for totem-based tests
+  PageRankFunction func; // the vanilla page_rank function if attr is NULL
 } page_rank_param_t;
 
 class PageRankTest : public TestWithParam<page_rank_param_t*> {
@@ -49,15 +48,16 @@ class PageRankTest : public TestWithParam<page_rank_param_t*> {
     // the graph should be undirected because the test is shared between the
     // two versions of the PageRank algorithm: incoming- and outgoing- based.
     EXPECT_FALSE(_graph->directed);
-    CALL_SAFE(totem_malloc(_graph->vertex_count * sizeof(rank_t), 
-                           TOTEM_MEM_HOST_PINNED, (void**)&_rank));
-    if (_page_rank_param->hybrid) {
-      totem_attr_t attr = TOTEM_DEFAULT_ATTR;
-      attr.push_msg_size = sizeof(rank_t) * BITS_PER_BYTE;
-      if (totem_init(_graph, &attr) == FAILURE) {
+    if (_graph->vertex_count != 0) {
+      CALL_SAFE(totem_malloc(_graph->vertex_count * sizeof(rank_t), 
+                             TOTEM_MEM_HOST_PINNED, (void**)&_rank));
+    }
+    if (_page_rank_param->attr != NULL) {
+      _page_rank_param->attr->pull_msg_size = sizeof(rank_t) * BITS_PER_BYTE;
+      if (totem_init(_graph, _page_rank_param->attr) == FAILURE) {
         return FAILURE;
       }
-      error_t err = page_rank_hybrid(NULL, _rank);
+      error_t err = page_rank_incoming_hybrid(NULL, _rank);
       totem_finalize();
       return err;
     }
@@ -126,12 +126,21 @@ TEST_P(PageRankTest, Star) {
 
 // Values() seems to accept only pointers, hence the possible parameters
 // are defined here, and a pointer to each ot them is used.
-page_rank_param_t page_rank_params[] = {{false, &page_rank_cpu},
-                              {false, &page_rank_gpu},
-                              {false, &page_rank_vwarp_gpu},
-                              {false, &page_rank_incoming_cpu},
-                              {false, &page_rank_incoming_gpu},
-                              {true, NULL}};
+page_rank_param_t page_rank_params[] = {
+  {NULL, &page_rank_cpu},
+  {NULL, &page_rank_gpu},
+  {NULL, &page_rank_vwarp_gpu},
+  {NULL, &page_rank_incoming_cpu},
+  {NULL, &page_rank_incoming_gpu},
+  {&totem_attrs[0], NULL},
+  {&totem_attrs[1], NULL},
+  {&totem_attrs[2], NULL},
+  {&totem_attrs[3], NULL},
+  {&totem_attrs[4], NULL},
+  {&totem_attrs[5], NULL},
+  {&totem_attrs[6], NULL},
+  {&totem_attrs[7], NULL}
+};
 
 // Values() receives a list of parameters and the framework will execute the
 // whole set of tests PageRankTest for each element of Values()
@@ -144,7 +153,15 @@ INSTANTIATE_TEST_CASE_P(PageRankGPUAndCPUTest, PageRankTest,
                                &page_rank_params[2],
                                &page_rank_params[3],
                                &page_rank_params[4],
-                               &page_rank_params[5]));
+                               &page_rank_params[4],
+                               &page_rank_params[5],
+                               &page_rank_params[6],
+                               &page_rank_params[7],
+                               &page_rank_params[8],
+                               &page_rank_params[9],
+                               &page_rank_params[10],
+                               &page_rank_params[11],
+                               &page_rank_params[12]));
 
 #else
 

@@ -46,8 +46,8 @@ typedef error_t(*BetwCentralityFunction)(const graph_t*, score_t*);
 // that is based on the framework. Note that have a different signature
 // of the hybrid algorithm forced this work-around.
 typedef struct betweenness_param_s {
-  bool                     hybrid; // true when using the hybrid algorithm
-  BetwCentralityFunction   func;   // the vanilla bfs function if not hybrid
+  totem_attr_t* attr;          // totem attributes for totem-based tests
+  BetwCentralityFunction func; // the vanilla BC function if attr is NULL
 } betweenness_param_t;
 
 class BetweennessCentralityTest : public TestWithParam<betweenness_param_t*> {
@@ -55,77 +55,75 @@ class BetweennessCentralityTest : public TestWithParam<betweenness_param_t*> {
   virtual void SetUp() {
     // Ensure the minimum CUDA architecture is supported
     CUDA_CHECK_VERSION();
-    betweenness_param = GetParam();
-    graph = NULL;
-    centrality_score = NULL;
+    _betweenness_param = GetParam();
+    _graph = NULL;
+    _betweenness_score = NULL;
   }
 
   virtual void TearDown() {
-    if (graph) graph_finalize(graph);
-    if (centrality_score) totem_free(centrality_score, TOTEM_MEM_HOST_PINNED);
+    if (_graph) graph_finalize(_graph);
+    if (_betweenness_score) {
+      totem_free(_betweenness_score, TOTEM_MEM_HOST_PINNED);
+    }
   }
 
-  error_t TestGraph(graph_t* graph) {
-    if (graph->vertex_count) {
-      totem_malloc(graph->vertex_count * sizeof(score_t), TOTEM_MEM_HOST_PINNED,
-                   (void**)&centrality_score);
+  error_t TestGraph() {
+    if (_graph->vertex_count) {
+      totem_malloc(_graph->vertex_count * sizeof(score_t), TOTEM_MEM_HOST_PINNED,
+                   (void**)&_betweenness_score);
     }
-    if (betweenness_param->hybrid) {
-      totem_attr_t attr = TOTEM_DEFAULT_ATTR;
-      attr.push_msg_size = sizeof(uint32_t) * BITS_PER_BYTE;
-      attr.pull_msg_size = sizeof(betweenness_backward_t) * BITS_PER_BYTE;
-
-      if (totem_init(graph, &attr) == FAILURE) {
+    if (_betweenness_param->attr != NULL) {
+      _betweenness_param->attr->push_msg_size = 
+        sizeof(uint32_t) * BITS_PER_BYTE;
+      _betweenness_param->attr->pull_msg_size =
+        sizeof(betweenness_backward_t) * BITS_PER_BYTE;
+      if (totem_init(_graph, _betweenness_param->attr) == FAILURE) {
         return FAILURE;
       }
 
       // Will use exact betweenness centrality for test framework
-      error_t err = betweenness_hybrid(CENTRALITY_EXACT, centrality_score);
+      error_t err = betweenness_hybrid(CENTRALITY_EXACT, _betweenness_score);
       totem_finalize();
       return err;
     }
-    return betweenness_param->func(graph, centrality_score);
+    return _betweenness_param->func(_graph, _betweenness_score);
   }
 
  protected:
-   betweenness_param_t* betweenness_param;
-   graph_t* graph;
-   score_t* centrality_score;
+   betweenness_param_t* _betweenness_param;
+   graph_t* _graph;
+   score_t* _betweenness_score;
 };
 
 // Tests BetwCentrality for empty graphs.
 TEST_P(BetweennessCentralityTest, Empty) {
-  graph_t graph;
-  graph.directed = false;
-  graph.vertex_count = 0;
-  graph.edge_count = 0;
-
-  EXPECT_EQ(FAILURE, TestGraph(&graph));
-  EXPECT_EQ(FAILURE, TestGraph(&graph));
-  EXPECT_EQ(FAILURE, TestGraph(&graph));
+  _graph = (graph_t*)calloc(sizeof(graph_t), 1);
+  EXPECT_EQ(FAILURE, TestGraph());
+  free(_graph);
+  _graph = NULL;
 }
 
 // Tests BetwCentrality for single node graphs.
 TEST_P(BetweennessCentralityTest, SingleNodeUnweighted) {
   EXPECT_EQ(SUCCESS, graph_initialize(DATA_FOLDER("single_node.totem"),
-                                      false, &graph));
-  EXPECT_EQ(SUCCESS, TestGraph(graph));
-  EXPECT_EQ((score_t)0.0, centrality_score[0]);
+                                      false, &_graph));
+  EXPECT_EQ(SUCCESS, TestGraph());
+  EXPECT_EQ((score_t)0.0, _betweenness_score[0]);
 }
 
 // Tests BetwCentrality for a chain of 100 nodes.
 TEST_P(BetweennessCentralityTest, Chain100Unweighted) {
   graph_initialize(DATA_FOLDER("chain_100_nodes_weight_directed.totem"), false,
-                   &graph);
+                   &_graph);
   // First vertex as source
-  EXPECT_EQ(SUCCESS, TestGraph(graph));
+  EXPECT_EQ(SUCCESS, TestGraph());
   score_t centrality[50];
   for (vid_t i = 0; i < 50; i++) {
     centrality[i] = (99 - i) * (i);
   }
   for (vid_t i = 0; i < 50; i++) {
-    EXPECT_EQ(centrality[i], centrality_score[i]);
-    EXPECT_EQ(centrality[i], centrality_score[99 - i]);
+    EXPECT_EQ(centrality[i], _betweenness_score[i]);
+    EXPECT_EQ(centrality[i], _betweenness_score[99 - i]);
   }
 }
 
@@ -133,35 +131,43 @@ TEST_P(BetweennessCentralityTest, Chain100Unweighted) {
 TEST_P(BetweennessCentralityTest, CompleteGraphUnweighted) {
   EXPECT_EQ(SUCCESS,
             graph_initialize(DATA_FOLDER("complete_graph_300_nodes.totem"),
-                             false, &graph));
+                             false, &_graph));
 
-  EXPECT_EQ(SUCCESS, TestGraph(graph));
-  for(vid_t vertex = 0; vertex < graph->vertex_count; vertex++){
-    EXPECT_FLOAT_EQ(0.0, centrality_score[vertex]);
+  EXPECT_EQ(SUCCESS, TestGraph());
+  for(vid_t vertex = 0; vertex < _graph->vertex_count; vertex++){
+    EXPECT_FLOAT_EQ(0.0, _betweenness_score[vertex]);
   }
 }
 
 // Tests BetwCentrality for a star graph.
 TEST_P(BetweennessCentralityTest, StarGraphUnweighted) {
   EXPECT_EQ(SUCCESS, graph_initialize(DATA_FOLDER("star_1000_nodes.totem"),
-                                      false, &graph));
+                                      false, &_graph));
 
-  EXPECT_EQ(SUCCESS, TestGraph(graph));
-  EXPECT_FLOAT_EQ((graph->vertex_count - 1) * (graph->vertex_count - 2), 
-                  centrality_score[0]);
-  for(vid_t vertex = 1; vertex < graph->vertex_count; vertex++){
-    EXPECT_FLOAT_EQ(0.0, centrality_score[vertex]);
+  EXPECT_EQ(SUCCESS, TestGraph());
+  EXPECT_FLOAT_EQ((_graph->vertex_count - 1) * (_graph->vertex_count - 2), 
+                  _betweenness_score[0]);
+  for(vid_t vertex = 1; vertex < _graph->vertex_count; vertex++){
+    EXPECT_FLOAT_EQ(0.0, _betweenness_score[vertex]);
   }
 }
 
 // Functions to test in framework
 betweenness_param_t betweenness_params[] = {
-  {false, &betweenness_unweighted_cpu},
-  {false, &betweenness_unweighted_gpu},
-  {false, &betweenness_unweighted_shi_gpu},
-  {false, &betweenness_cpu_exact},
-  {false, &betweenness_gpu_exact},
-  {true, NULL}}; // Null entry corresponds to hybrid betweenness centrality
+  {NULL, &betweenness_unweighted_cpu},
+  {NULL, &betweenness_unweighted_gpu},
+  {NULL, &betweenness_unweighted_shi_gpu},
+  {NULL, &betweenness_cpu_exact},
+  {NULL, &betweenness_gpu_exact},
+  {&totem_attrs[0], NULL},
+  {&totem_attrs[1], NULL},
+  {&totem_attrs[2], NULL},
+  {&totem_attrs[3], NULL},
+  {&totem_attrs[4], NULL},
+  {&totem_attrs[5], NULL},
+  {&totem_attrs[6], NULL},
+  {&totem_attrs[7], NULL}
+};
 
 // From Google documentation:
 // In order to run value-parameterized tests, we need to instantiate them,
@@ -175,7 +181,13 @@ INSTANTIATE_TEST_CASE_P(BetwCentralityGPUAndCPUTest, BetweennessCentralityTest,
                                &betweenness_params[2],
                                &betweenness_params[3],
                                &betweenness_params[4],
-                               &betweenness_params[5]));
+                               &betweenness_params[5],
+                               &betweenness_params[6],
+                               &betweenness_params[7],
+                               &betweenness_params[8],
+                               &betweenness_params[9],
+                               &betweenness_params[10],
+                               &betweenness_params[11]));
 #else
 
 // From Google documentation:
