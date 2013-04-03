@@ -38,13 +38,16 @@ typedef enum {
  * Defines the attributes used to initialize a Totem
  */
 typedef struct totem_attr_s {
-  partition_algorithm_t par_algo;      /**< partitioning algorithm */
+  partition_algorithm_t par_algo;      /**< CPU-GPU partitioning strategy */
   platform_t            platform;      /**< the execution platform */
   uint32_t              gpu_count;     /**< number of GPUs to use  */
   bool                  mapped;        /**< whether the vertices array of GPU 
                                             partitions is allocated as memory
                                             mapped buffer on the host or on the
                                             GPU memory */
+  bool                  gpu_par_randomized; /**< whether the placement of 
+                                                 vertices across GPUs is random
+                                                 or according to par_algo */
   float                 cpu_par_share; /**< the percentage of edges assigned
                                             to the CPU partition. Note that this
                                             value is relevant only in hybrid 
@@ -53,14 +56,14 @@ typedef struct totem_attr_s {
                                             share. If this is set to zero, then
                                             the graph is divided among all 
                                             processors equally. */
-  size_t                push_msg_size; /**< push comm. message size in bits*/
-  size_t                pull_msg_size; /**< pull comm. message size in bits*/
+  size_t                push_msg_size; /**< push comm. message size in bits */
+  size_t                pull_msg_size; /**< pull comm. message size in bits */
 } totem_attr_t;
 
 // default attributes: hybrid (one GPU + CPU) platform, random 50-50 
 // partitioning, no mapped memory, push message size is word and zero
 // pull message size
-#define TOTEM_DEFAULT_ATTR {PAR_RANDOM, PLATFORM_HYBRID, 1, false, 0.5,  \
+#define TOTEM_DEFAULT_ATTR {PAR_RANDOM, PLATFORM_HYBRID, 1, false, false, 0.5, \
       MSG_SIZE_WORD, MSG_SIZE_ZERO}
 
 /**

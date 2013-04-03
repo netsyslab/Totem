@@ -197,7 +197,7 @@ PRIVATE void init_get_processors(int pcount, int gpu_count, bool use_cpu,
   }
 }
 
-PRIVATE void init_partition(int pcount, double* shares, 
+PRIVATE void init_partition(int pcount, int gpu_count, double* shares, 
                             processor_t* processors) {
   stopwatch_t stopwatch_par;
   stopwatch_start(&stopwatch_par);
@@ -207,6 +207,19 @@ PRIVATE void init_partition(int pcount, double* shares,
                                                   context.attr.platform == 
                                                   PLATFORM_HYBRID ?
                                                   shares : NULL, &par_labels));
+
+  if (context.attr.gpu_par_randomized && gpu_count > 1 && 
+      context.attr.par_algo != PAR_RANDOM) {
+    uint32_t seed = GLOBAL_SEED;
+    // randomize the placement of vertices across the GPUs
+    OMP(omp parallel for schedule(static))
+    for (vid_t v = 0; v < context.graph->vertex_count; v++) {
+      if (par_labels[v] < gpu_count) {
+        par_labels[v] = rand_r(&seed) % gpu_count;
+      }
+    }
+  }
+
   context.timing.engine_par = stopwatch_elapsed(&stopwatch_par);
   CALL_SAFE(partition_set_initialize(context.graph, par_labels,
                                      processors, pcount, context.attr.mapped,
@@ -263,7 +276,7 @@ error_t engine_init(graph_t* graph, totem_attr_t* attr) {
   init_get_shares(pcount, gpu_count, use_cpu, shares);
   processor_t processors[MAX_PARTITION_COUNT];
   init_get_processors(pcount, gpu_count, use_cpu, processors);
-  init_partition(pcount, shares, processors);
+  init_partition(pcount, gpu_count, shares, processors);
   init_context_partitions_state();
 
   context.timing.engine_init = stopwatch_elapsed(&stopwatch);
