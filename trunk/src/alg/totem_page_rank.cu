@@ -288,7 +288,7 @@ error_t page_rank_vwarp_gpu(graph_t* graph, rank_t* rank_i, rank_t* rank) {
                          cudaFuncCachePreferShared);
 
   // Iterate for a specific number of rounds
-  for (uint32_t round = 0; round < PAGE_RANK_ROUNDS - 1; round++) {
+  for (int round = 0; round < PAGE_RANK_ROUNDS - 1; round++) {
     vwarp_sum_neighbors_rank_kernel<<<blocks1, threads_per_block1>>>
       (*graph_d, rank_d, mailbox_d, phase1_thread_count);
     CHK_CU_SUCCESS(cudaGetLastError(), err_free_all);
@@ -338,7 +338,7 @@ error_t page_rank_gpu(graph_t* graph, rank_t* rank_i, rank_t* rank) {
   dim3 blocks, threads_per_block;
   KERNEL_CONFIGURE(graph->vertex_count, blocks, threads_per_block);
   // Iterate for a specific number of rounds
-  for (uint32_t round = 0; round < PAGE_RANK_ROUNDS - 1; round++) {
+  for (int round = 0; round < PAGE_RANK_ROUNDS - 1; round++) {
     sum_neighbors_rank_kernel<<<blocks, threads_per_block>>>
       (*graph_d, rank_d, mailbox_d);
     CHK_CU_SUCCESS(cudaGetLastError(), err_free_all);
@@ -393,7 +393,7 @@ error_t page_rank_cpu(graph_t* graph, rank_t* rank_i, rank_t* rank) {
     }
   }
 
-  for (uint32_t round = 0; round < PAGE_RANK_ROUNDS; round++) {
+  for (int round = 0; round < PAGE_RANK_ROUNDS; round++) {
     // iterate over all vertices to calculate the ranks for this round
     // The "runtime" scheduling clause defer the choice of thread scheduling
     // algorithm to the choice of the client, either via OS environment variable

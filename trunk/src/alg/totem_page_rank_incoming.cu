@@ -143,7 +143,7 @@ error_t page_rank_incoming_gpu(graph_t* graph, rank_t *rank_i, rank_t* rank) {
   dim3 blocks;
   dim3 threads_per_block;
   KERNEL_CONFIGURE(graph->vertex_count, blocks, threads_per_block);
-  for (uint32_t round = 0; round < PAGE_RANK_ROUNDS - 1; round++) {
+  for (int round = 0; round < PAGE_RANK_ROUNDS - 1; round++) {
     // call the kernel
     page_rank_kernel<<<blocks, threads_per_block>>>
       (*graph_d, inbox_d, outbox_d);

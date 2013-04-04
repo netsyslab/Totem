@@ -39,7 +39,7 @@ const int VWARP_WARP_SIZE = 32;
 /**
  * the size of the batch of work assigned to each virtual warp
  */
-const int VWARP_BATCH_SIZE = 32;
+const int VWARP_BATCH_SIZE = 64;
 
 /**
  * Determines the maximum number of threads per block.
@@ -61,6 +61,11 @@ const int MAX_BLOCK_PER_DIMENSION = 65535;
  */
 const int MAX_THREAD_COUNT =
   (MAX_THREADS_PER_BLOCK * pow(MAX_BLOCK_PER_DIMENSION, MAX_BLOCK_DIMENSION));
+
+/*
+ * Minimum percentage of device memory reserved for algorithm state
+ */
+const double GPU_MIN_ALG_STATE = .05;
 
 /**
  * Global linear thread index

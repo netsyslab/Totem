@@ -59,11 +59,13 @@ inline PRIVATE void superstep_compute() {
     if (par->processor.type == PROCESSOR_GPU) {
       CALL_CU_SAFE(cudaEventRecord(par->event_end, par->streams[1]));
     } else {
-      context.timing.alg_cpu_comp += stopwatch_elapsed(&stopwatch_cpu);
+      double time = stopwatch_elapsed(&stopwatch_cpu);
+      context.timing.alg_cpu_comp += time;
     }
   }
   superstep_compute_synchronize();
-  context.timing.alg_comp += stopwatch_elapsed(&stopwatch);
+  double time = stopwatch_elapsed(&stopwatch);
+  context.timing.alg_comp += time;
 }
 
 /**
@@ -262,6 +264,29 @@ PRIVATE void init_context_partitions_state() {
   }
 }
 
+PRIVATE error_t init_check_space(graph_t* graph, totem_attr_t* attr, int pcount,
+                                 double* shares, processor_t* processors) {
+  for (int pid = 0; pid < pcount; pid++) {
+    if (processors[pid].type == PROCESSOR_GPU) {
+      size_t needed = (((double)graph->vertex_count + 
+                        (double)graph->edge_count) *
+                       shares[pid]) * sizeof(vid_t);
+      CALL_CU_SAFE(cudaSetDevice(processors[pid].id));
+      size_t available = 0; size_t total = 0;
+      CALL_CU_SAFE(cudaMemGetInfo(&available, &total));
+      // Reserve at least GPU_MIN_ALG_STATE of the space for algorithm state
+      available = (double)available * (1 - GPU_MIN_ALG_STATE);
+      if (needed > available) {
+        fprintf(stderr, 
+                "Error: GPU out of memory. Needed:%dMB, Available:%dMB\n",
+                needed/(1024*1024), available/(1024*1024));
+        return FAILURE;
+      }
+    }
+  }
+  return SUCCESS;
+}
+
 error_t engine_init(graph_t* graph, totem_attr_t* attr) {
   stopwatch_t stopwatch;
   stopwatch_start(&stopwatch);
@@ -276,6 +301,9 @@ error_t engine_init(graph_t* graph, totem_attr_t* attr) {
   init_get_shares(pcount, gpu_count, use_cpu, shares);
   processor_t processors[MAX_PARTITION_COUNT];
   init_get_processors(pcount, gpu_count, use_cpu, processors);
+  if (init_check_space(graph, attr, pcount, shares, processors) == FAILURE) {
+    return FAILURE;
+  }
   init_partition(pcount, gpu_count, shares, processors);
   init_context_partitions_state();
 
