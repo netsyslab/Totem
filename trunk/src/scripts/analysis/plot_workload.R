@@ -41,16 +41,9 @@ dir.create(plot_dir, showWarnings = FALSE);
 ## Set the theme and save the plot
 totem.plot.finalize <- function(plot, data, data_hybrid, filename,
                                 legend_position) {
-  ## Plot the 1S and 2S lines
-  data_1S = data[data$GPU_COUNT == 0 & data$CPU_COUNT == 1,]$RATE;
-  data_2S = data[data$GPU_COUNT == 0 & data$CPU_COUNT == 2,]$RATE;
-  plot = plot + geom_hline(yintercept = data_1S, color = "black", size = 1) +
-    geom_text(x = 95, y = data_1S - .03, label = "1S", color = "black") +
-    geom_hline(yintercept=data_2S, color = "orange", size = 1, linetype = 2) +
-    geom_text(x = 95, y = data_2S + .03, label = "2S", color = "orange");
   
   ## The axes labels and limits
-  ylimit = .2 * as.integer(5 * max(data_hybrid$RATE) + 1);
+  ylimit = .2 * as.integer(5 * max(data_hybrid$RATE) + 2);
   plot = plot +
          scale_x_continuous("% of Edges on the CPU",
                             limits = c(min(data_hybrid$ALPHA),
@@ -60,14 +53,25 @@ totem.plot.finalize <- function(plot, data, data_hybrid, filename,
          scale_y_continuous("Billion Traversed Edges Per Second",
                             limits = c(0, ylimit),
                             breaks = seq(0, ylimit, .2));
+
+    ## Plot the 1S and 2S lines
+  data_1S = data[data$GPU_COUNT == 0 & data$CPU_COUNT == 1,]$RATE;
+  data_2S = data[data$GPU_COUNT == 0 & data$CPU_COUNT == 2,]$RATE;
+  plot = plot + geom_hline(yintercept = data_1S, color = "black", size = 1) +
+    geom_text(x = min(data_hybrid$ALPHA), y = data_1S - .03, label = "1S",
+              color = "black") +
+    geom_hline(yintercept=data_2S, color = "orange", size = 1, linetype = 2) +
+    geom_text(x = min(data_hybrid$ALPHA), y = data_2S + .03, label = "2S",
+              color = "orange");
   
   ## The general theme of the plot
   theme_set(theme_bw());
   plot = plot + theme(panel.border = element_blank(),
                       legend.title = element_blank(),
                       legend.position = legend_position,
-                      legend.text = element_text(size = 15),
+                      legend.text = element_text(size = 13),
                       legend.key.size = unit(1.5, "lines"),
+    legend.direction = "horizontal",
                       axis.line = element_line(size = 1),
                       axis.title = element_text(size = 15),
                       axis.title.x = element_text(vjust = -0.5),
@@ -84,7 +88,7 @@ totem.plot.finalize <- function(plot, data, data_hybrid, filename,
 ## (denoted as alpha in the raw data). The plot will show the one and two
 ##  sockets performance as horizantal lines with a label
 totem.plot.config <- function(data, filename, cpu_count = 1, gpu_count = 1,
-                           legend_position = c(.9, .9)) {
+                           legend_position = c(.5, .9)) {
   ## Check input parameters
   if (cpu_count <= 0 || gpu_count <= 0) {
     stop("gpu_count and cpu_count must be larger than zero");
@@ -117,7 +121,7 @@ totem.plot.config <- function(data, filename, cpu_count = 1, gpu_count = 1,
 ## CPU (denoted alpha in the raw data). The plot will show the one and two
 ## sockets performance as horizantal lines with a label
 totem.plot.par <- function(data, filename, par = "LOW",
-                              legend_position = c(.9, .9)) {
+                              legend_position = c(.5, .9)) {
   ## Check input parameters
   par_algs = c("LOW", "HIGH", "RAN");
   if (!(par %in% par_algs)) {
@@ -148,7 +152,7 @@ totem.plot.par <- function(data, filename, par = "LOW",
 ## Plots the breakdown of exeuction time of a specific hardware configuration
 ## and alpha value
 totem.plot.breakdown <- function(data, filename, alpha, cpu_count = 1,
-                                 gpu_count = 1, legend_position = c(.9, .9)) {
+                                 gpu_count = 1, legend_position = c(.5, .9)) {
   ## Get the data to plot
   data_points = subset(data, ALPHA == alpha & 
                       CPU_COUNT == cpu_count & GPU_COUNT == gpu_count);
@@ -232,4 +236,4 @@ totem.plot.par(data, paste(imgbase, "HIGH.png", sep = "_"), par = "HIGH");
 ## a hybrid 1S1G configuration and minimum CPU partition size
 alpha = min(subset(data, CPU_COUNT == 1 & GPU_COUNT == 1)$ALPHA);
 totem.plot.breakdown(data, sprintf("%s_1S1G_%d_breakdown.png", imgbase, alpha),
-                     alpha, legend_position = c(.2, .8));
+                     alpha, legend_position = c(.5, .8));
