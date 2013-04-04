@@ -119,10 +119,10 @@ function usage() {
   echo "  -e  <totem executable> (default ${TOTEM_EXE})"
   echo "  -g  <max gpu count> maximum number of GPUs to use" \
        "(default ${MAX_GPU_COUNT})"
-  echo "  -m Enables allocating the vertices array of the GPU partitions" \
-       "as a memory mapped buffer on the host (default FALSE)"
-  echo "  -o Enables random placement of vertices across GPU partitions" \
-       "in case of multi-GPU setups (default FALSE)"
+  echo "  -m Enables allocating the vertices array of the GPU partitions as a"
+  echo "     memory mapped buffer on the host (default FALSE)"
+  echo "  -o Enables random placement of vertices across GPU partitions in case"
+  echo "     of multi-GPU setups (default FALSE)"
   echo "  -r  <repeat count> number of times an experiment is repeated"
   echo "                     (default BFS:${BENCHMARK_REPEAT[$BFS]}," \
       "PageRank:${BENCHMARK_REPEAT[$PAGERANK]})"
@@ -141,7 +141,7 @@ function usage() {
 ###############################
 # Process command line options
 ###############################
-while getopts 'a:b:d:e:g:hr:s:x:' options; do
+while getopts 'a:b:d:e:g:hmnr:s:x:' options; do
   case $options in
     a)MIN_ALPHA="$OPTARG"
       ;;
