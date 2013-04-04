@@ -96,12 +96,14 @@ totem.summary <- function(dir) {
   data.avg   = data.frame(TOT = numeric(l), EXEC = numeric(l), 
                           INIT = numeric(l), COMP = numeric(l),
                           COMM = numeric(l), FINALIZE = numeric(l),
+                          CPUCOMP = numeric(l),
                           GPUCOMP = numeric(l), SCATTER = numeric(l),
                           GATHER = numeric(l), AGGR = numeric(l),
                           TRV = numeric(l), RATE = numeric(l));
   data.ci = data.frame(TOT_CI = numeric(l), EXEC_CI = numeric(l),
                        INIT_CI = numeric(l), COMP_CI = numeric(l),
                        COMM_CI = numeric(l), FIN_CI = numeric(l),
+                       CPUCOMP_CI = numeric(l),
                        GPUCOMP_CI = numeric(l), SCAT_CI = numeric(l),
                        GATH_CI = numeric(l), AGGR_CI = numeric(l),
                        TRV_CI = numeric(l), RATE_CI = numeric(l));
