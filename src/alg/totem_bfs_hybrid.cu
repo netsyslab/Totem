@@ -276,6 +276,8 @@ PRIVATE inline void bfs_init_gpu(partition_t* par) {
   KERNEL_CONFIGURE(VWARP_WARP_SIZE * 
                    VWARP_BATCH_COUNT(par->subgraph.vertex_count),
                    state->blocks, state->threads);
+  // Maximize available shared memory space at the expense of L1 cache
+  CALL_CU_SAFE(cudaFuncSetCacheConfig(bfs_kernel, cudaFuncCachePreferShared));
 }
 
 PRIVATE inline void bfs_init_cpu(partition_t* par) {
