@@ -280,4 +280,8 @@ inline vid_t engine_vertex_id_in_partition(vid_t v) {
   return context.pset->id_in_partition[v];
 }
 
+inline const graph_t* engine_get_graph() {
+  return context.graph;
+}
+
 #endif  // TOTEM_ENGINE_INTERNAL_CUH

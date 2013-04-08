@@ -304,9 +304,7 @@ error_t betweenness_unweighted_gpu(const graph_t* graph,
                                    score_t* betweenness_centrality) {
   // Sanity check on input
   bool finished = true;
-  error_t rc = betweenness_check_special_cases(graph->vertex_count,
-                                               graph->edge_count, 
-                                               &finished, 
+  error_t rc = betweenness_check_special_cases(graph, &finished, 
                                                betweenness_centrality);
   if (finished) return rc;
 
@@ -408,9 +406,7 @@ error_t betweenness_unweighted_shi_gpu(const graph_t* graph,
                                        score_t* betweenness_centrality) {
   // Sanity check on input
   bool finished = true;
-  error_t rc = betweenness_check_special_cases(graph->vertex_count,
-                                               graph->edge_count,
-                                               &finished, 
+  error_t rc = betweenness_check_special_cases(graph, &finished, 
                                                betweenness_centrality);
   if (finished) return rc;
 
@@ -523,9 +519,7 @@ error_t betweenness_unweighted_cpu(const graph_t* graph,
                                    score_t* betweenness_centrality) {
   // Sanity check on input
   bool finished = true;
-  error_t rc = betweenness_check_special_cases(graph->vertex_count,
-                                               graph->edge_count,
-                                               &finished, 
+  error_t rc = betweenness_check_special_cases(graph, &finished, 
                                                betweenness_centrality);
   if (finished) return rc;
 
@@ -763,9 +757,8 @@ error_t betweenness_cpu(const graph_t* graph, double epsilon,
                         score_t* betweenness_score) {
   // Sanity check on input
   bool finished = true;
-  error_t rc = betweenness_check_special_cases(graph->vertex_count,
-                                               graph->edge_count,
-                                               &finished, betweenness_score);
+  error_t rc = betweenness_check_special_cases(graph, &finished, 
+                                               betweenness_score);
   if (finished) return rc;
 
   // Allocate memory for the shortest paths problem
@@ -791,7 +784,7 @@ error_t betweenness_cpu(const graph_t* graph, double epsilon,
     int num_samples = centrality_get_number_sample_nodes(graph->vertex_count,
                                                          epsilon);
     // Populate the array of indices to sample
-    vid_t* sample_nodes = centrality_select_sampling_nodes(graph->vertex_count,
+    vid_t* sample_nodes = centrality_select_sampling_nodes(graph,
                                                            num_samples);
  
     for (int source_index = 0; source_index < num_samples; source_index++) {
@@ -1148,9 +1141,8 @@ error_t betweenness_gpu(const graph_t* graph, double epsilon,
                         score_t* betweenness_score) {
   // Sanity check on input
   bool finished = true;
-  error_t rc = betweenness_check_special_cases(graph->vertex_count, 
-                                               graph->edge_count,
-                                               &finished, betweenness_score);
+  error_t rc = betweenness_check_special_cases(graph, &finished, 
+                                               betweenness_score);
   if (finished) return rc;
 
   // Initialization stage
@@ -1184,7 +1176,7 @@ error_t betweenness_gpu(const graph_t* graph, double epsilon,
     int num_samples = centrality_get_number_sample_nodes(graph->vertex_count,
                                                          epsilon);
     // Populate the array of indices to sample
-    vid_t* sample_nodes = centrality_select_sampling_nodes(graph->vertex_count,
+    vid_t* sample_nodes = centrality_select_sampling_nodes(graph,
                                                            num_samples);
  
     for (vid_t source_index = 0; source_index < num_samples; source_index++) {

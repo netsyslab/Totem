@@ -630,10 +630,13 @@ PRIVATE void betweenness_init_backward(partition_t* par) {
     // If this is a GPU partition, also initial the kernel parameters
     KERNEL_CONFIGURE(VWARP_WARP_SIZE * VWARP_BATCH_COUNT(vcount),
                      state->blocks, state->threads);
+    CALL_CU_SAFE(cudaFuncSetCacheConfig(betweenness_gpu_backward_kernel,
+                                        cudaFuncCachePreferShared));
   }
 
   // Initialize the delta values to 0
-  totem_memset(state->delta, (score_t)0, vcount, type, par->streams[1]);
+  CALL_SAFE(totem_memset(state->delta, (score_t)0, vcount, type, 
+                         par->streams[1]));
 }
 
 /**
@@ -656,6 +659,9 @@ PRIVATE void betweenness_init_forward(partition_t* par) {
     // If this is a GPU partition, also initialize the kernel parameters
     KERNEL_CONFIGURE(VWARP_WARP_SIZE * VWARP_BATCH_COUNT(vcount),
                      state->blocks, state->threads);
+    // Maximize available shared memory space at the expense of L1 cache
+    CALL_CU_SAFE(cudaFuncSetCacheConfig(betweenness_gpu_forward_kernel,
+                                        cudaFuncCachePreferShared));
   }
 
   // Initialize the distances to infinity and numSPs to 0
@@ -665,17 +671,18 @@ PRIVATE void betweenness_init_forward(partition_t* par) {
       count = par->outbox[pid].count;
     }
     if (count) {
-      totem_memset((state->distance[pid]), INF_COST, count, type, 
-                   par->streams[1]);
+      CALL_SAFE(totem_memset((state->distance[pid]), INF_COST, count, type, 
+                             par->streams[1]));
     }
   }
-  totem_memset((state->numSPs), (uint32_t)0, vcount, type, par->streams[1]);
+  CALL_SAFE(totem_memset((state->numSPs), (uint32_t)0, vcount, type, 
+                         par->streams[1]));
   if (src_pid == par->id) {
     // For the source vertex, initialize its own distance and numSPs
-    totem_memset(&((state->distance[par->id])[src_vid]), (cost_t)0, 1, type,
-                 par->streams[1]);
-    totem_memset(&((state->numSPs)[src_vid]), (uint32_t)1, 1, type,
-                 par->streams[1]);
+    CALL_SAFE(totem_memset(&((state->distance[par->id])[src_vid]), (cost_t)0,
+                           1, type, par->streams[1]));
+    CALL_SAFE(totem_memset(&((state->numSPs)[src_vid]), (uint32_t)1, 1, type,
+                           par->streams[1]));
   }
   
   // Initialize the outbox to 0 and set the level to 0
@@ -710,13 +717,16 @@ PRIVATE void betweenness_init(partition_t* par) {
       count = par->outbox[pid].count;
     }
     if (count) {
-      totem_malloc(count * sizeof(cost_t), type, 
-                   (void**)&(state->distance[pid]));
+      CALL_SAFE(totem_malloc(count * sizeof(cost_t), type, 
+                             (void**)&(state->distance[pid])));
     }
   }
-  totem_calloc(vcount * sizeof(uint32_t), type, (void**)&(state->numSPs));
-  totem_calloc(vcount * sizeof(score_t), type, (void**)&(state->delta));
-  totem_calloc(vcount * sizeof(score_t), type, (void**)&(state->betweenness));
+  CALL_SAFE(totem_calloc(vcount * sizeof(uint32_t), type, 
+                         (void**)&(state->numSPs)));
+  CALL_SAFE(totem_calloc(vcount * sizeof(score_t), type,
+                         (void**)&(state->delta)));
+  CALL_SAFE(totem_calloc(vcount * sizeof(score_t), type,
+                         (void**)&(state->betweenness)));
 
   // Initialize the state's done flag
   state->done = engine_get_finished_ptr(par->id);
@@ -845,20 +855,20 @@ void betweenness_hybrid_core(vid_t source, bool is_first_iteration,
 error_t betweenness_hybrid(double epsilon, score_t* betweenness_score) {
   // Sanity check on input
   bool finished = false;
-  error_t rc = betweenness_check_special_cases(engine_vertex_count(), 
-                                               engine_edge_count(),
+  error_t rc = betweenness_check_special_cases(engine_get_graph(), 
                                                &finished, betweenness_score);
   if (finished) return rc;
 
   // Initialize the global state
   bc_g.betweenness_score = betweenness_score;
-  totem_memset(bc_g.betweenness_score, (score_t)0, engine_vertex_count(),
-               TOTEM_MEM_HOST);
+  CALL_SAFE(totem_memset(bc_g.betweenness_score, (score_t)0, 
+                         engine_vertex_count(), TOTEM_MEM_HOST));
   bc_g.epsilon = epsilon;
 
   if (engine_largest_gpu_partition()) {
-    totem_malloc(engine_largest_gpu_partition() * sizeof(score_t),
-                 TOTEM_MEM_HOST_PINNED, (void**)&bc_g.betweenness_score_h);
+    CALL_SAFE(totem_malloc(engine_largest_gpu_partition() * sizeof(score_t),
+                           TOTEM_MEM_HOST_PINNED, 
+                           (void**)&bc_g.betweenness_score_h));
   }
 
   // Determine whether we will compute exact or approximate BC values
@@ -878,7 +888,7 @@ error_t betweenness_hybrid(double epsilon, score_t* betweenness_score) {
     bc_g.num_samples = num_samples;
     // Populate the array of indices to sample
     vid_t* sample_nodes = centrality_select_sampling_nodes(
-                          engine_vertex_count(), num_samples);
+                          engine_get_graph(), num_samples);
  
     for (int source_index = 0; source_index < num_samples; source_index++) {
       // Get the next sample node in the array to use as a source
