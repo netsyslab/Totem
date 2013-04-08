@@ -27,9 +27,11 @@ inline PRIVATE void superstep_compute_synchronize() {
     CALL_CU_SAFE(cudaStreamSynchronize(par->streams[1]));
     float time;
     cudaEventElapsedTime(&time, par->event_start, par->event_end);
-    // in a multi-gpu setup, we time the slowest one
+    // log the total time spent computing on GPUs
+    context.timing.alg_gpu_total_comp += time;
     max_gpu_time = time > max_gpu_time ? time : max_gpu_time;
   }
+  // log the time of the slowest gpu
   context.timing.alg_gpu_comp += max_gpu_time;
 }
 
@@ -125,8 +127,8 @@ error_t engine_execute() {
     superstep_communicate();      // communication/synchronize phase
     if (*context.finished) break; // check for termination
   }
-  engine_aggregate();
   context.timing.alg_exec += stopwatch_elapsed(&stopwatch);
+  engine_aggregate();
   stopwatch_start(&stopwatch);
   if (context.config.par_finalize_func) {
     for (int pid = 0; pid < context.pset->partition_count; pid++) {
@@ -266,6 +268,7 @@ PRIVATE void init_context_partitions_state() {
 
 PRIVATE error_t init_check_space(graph_t* graph, totem_attr_t* attr, int pcount,
                                  double* shares, processor_t* processors) {
+  if (attr->mapped) return SUCCESS;
   for (int pid = 0; pid < pcount; pid++) {
     if (processors[pid].type == PROCESSOR_GPU) {
       size_t needed = (((double)graph->vertex_count + 
@@ -337,14 +340,15 @@ void engine_finalize() {
 }
 
 void engine_reset_bsp_timers() {
-  context.timing.alg_exec     = 0;
-  context.timing.alg_comp     = 0;
-  context.timing.alg_comm     = 0;
-  context.timing.alg_aggr     = 0;
-  context.timing.alg_scatter  = 0;
-  context.timing.alg_gather   = 0;
-  context.timing.alg_gpu_comp = 0;
-  context.timing.alg_cpu_comp = 0;
-  context.timing.alg_init     = 0;
-  context.timing.alg_finalize = 0;
+  context.timing.alg_exec           = 0;
+  context.timing.alg_comp           = 0;
+  context.timing.alg_comm           = 0;
+  context.timing.alg_aggr           = 0;
+  context.timing.alg_scatter        = 0;
+  context.timing.alg_gather         = 0;
+  context.timing.alg_gpu_comp       = 0;
+  context.timing.alg_gpu_total_comp = 0;
+  context.timing.alg_cpu_comp       = 0;
+  context.timing.alg_init           = 0;
+  context.timing.alg_finalize       = 0;
 }

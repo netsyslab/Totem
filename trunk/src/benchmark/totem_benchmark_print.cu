@@ -72,7 +72,7 @@ void print_header(graph_t* graph, benchmark_options_t* options,
     print_header_partitions(graph);
   }
   printf("\ntotal\texec\tinit\tcomp\tcomm\tfinalize\tcpu_comp\tgpu_comp\t"
-         "scatter\tgather\taggr\ttrv_edges\texec_rate\n"); 
+         "gpu_total_comp\tscatter\tgather\taggr\ttrv_edges\texec_rate\n"); 
   fflush(stdout);
 }
 
@@ -82,7 +82,7 @@ void print_header(graph_t* graph, benchmark_options_t* options,
 void print_timing(graph_t* graph, double time_total, uint64_t trv_edges, 
                   bool totem_based) {
   const totem_timing_t* timers = totem_timing();
-  printf("%0.2f\t%0.2f\t%0.2f\t%0.2f\t%0.2f\t"
+  printf("%0.2f\t%0.2f\t%0.2f\t%0.2f\t%0.2f\t%0.2f\t"
          "%0.2f\t%0.2f\t%0.2f\t%0.2f\t%0.2f\t%0.2f\t%llu\t%0.4f\n",
          time_total,
          totem_based ? timers->alg_exec : time_total,
@@ -92,6 +92,7 @@ void print_timing(graph_t* graph, double time_total, uint64_t trv_edges,
          totem_based ? timers->alg_finalize : 0,
          totem_based ? timers->alg_cpu_comp : 0,
          totem_based ? timers->alg_gpu_comp : 0,
+         totem_based ? timers->alg_gpu_total_comp : 0,
          totem_based ? timers->alg_scatter : 0,
          totem_based ? timers->alg_gather : 0,
          totem_based ? timers->alg_aggr : 0,

@@ -72,13 +72,15 @@ typedef struct totem_attr_s {
 typedef struct totem_timing_s {
   double engine_init;  /**< Engine initialization  */
   double engine_par;   /**< Partitioning (included in engine_init) */
-  double alg_exec;     /**< Algorithm execution alg_(comp + comm + aggr) */
+  double alg_exec;     /**< Algorithm execution alg_(comp + comm) */
   double alg_comp;     /**< Compute phase */
   double alg_comm;     /**< Communication phase (inlcudes scatter/gather) */
   double alg_aggr;     /**< Final result aggregation */
   double alg_scatter;  /**< The scatter step in communication (push mode) */
   double alg_gather;   /**< The gather step in communication (pull mode) */
-  double alg_gpu_comp; /**< GPU computation (included in alg_comp) */
+  double alg_gpu_comp; /**< Computation time of the slowest GPU
+                            (included in alg_comp) */
+  double alg_gpu_total_comp; /**< Sum of computation time of all GPUs */
   double alg_cpu_comp; /**< CPU computation (included in alg_comp) */
   double alg_init;     /**< Algorithm initialization */
   double alg_finalize; /**< Algorithm finalization */

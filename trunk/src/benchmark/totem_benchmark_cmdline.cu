@@ -41,7 +41,7 @@ PRIVATE void display_help(char* exe_name, int exit_err) {
   printf("Usage: %s [options] graph_file\n"
          "Options\n"
          "  -aNUM [0-100] Percentage of edges allocated to CPU partition "
-         "(default 50\\%)\n"
+         "(default 50%%)\n"
          "  -bNUM Benchmark\n"
          "     %d: BFS (default)\n"
          "     %d: PageRank\n"
