@@ -121,3 +121,71 @@ error_t centrality_construct_r_edges(const graph_t* graph, vid_t** r_edges_p) {
   *r_edges_p = r_edges;
   return SUCCESS;
 }
+
+
+error_t betweenness_check_special_cases(const graph_t* graph, bool* finished,
+                                        score_t* betweenness_score) {
+  if (graph->vertex_count == 0 || betweenness_score == NULL) {
+    *finished = true;
+    return FAILURE;
+  }
+
+  if (graph->edge_count == 0) {
+    *finished = true;
+    totem_memset(betweenness_score, (score_t)0.0, graph->vertex_count, 
+                 TOTEM_MEM_HOST);
+    return SUCCESS;
+  }
+
+  *finished = false;
+  return SUCCESS;
+}
+
+int centrality_get_number_sample_nodes(vid_t vertex_count, double epsilon) {
+  if (epsilon == CENTRALITY_SINGLE) return 1;
+  // Compute Log2(Total Number of Nodes) by right shifting until the
+  // value drops below 2, then scale by 1/epsilon^2 */
+  int number_sample_nodes = 0;
+  while (vertex_count > 1) {
+    number_sample_nodes++;
+    vertex_count >>= 1;
+  }
+  number_sample_nodes = ((number_sample_nodes)/(epsilon*epsilon));
+  return number_sample_nodes;
+}
+
+vid_t* centrality_select_sampling_nodes(const graph_t* graph,
+                                        int number_samples) {
+  // Array to store the indices of the selected sampling nodes
+  vid_t* sample_nodes = (vid_t*)malloc(number_samples * sizeof(vid_t));
+  // Randomly select unique vertices until we have the desired number
+  int i = 0;
+  while (i < number_samples) {
+    // pick only connected nodes
+    int trials = 100;
+    do {
+      sample_nodes[i] = rand() % graph->vertex_count;
+      trials--;
+    } while (((graph->vertices[sample_nodes[i] + 1] - 
+               graph->vertices[sample_nodes[i]]) == 0) && trials);
+    if (trials == 0) {
+      fprintf(stderr, "Error: couldn't find a connected node\n");
+      fflush(stderr);
+      assert(false);
+    }
+
+    // Check whether the new sample node is a duplicate
+    // If it is, don't increment so that we'll find a different node instead
+    bool is_duplicate = false;
+    for (int k = 0; k < i; k++) {
+      if (sample_nodes[k] == sample_nodes[i]) {
+        is_duplicate = true;
+        break;
+      }
+    }
+    if (!is_duplicate) {
+      i++;
+    }
+  }
+  return sample_nodes;
+}

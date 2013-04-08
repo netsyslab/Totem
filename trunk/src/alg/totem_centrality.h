@@ -15,72 +15,23 @@
  * Checks for input parameters and special cases. This is invoked at the
  * beginning of public interfaces (GPU and CPU).
  */
-inline
-error_t betweenness_check_special_cases(vid_t vertex_count, eid_t edge_count,
-                                        bool* finished,
-                                        score_t* betweenness_score) {
-  if (vertex_count == 0 || betweenness_score == NULL) {
-    *finished = true;
-    return FAILURE;
-  }
-
-  if (edge_count == 0) {
-    *finished = true;
-    memset(betweenness_score, (score_t)0.0, vertex_count * sizeof(score_t));
-    return SUCCESS;
-  }
-
-  *finished = false;
-  return SUCCESS;
-}
+error_t betweenness_check_special_cases(const graph_t* graph, bool* finished, 
+                                        score_t* betweenness_score);
 
 /**
  * Determine the number of sample nodes to use based on the total number
  * of nodes in the graph and the value of epsilon provided.
  * Number of Samples Nodes = Log2(Total Number of Nodes) / Epsilon^2
  */
-inline
-int centrality_get_number_sample_nodes(vid_t vertex_count, double epsilon) {
-  // Compute Log2(Total Number of Nodes) by right shifting until the
-  // value drops below 2, then scale by 1/epsilon^2 */
-  int number_sample_nodes = 0;
-  while (vertex_count > 1) {
-    number_sample_nodes++;
-    vertex_count >>= 1;
-  }
-  number_sample_nodes = ((number_sample_nodes)/(epsilon*epsilon));
-  return number_sample_nodes;
-}
+int centrality_get_number_sample_nodes(vid_t vertex_count, double epsilon);
 
 /**
  * Populate the sampling nodes for approximate centrality.
- * Currently just randomly selects nodes within the graph and also verifies
- * that there are no duplicates, then returns the allocated pointer.
+ * It randomly selects nodes within the graph. The nodes are not duplicates and
+ * each one have at least one outgoing edge.
  */
-inline
-vid_t* centrality_select_sampling_nodes(vid_t vertex_count,
-                                        int number_samples) {
-  // Array to store the indices of the selected sampling nodes
-  vid_t* sample_nodes = (vid_t*)malloc(number_samples * sizeof(vid_t));
-  // Randomly select unique vertices until we have the desired number
-  int i = 0;
-  while (i < number_samples) {
-    sample_nodes[i] = rand() % vertex_count;
-    // Check whether the new sample node is a duplicate
-    // If it is, don't increment so that we'll find a different node instead
-    bool is_duplicate = false;
-    for (int k = 0; k < i; k++) {
-      if (sample_nodes[k] == sample_nodes[i]) {
-        is_duplicate = true;
-        break;
-      }
-    }
-    if (!is_duplicate) {
-      i++;
-    }
-  }
-  return sample_nodes;
-}
+vid_t* centrality_select_sampling_nodes(const graph_t* graph, 
+                                        int number_samples);
 
 /**
  * Unweighted BFS single source shortest path kernel using a successor stack.

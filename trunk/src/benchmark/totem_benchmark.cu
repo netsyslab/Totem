@@ -152,10 +152,10 @@ PRIVATE void benchmark_dijkstra(graph_t* graph, void* distance,
 PRIVATE void benchmark_betweenness(graph_t* graph, void* betweenness_score, 
                                    totem_attr_t* attr) {
   if (options->platform == PLATFORM_CPU) {
-    CALL_SAFE(betweenness_cpu(graph, CENTRALITY_APPROXIMATE, 
+    CALL_SAFE(betweenness_cpu(graph, CENTRALITY_SINGLE, 
                               (score_t*)betweenness_score));
   } else {
-    CALL_SAFE(betweenness_hybrid(CENTRALITY_APPROXIMATE,
+    CALL_SAFE(betweenness_hybrid(CENTRALITY_SINGLE,
                                  (score_t*)betweenness_score));
   }
 }

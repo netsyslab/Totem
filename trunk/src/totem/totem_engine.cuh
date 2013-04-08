@@ -215,6 +215,11 @@ bool* engine_get_finished_ptr();
 */
 bool* engine_get_finished_ptr(int pid);
 
+/*
+ * Returns a refernce to the original graph
+ */
+const graph_t* engine_get_graph();
+
 /**
  * Returns the number of partitions
  */

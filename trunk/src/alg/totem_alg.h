@@ -29,7 +29,7 @@ typedef float rank_t;
  * Used to define the number of rounds: a static convergance condition
  * for PageRank
  */
-const int PAGE_RANK_ROUNDS = 30;
+const int PAGE_RANK_ROUNDS = 10;
 
 /**
  * A probability used in the PageRank algorithm that models the behavior of the 
@@ -54,9 +54,12 @@ typedef float score_t;
  * exact metric. For approximate Betweenness Centrality, we are currently using
  * a value of 1.0, which could change. This value was initially selected as it
  * allows the algorithm to complete in a more reasonable amount of time.
+ * The CENTRALITY_SINGLE value configures the centrality algorithm to run a
+ * single iteration, which is used for benchmarking purposes.
  */
 const double CENTRALITY_EXACT = 0.0;
 const double CENTRALITY_APPROXIMATE = 1.0;
+const double CENTRALITY_SINGLE = -1.0;
 
 /**
  * Struct used to pass multiple values during the communication phase for
