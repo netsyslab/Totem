@@ -83,7 +83,7 @@ void totem_free(void* ptr, totem_mem_t type);
  *                   to host buffers.
  */
 template<typename T>
-void totem_memset(T* ptr, T value, size_t size, totem_mem_t type, 
+error_t totem_memset(T* ptr, T value, size_t size, totem_mem_t type, 
                   cudaStream_t stream = 0) {
   switch (type) {
     case TOTEM_MEM_HOST:
@@ -99,13 +99,14 @@ void totem_memset(T* ptr, T value, size_t size, totem_mem_t type,
       dim3 blocks; dim3 threads;
       KERNEL_CONFIGURE(size, blocks, threads);
       memset_device<<<blocks, threads, 0, stream>>>(ptr, value, size);
-      CALL_CU_SAFE(cudaGetLastError());
+      if (cudaGetLastError() != cudaSuccess) return FAILURE;      
       break;
     }
     default:
       fprintf(stderr, "Error: invalid memory type\n");
       assert(false);
   }
+  return SUCCESS;
 }
 
 #endif  // TOTEM_MEM_H
