@@ -694,7 +694,7 @@ void betweenness_cpu_backward_propagation(const graph_t* graph,
                                           cost_t* distance, score_t* delta, 
                                           score_t* betweenness_centrality) {
   // Set deltas to 0 for every input node
-  memset(delta, 0, graph->vertex_count * sizeof(vid_t));
+  memset(delta, 0, graph->vertex_count * sizeof(score_t));
   while (level > 1) {
     level--;
     // In parallel, iterate over vertices which are at the current level
