@@ -94,7 +94,7 @@ void bfs_kernel(partition_t par, cost_t level, bool* finished,
     (par.subgraph.vertex_count - v) : VWARP_BATCH_SIZE;
   vwarp_memcpy(my_space->cost, &cost[v], batch_size, warp_offset);
   vwarp_memcpy(my_space->vertices, &(par.subgraph.vertices[v]),
-               batch_size + 1, warp_offset);
+               batch_size + 1, warp_offset);  
 
   // iterate over my work
   for(vid_t v = 0; v < batch_size; v++) {
@@ -173,7 +173,7 @@ PRIVATE void bfs(partition_t* par) {
 PRIVATE inline void bfs_scatter_cpu(grooves_box_table_t* inbox, 
                                     bfs_state_t* state, bitmap_t* visited) {
   bitmap_t remotely_visited = (bitmap_t)inbox->push_values;
-  OMP(omp parallel for schedule(static))
+  OMP(omp parallel for schedule(runtime))
   for (vid_t index = 0; index < inbox->count; index++) {
     vid_t vid = inbox->rmt_nbrs[index];
     if (bitmap_is_set(remotely_visited, index) &&
@@ -201,8 +201,8 @@ PRIVATE inline void bfs_scatter_gpu(grooves_box_table_t* inbox,
                                     bfs_state_t* state, bitmap_t* visited) {
   dim3 blocks, threads;
   KERNEL_CONFIGURE(inbox->count, blocks, threads);
-  bfs_scatter_kernel<<<blocks, threads>>>(*inbox, state->cost, state->level, 
-                                          visited);
+  bfs_scatter_kernel<<<blocks, threads>>>
+    (*inbox, state->cost, state->level, visited);
   CALL_CU_SAFE(cudaGetLastError());
 }
 
@@ -240,7 +240,7 @@ PRIVATE void bfs_aggregate(partition_t* par) {
   }
   // aggregate the results
   assert(state_g.cost);
-  OMP(omp parallel for schedule(static))
+  OMP(omp parallel for schedule(runtime))
   for (vid_t v = 0; v < subgraph->vertex_count; v++) {
     state_g.cost[par->map[v]] = src_cost[v];
   }
