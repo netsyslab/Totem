@@ -11,7 +11,7 @@ TARGET  = benchmark
 TOTEM_PATH   = ../totem
 TOTEM_INC    = -I$(TOTEM_PATH)
 TOTEM_LIB    = -ltotem -L$(TOTEM_PATH)
-TOTEM_DEPS   = $(wildcard $(TOTEM_PATH)/*.[cuh,h])
+TOTEM_DEPS   = $(wildcard $(TOTEM_PATH)/*.cuh) $(wildcard $(TOTEM_PATH)/*.h)
 
 ALG_PATH   = ../alg
 ALG_INC    = -I$(ALG_PATH)

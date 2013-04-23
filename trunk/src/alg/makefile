@@ -10,7 +10,7 @@ TARGET  = alg
 
 TOTEM_PATH   = ../totem
 TOTEM_INC    = -I$(TOTEM_PATH)
-TOTEM_DEPS   = $(wildcard $(TOTEM_PATH)/*.[cuh,h])
+TOTEM_DEPS   = $(wildcard $(TOTEM_PATH)/*.cuh) $(wildcard $(TOTEM_PATH)/*.h)
 
 DEPS = $(CCDEPS) $(CUDEPS) $(TOTEM_DEPS)
 
