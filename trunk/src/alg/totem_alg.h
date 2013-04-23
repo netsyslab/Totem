@@ -29,7 +29,7 @@ typedef float rank_t;
  * Used to define the number of rounds: a static convergance condition
  * for PageRank
  */
-const int PAGE_RANK_ROUNDS = 10;
+const int PAGE_RANK_ROUNDS = 5;
 
 /**
  * A probability used in the PageRank algorithm that models the behavior of the 
@@ -60,16 +60,6 @@ typedef float score_t;
 const double CENTRALITY_EXACT = 0.0;
 const double CENTRALITY_APPROXIMATE = 1.0;
 const double CENTRALITY_SINGLE = -1.0;
-
-/**
- * Struct used to pass multiple values during the communication phase for
- * backwards propagation in hybrid betweenness centrality
- */
-typedef struct betweenness_backward_s {
-  cost_t numSPs;
-  uint32_t delta;
-} betweenness_backward_t;
-
 
 /**
  * Given an undirected, unweighted graph and a source vertex, find the minimum

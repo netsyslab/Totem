@@ -45,7 +45,7 @@ const benchmark_attr_t BENCHMARKS[] = {
     sizeof(weight_t),
     true,
     sizeof(uint32_t) * BITS_PER_BYTE,
-    sizeof(betweenness_backward_t) * BITS_PER_BYTE
+    sizeof(score_t) * BITS_PER_BYTE
   }
 };
 
@@ -165,13 +165,16 @@ PRIVATE void benchmark_betweenness(graph_t* graph, void* betweenness_score,
  */
 PRIVATE void benchmark_run() {
   assert(options);
+  
   graph_t* graph = NULL;
   CALL_SAFE(graph_initialize(options->graph_file, 
                              (options->benchmark == BENCHMARK_DIJKSTRA),
                              &graph));
+  print_config(graph, options, BENCHMARKS[options->benchmark].name);
+
   void* benchmark_state = NULL;
   totem_malloc(graph->vertex_count * BENCHMARKS[options->benchmark].output_size,
-               TOTEM_MEM_HOST_PINNED, (void**)&benchmark_state);
+               TOTEM_MEM_HOST, (void**)&benchmark_state);
   assert(benchmark_state || (BENCHMARKS[options->benchmark].output_size == 0));
 
   bool totem_based = BENCHMARKS[options->benchmark].has_totem && 
@@ -193,8 +196,7 @@ PRIVATE void benchmark_run() {
   // Configure OpenMP 
   omp_set_num_threads(options->thread_count);
   omp_set_schedule(options->omp_sched, 0);
-  print_header(graph, options, BENCHMARKS[options->benchmark].name, 
-               totem_based);
+  print_header(graph, totem_based);
 
   srand(SEED);
   for (int s = 0; s < options->repeat; s++) {
@@ -209,7 +211,7 @@ PRIVATE void benchmark_run() {
   if (totem_based) {
     totem_finalize();
   }
-  totem_free(benchmark_state, TOTEM_MEM_HOST_PINNED);
+  totem_free(benchmark_state, TOTEM_MEM_HOST);
   CALL_SAFE(graph_finalize(graph));
 }
 

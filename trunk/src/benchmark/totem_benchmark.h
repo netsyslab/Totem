@@ -74,11 +74,17 @@ benchmark_options_t* benchmark_cmdline_parse(int argc, char** argv);
  * Prints out the configuration parameters of this benchmark run
  * @param[in] graph the graph being benchmarked
  * @param[in] options benchmark options
- * @param[in] benchmark_str benchmark name
+ * @param[in] benchmark_name benchmark name
+ */
+void print_config(graph_t* graph, benchmark_options_t* options, 
+                  const char* benchmark_name);
+
+/**
+ * Prints out the header of the runs' detailed timing 
+ * @param[in] graph the graph being benchmarked
  * @param[in] totem_based defines whether the benchmark was run via Totem or not
  */
-void print_header(graph_t* graph, benchmark_options_t* options, 
-                  const char* benchmark_name, bool totem_based);
+void print_header(graph_t* graph, bool totem_based);
 
 /**
  * Prints out detailed timing of a single run

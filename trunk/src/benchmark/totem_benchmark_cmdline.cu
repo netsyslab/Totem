@@ -30,7 +30,7 @@ PRIVATE benchmark_options_t options = {
  * Maximum Number of times an experiment is repeated or sources used to 
  * benchmark a traversal algorithm
 */
-const int REPEAT_MAX = 100;
+const int REPEAT_MAX = 1000;
 
 /**
  * Displays the help message of the program.
