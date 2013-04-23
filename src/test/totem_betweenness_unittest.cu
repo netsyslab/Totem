@@ -63,20 +63,20 @@ class BetweennessCentralityTest : public TestWithParam<betweenness_param_t*> {
   virtual void TearDown() {
     if (_graph) graph_finalize(_graph);
     if (_betweenness_score) {
-      totem_free(_betweenness_score, TOTEM_MEM_HOST_PINNED);
+      totem_free(_betweenness_score, TOTEM_MEM_HOST);
     }
   }
 
   error_t TestGraph() {
     if (_graph->vertex_count) {
-      totem_malloc(_graph->vertex_count * sizeof(score_t), TOTEM_MEM_HOST_PINNED,
-                   (void**)&_betweenness_score);
+      totem_malloc(_graph->vertex_count * sizeof(score_t), 
+                   TOTEM_MEM_HOST, (void**)&_betweenness_score);
     }
     if (_betweenness_param->attr != NULL) {
       _betweenness_param->attr->push_msg_size = 
         sizeof(uint32_t) * BITS_PER_BYTE;
       _betweenness_param->attr->pull_msg_size =
-        sizeof(betweenness_backward_t) * BITS_PER_BYTE;
+        sizeof(score_t) * BITS_PER_BYTE;
       if (totem_init(_graph, _betweenness_param->attr) == FAILURE) {
         return FAILURE;
       }

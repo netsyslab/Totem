@@ -47,23 +47,27 @@ PRIVATE void print_header_partitions(graph_t* graph) {
 /**
  * Prints out the configuration parameters of this benchmark run
  */
-void print_header(graph_t* graph, benchmark_options_t* options, 
-                  const char* benchmark_name, bool totem_based) {
+void print_config(graph_t* graph, benchmark_options_t* options, 
+                  const char* benchmark_name) {
   const char* OMP_PROC_BIND = getenv("OMP_PROC_BIND");
-  omp_sched_t sched; int sched_modifier;
-  omp_get_schedule(&sched, &sched_modifier);
   printf("file:%s\tbenchmark:%s\tvertices:%llu\tedges:%llu\tpartitioning:%s\t"
          "platform:%s\talpha:%d\trepeat:%d\tgpu_count:%d\t"
          "thread_count:%d\tthread_sched:%s\tthread_bind:%s\t"
-         "mapped:%s\tgpu_par_randomized:%s", 
+         "mapped:%s\tgpu_par_randomized:%s\tvwarp_warp_size:%d\t"
+         "vwarp_batch_size:%d",
          options->graph_file, benchmark_name, 
          (uint64_t)graph->vertex_count, (uint64_t)graph->edge_count, 
          PAR_ALGO_STR[options->par_algo], PLATFORM_STR[options->platform], 
          options->alpha, options->repeat, options->gpu_count, 
-         omp_get_max_threads(), OMP_SCHEDULE_STR[sched], 
+         options->thread_count, OMP_SCHEDULE_STR[options->omp_sched], 
          OMP_PROC_BIND == NULL ? "false" : OMP_PROC_BIND,
          options->mapped ? "true" : "false",
-         options->gpu_par_randomized ? "true" : "false");
+         options->gpu_par_randomized ? "true" : "false",
+         VWARP_WARP_SIZE, VWARP_BATCH_SIZE);
+  fflush(stdout);
+}
+
+void print_header(graph_t* graph, bool totem_based) {
   if (totem_based) {
     // print the time spent on initializing Totem and partitioning the graph
     const totem_timing_t* timers = totem_timing();
