@@ -66,9 +66,9 @@ error_t totem_malloc(size_t size, totem_mem_t type, void** ptr) {
       if (cudaMalloc(ptr, size) != cudaSuccess) {
         size_t available = 0; size_t total = 0;
         CALL_CU_SAFE(cudaMemGetInfo(&available, &total));
-        fprintf(stderr, 
-                "Error: GPU out of memory. Requested %llu, Available %llu\n",
-                size, available); fflush(stdout);
+        fprintf(stderr, "Error: Could not allocate memory on device. "
+                "Requested %llu, Available %llu\n", size, available); 
+        fflush(stdout);
         err = FAILURE;
       }
       break;
