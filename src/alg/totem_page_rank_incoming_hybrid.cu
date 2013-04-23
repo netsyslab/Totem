@@ -14,7 +14,7 @@
  */
 typedef struct pagestate_s {
   rank_t* rank;
-  rank_t* rank_s;
+  rank_t* rank_s[MAX_PARTITION_COUNT];
   dim3 blocks;
   dim3 threads;
 } page_rank_state_t;
@@ -47,7 +47,6 @@ error_t check_special_cases(float* rank, bool* finished) {
   return SUCCESS;
 }
 
-
 /**
  * Sum the rank of the neighbors.
  * @param[in] graph the graph to apply page rank on
@@ -55,13 +54,12 @@ error_t check_special_cases(float* rank, bool* finished) {
  * @return sum of neighbors' ranks
  */
 inline __device__ __host__
-double sum_neighbors_ranks(int pid, grooves_box_table_t* outbox, 
-                           graph_t* graph, vid_t vid, rank_t* ranks) {
-  double sum = 0;
+rank_t sum_neighbors_ranks(graph_t* graph, vid_t vid, page_rank_state_t* ps) {
+  rank_t sum = 0;
   for (eid_t i = graph->vertices[vid];
        i < graph->vertices[vid + 1]; i++) {
-    rank_t* src = engine_get_src_ptr(pid, graph->edges[i], outbox, ranks);
-    sum += *src;
+    rank_t* nbr_rank_s = ps->rank_s[GET_PARTITION_ID(graph->edges[i])];
+    sum += nbr_rank_s[GET_VERTEX_ID(graph->edges[i])];
   }
   return sum;
 }
@@ -85,43 +83,35 @@ double sum_neighbors_ranks(int pid, grooves_box_table_t* outbox,
  * @param[in] outbox messages to be broadcasted in the next round
  */
 __global__
-void page_rank_incoming_kernel(partition_t par, vid_t vcount, rank_t* rank, 
-                               rank_t* rank_s, bool last_round) {
+void page_rank_incoming_kernel(partition_t par, page_rank_state_t ps, 
+                               vid_t vcount, bool last_round) {
   vid_t vid = THREAD_GLOBAL_INDEX;
   if (vid >= par.subgraph.vertex_count) return;
-  double sum = sum_neighbors_ranks(par.id, par.outbox_d, &par.subgraph, vid, 
-                                   rank_s);
-  double my_rank = ((1 - PAGE_RANK_DAMPING_FACTOR) / vcount) + 
+  rank_t sum = sum_neighbors_ranks(&par.subgraph, vid, &ps);
+  rank_t my_rank = ((1 - PAGE_RANK_DAMPING_FACTOR) / vcount) + 
     (PAGE_RANK_DAMPING_FACTOR * sum);
-  if (!last_round) {
-    my_rank /=
-      (par.subgraph.vertices[vid + 1] - par.subgraph.vertices[vid]);
-  }
-  rank[vid] = my_rank;
+  ps.rank[vid] = last_round ? my_rank : 
+    my_rank / (par.subgraph.vertices[vid + 1] - par.subgraph.vertices[vid]);
 }
 
 PRIVATE void page_rank_incoming_gpu(partition_t* par, bool last_round) {
   page_rank_state_t* ps = (page_rank_state_t*)par->algo_state;
   page_rank_incoming_kernel<<<ps->blocks, ps->threads, 0,
-    par->streams[1]>>>(*par, engine_vertex_count(), ps->rank, ps->rank_s, 
-                       last_round);
+    par->streams[1]>>>(*par, *ps, engine_vertex_count(), last_round);
   CALL_CU_SAFE(cudaGetLastError());
 }
 
 PRIVATE void page_rank_incoming_cpu(partition_t* par, bool last_round) {
   page_rank_state_t* ps = (page_rank_state_t*)par->algo_state;
+  graph_t* subgraph = &(par->subgraph);
   vid_t vcount = engine_vertex_count();  
   OMP(omp parallel for schedule(runtime))
-  for(vid_t vid = 0; vid < par->subgraph.vertex_count; vid++) {
-    double sum = sum_neighbors_ranks(par->id, par->outbox, &par->subgraph, 
-                                     vid, ps->rank_s);
-    double my_rank = ((1 - PAGE_RANK_DAMPING_FACTOR) / vcount) + 
+  for(vid_t vid = 0; vid < subgraph->vertex_count; vid++) {
+    rank_t sum = sum_neighbors_ranks(subgraph, vid, ps);
+    rank_t my_rank = ((1 - PAGE_RANK_DAMPING_FACTOR) / vcount) + 
       (PAGE_RANK_DAMPING_FACTOR * sum);
-    if (!last_round) {
-      my_rank /=
-        (par->subgraph.vertices[vid + 1] - par->subgraph.vertices[vid]);
-    }
-    ps->rank[vid] = my_rank;
+    ps->rank[vid] = last_round ? my_rank : 
+      my_rank / (subgraph->vertices[vid + 1] - subgraph->vertices[vid]);
   }
 }
 
@@ -129,8 +119,8 @@ PRIVATE void page_rank_incoming(partition_t* par) {
   if (engine_superstep() > 1) {
     page_rank_state_t* ps = (page_rank_state_t*)par->algo_state;
     rank_t* tmp = ps->rank;
-    ps->rank = ps->rank_s;
-    ps->rank_s = tmp;
+    ps->rank = ps->rank_s[par->id];
+    ps->rank_s[par->id] = tmp;
     bool last_round = (engine_superstep() == (PAGE_RANK_ROUNDS + 1));
     if (par->processor.type == PROCESSOR_GPU) {
       page_rank_incoming_gpu(par, last_round);
@@ -180,7 +170,14 @@ PRIVATE void page_rank_incoming_init(partition_t* par) {
     type = TOTEM_MEM_DEVICE;
     KERNEL_CONFIGURE(vcount, ps->blocks, ps->threads);
   }
-  CALL_SAFE(totem_malloc(vcount * sizeof(rank_t), type, (void**)&(ps->rank_s)));
+  for (int pid = 0; pid < engine_partition_count(); pid++) {
+    if (pid == par->id) {
+      CALL_SAFE(totem_malloc(vcount * sizeof(rank_t), type, 
+                             (void**)&(ps->rank_s[par->id])));
+    } else {
+      ps->rank_s[pid] = (rank_t*)par->outbox[pid].pull_values;
+    }
+  }
   CALL_SAFE(totem_malloc(vcount * sizeof(rank_t), type, (void**)&(ps->rank)));
   rank_t init_value = 1 / (rank_t)engine_vertex_count();
   totem_memset(ps->rank, init_value, vcount, type, par->streams[1]);
@@ -195,7 +192,7 @@ PRIVATE void page_rank_incoming_finalize(partition_t* partition) {
     type = TOTEM_MEM_DEVICE;
   } 
   totem_free(ps->rank, type);
-  totem_free(ps->rank_s, type);
+  totem_free(ps->rank_s[partition->id], type);
   totem_free(ps, TOTEM_MEM_HOST);
   partition->algo_state = NULL;
 }

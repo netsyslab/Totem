@@ -46,8 +46,8 @@ error_t check_special_cases(graph_t* graph, rank_t* rank, bool* finished) {
  * @return sum of neighbors' ranks
  */
 inline __device__
-double sum_neighbors_ranks(graph_t* graph, vid_t vertex_id, rank_t* ranks) {
-  double sum = 0;
+rank_t sum_neighbors_ranks(graph_t* graph, vid_t vertex_id, rank_t* ranks) {
+  rank_t sum = 0;
   for (eid_t i = graph->vertices[vertex_id];
        i < graph->vertices[vertex_id + 1]; i++) {
     const vid_t neighbor = graph->edges[i];
@@ -80,7 +80,7 @@ void page_rank_kernel(graph_t graph, rank_t* inbox, rank_t* outbox) {
   vid_t vertex_id = THREAD_GLOBAL_INDEX;
   if (vertex_id >= graph.vertex_count) return;
   // get sum of neighbors' ranks
-  double sum = sum_neighbors_ranks(&graph, vertex_id, inbox);
+  rank_t sum = sum_neighbors_ranks(&graph, vertex_id, inbox);
   // calculate my normalized rank
   rank_t my_rank = ((1 - PAGE_RANK_DAMPING_FACTOR) / graph.vertex_count) + 
     (PAGE_RANK_DAMPING_FACTOR * sum);
@@ -99,7 +99,7 @@ void page_rank_final_kernel(graph_t graph, rank_t* inbox, rank_t* outbox) {
   vid_t vertex_id = THREAD_GLOBAL_INDEX;
   if (vertex_id >= graph.vertex_count) return;
   // get sum of neighbors' ranks
-  double sum = sum_neighbors_ranks(&graph, vertex_id, inbox);
+  rank_t sum = sum_neighbors_ranks(&graph, vertex_id, inbox);
   // calculate my rank
   outbox[vertex_id] = ((1 - PAGE_RANK_DAMPING_FACTOR) / graph.vertex_count) + 
     (PAGE_RANK_DAMPING_FACTOR * sum);
@@ -221,7 +221,7 @@ error_t page_rank_incoming_cpu(graph_t* graph, rank_t *rank_i, rank_t* rank) {
     OMP(omp parallel for schedule(runtime))
     for(vid_t vertex_id = 0; vertex_id < graph->vertex_count; vertex_id++) {
       // calculate the sum of all neighbors' rank
-      double sum = 0;
+      rank_t sum = 0;
       for (eid_t i = graph->vertices[vertex_id];
            i < graph->vertices[vertex_id + 1]; i++) {
         vid_t neighbor  = graph->edges[i];
