@@ -1,8 +1,10 @@
 #--------------------------------------------------------------------------
 # Common definitions to all internal makefiles
 #
-# Features (e.g., make DEBUG="YES"):
-#   VERBOSE=YES     // verbose nvcc output (host symbols are always produced)
+# Features (e.g., make DEBUG="DEVICE"):
+#   
+#   EID=64          // 64-bit edge ids
+#   VERBOSE=NO      // disable verbose timing of Totem execution rounds
 #   DEBUG=DEVICE    // produce device debugging symbols
 #   MAXREG=[number] // maximum number of registers per cuda thread (default 16)
 #   L1=YES          // enable using GPU L1 cache (default disabled)
@@ -21,8 +23,9 @@ ifeq ($(EID), 64)
 endif
 
 # enable verbose output
-ifeq ($(VERBOSE), YES)
-  NVCCFLAGS  += --ptxas-options=-v
+ifneq ($(VERBOSE), NO)
+  NVCCFLAGS += -DFEATURE_VERBOSE_TIMING
+  CCFLAGS += -DFEATURE_VERBOSE_TIMING
 endif
 # set debugging options
 ifeq ($(DEBUG), DEVICE)

@@ -30,6 +30,10 @@ inline PRIVATE void superstep_compute_synchronize() {
     // log the total time spent computing on GPUs
     context.timing.alg_gpu_total_comp += time;
     max_gpu_time = time > max_gpu_time ? time : max_gpu_time;
+    // TODO(abdullah): use a logging mechanism instead of ifdef
+#ifdef FEATURE_VERBOSE_TIMING
+    printf("\tGPU%d: %0.2f", par->processor.id, time);
+#endif
   }
   // log the time of the slowest gpu
   context.timing.alg_gpu_comp += max_gpu_time;
@@ -63,11 +67,17 @@ inline PRIVATE void superstep_compute() {
     } else {
       double time = stopwatch_elapsed(&stopwatch_cpu);
       context.timing.alg_cpu_comp += time;
+#ifdef FEATURE_VERBOSE_TIMING
+      printf("#\tCPU: %0.2f", time);
+#endif
     }
   }
   superstep_compute_synchronize();
   double time = stopwatch_elapsed(&stopwatch);
   context.timing.alg_comp += time;
+#ifdef FEATURE_VERBOSE_TIMING
+  printf("\tTotalComp: %0.2f", time);
+#endif
 }
 
 /**
@@ -93,8 +103,15 @@ inline PRIVATE void superstep_communicate() {
       context.config.par_scatter_func(&context.pset->partitions[pid]);
     }
   }
-  context.timing.alg_scatter += stopwatch_elapsed(&stopwatch_scatter);
-  context.timing.alg_comm += stopwatch_elapsed(&stopwatch);
+  double time_scatter = stopwatch_elapsed(&stopwatch_scatter);
+  context.timing.alg_scatter += time_scatter;
+  double time_comm = stopwatch_elapsed(&stopwatch);
+  context.timing.alg_comm += time_comm;
+#ifdef FEATURE_VERBOSE_TIMING
+  printf("\tcomm: %0.2f\tscatter: %0.2f\tTotalComm: %0.2f\n", 
+         time_comm - time_scatter,
+         time_scatter, time_comm);
+#endif
 }
 
 /**
@@ -127,6 +144,9 @@ error_t engine_execute() {
     superstep_communicate();      // communication/synchronize phase
     if (*context.finished) break; // check for termination
   }
+#ifdef FEATURE_VERBOSE_TIMING
+  printf("\n");
+#endif
   context.timing.alg_exec += stopwatch_elapsed(&stopwatch);
   engine_aggregate();
   stopwatch_start(&stopwatch);
