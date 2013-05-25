@@ -38,14 +38,11 @@ class StressCentralityTest : public TestWithParam<StressCentralityFunction> {
 
 // Tests StressCentrality for empty graphs.
 TEST_P(StressCentralityTest, Empty) {
-  graph = (graph_t*) mem_alloc(sizeof(graph_t));
-  graph->directed = false;
-  graph->vertex_count = 0;
-  graph->edge_count = 0;
-
-  EXPECT_EQ(FAILURE, stress(graph, &centrality_score));
-
-  mem_free(graph);
+  graph_t empty_graph;
+  empty_graph.directed = false;
+  empty_graph.vertex_count = 0;
+  empty_graph.edge_count = 0;
+  EXPECT_EQ(FAILURE, stress(&empty_graph, &centrality_score));
 }
 
 // Tests StressCentrality for single node graphs.
@@ -57,7 +54,7 @@ TEST_P(StressCentralityTest, SingleNodeUnweighted) {
   EXPECT_EQ(SUCCESS, stress(graph, &centrality_score));
   EXPECT_FALSE(centrality_score == NULL);
   EXPECT_EQ((weight_t)0.0, centrality_score[0]);
-  mem_free(centrality_score);
+  totem_free(centrality_score, TOTEM_MEM_HOST_PINNED);
   EXPECT_EQ(SUCCESS, graph_finalize(graph));
 }
 
@@ -75,7 +72,7 @@ TEST_P(StressCentralityTest, Chain100Unweighted) {
     EXPECT_EQ((weight_t)(2 * ((99 * i) - (i * i))), centrality_score[99 - i]);
   }
 
-  mem_free(centrality_score);
+  totem_free(centrality_score, TOTEM_MEM_HOST_PINNED);
   graph_finalize(graph);
 }
 
@@ -90,7 +87,7 @@ TEST_P(StressCentralityTest, CompleteGraphUnweighted) {
   for(vid_t vertex = 0; vertex < graph->vertex_count; vertex++){
     EXPECT_FLOAT_EQ(0.0, centrality_score[0]);
   }
-  mem_free(centrality_score);
+  totem_free(centrality_score, TOTEM_MEM_HOST_PINNED);
   EXPECT_EQ(SUCCESS, graph_finalize(graph));
 }
 

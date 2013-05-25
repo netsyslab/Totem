@@ -257,6 +257,11 @@ vid_t* engine_vertex_id_in_partition();
 vid_t engine_vertex_id_in_partition(vid_t);
 
 /**
+ * Returns the type partitioning algorithm type
+ */
+partition_algorithm_t engine_partition_algorithm();
+
+/**
  * Resets the timers that measure the phases of the BSP cycle
  */
 void engine_reset_bsp_timers();

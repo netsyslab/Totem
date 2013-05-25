@@ -72,11 +72,17 @@ inline PRIVATE void superstep_compute() {
 #endif
     }
   }
+#ifdef FEATURE_VERBOSE_TIMING
+  printf("\tbefSync: %0.2f", stopwatch_elapsed(&stopwatch));
+#endif
+  stopwatch_t stopwatch_sync;
+  stopwatch_start(&stopwatch_sync);
   superstep_compute_synchronize();
+  double time_sync = stopwatch_elapsed(&stopwatch_sync);
   double time = stopwatch_elapsed(&stopwatch);
   context.timing.alg_comp += time;
 #ifdef FEATURE_VERBOSE_TIMING
-  printf("\tTotalComp: %0.2f", time);
+  printf("\tSync: %0.2f\tTotalComp: %0.2f", time_sync, time);
 #endif
 }
 

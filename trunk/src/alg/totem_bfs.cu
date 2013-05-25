@@ -24,8 +24,8 @@ typedef struct {
   // last vertex. Another one is added to ensure 8Bytes alignment irrespective 
   // whether sizeof(eid_t) is 4 or 8. Alignment is enforced for performance 
   // reasons.
-  eid_t vertices[VWARP_BATCH_SIZE + 2];
-  cost_t cost[VWARP_BATCH_SIZE];
+  eid_t vertices[VWARP_DEFAULT_BATCH_SIZE + 2];
+  cost_t cost[VWARP_DEFAULT_BATCH_SIZE];
 } vwarp_mem_t;
 
 PRIVATE error_t check_special_cases(graph_t* graph, vid_t src_id, 
@@ -131,15 +131,16 @@ void bfs_kernel(graph_t graph, cost_t level, bool* finished, cost_t* cost) {
  * the threads of a warp invoke this function to process the warp's batch of
  * work. In each iteration of the for loop, each thread processes a neighbor.
  * For example, thread 0 in the warp processes neighbors at indices 0,
- * VWARP_WARP_SIZE, (2 * VWARP_WARP_SIZE) etc. in the edges array, while thread
- * 1 in the warp processes neighbors 1, (1 + VWARP_WARP_SIZE),
- * (1 + 2 * VWARP_WARP_SIZE) and so on.
+ * VWARP_DEFAULT_WARP_WIDTH, (2 * VWARP_DEFAULT_WARP_WIDTH) etc. in the edges 
+ * array, while thread 1 in the warp processes neighbors 1, 
+ * (1 + VWARP_DEFAULT_WARP_WIDTH), (1 + 2 * VWARP_DEFAULT_WARP_WIDTH) and so on.
 */
 __device__
 void vwarp_process_neighbors(vid_t warp_offset, vid_t neighbor_count, 
                              vid_t* neighbors, cost_t* cost, cost_t level,
                              bool* finished) {
-  for(vid_t i = warp_offset; i < neighbor_count; i += VWARP_WARP_SIZE) {
+  for(vid_t i = warp_offset; i < neighbor_count; 
+      i += VWARP_DEFAULT_WARP_WIDTH) {
     vid_t neighbor_id = neighbors[i];
     if (cost[neighbor_id] == INF_COST) {
       cost[neighbor_id] = level + 1;
@@ -157,21 +158,23 @@ __global__
 void vwarp_bfs_kernel(graph_t graph, cost_t level, bool* finished,
                       cost_t* cost, uint32_t thread_count) {
   if (THREAD_GLOBAL_INDEX >= thread_count) return;
-  vid_t warp_offset = THREAD_GLOBAL_INDEX % VWARP_WARP_SIZE;
-  vid_t warp_id     = THREAD_GLOBAL_INDEX / VWARP_WARP_SIZE;
+  vid_t warp_offset = THREAD_GLOBAL_INDEX % VWARP_DEFAULT_WARP_WIDTH;
+  vid_t warp_id     = THREAD_GLOBAL_INDEX / VWARP_DEFAULT_WARP_WIDTH;
 
   __shared__ vwarp_mem_t shared_memory[(MAX_THREADS_PER_BLOCK /
-                                        VWARP_WARP_SIZE)];
-  vwarp_mem_t* my_space = shared_memory + (THREAD_GRID_INDEX / VWARP_WARP_SIZE);
+                                        VWARP_DEFAULT_WARP_WIDTH)];
+  vwarp_mem_t* my_space = &shared_memory[THREAD_BLOCK_INDEX / 
+                                         VWARP_DEFAULT_WARP_WIDTH];
 
   // copy my work to local space
-  vid_t v_ = warp_id * VWARP_BATCH_SIZE;
-  vwarp_memcpy(my_space->cost, &cost[v_], VWARP_BATCH_SIZE, warp_offset);
-  vwarp_memcpy(my_space->vertices, &(graph.vertices[v_]), VWARP_BATCH_SIZE + 1,
+  vid_t v_ = warp_id * VWARP_DEFAULT_BATCH_SIZE;
+  vwarp_memcpy(my_space->cost, &cost[v_], VWARP_DEFAULT_BATCH_SIZE, 
                warp_offset);
+  vwarp_memcpy(my_space->vertices, &(graph.vertices[v_]), 
+               VWARP_DEFAULT_BATCH_SIZE + 1, warp_offset);
 
   // iterate over my work
-  for(vid_t v = 0; v < VWARP_BATCH_SIZE; v++) {
+  for(vid_t v = 0; v < VWARP_DEFAULT_BATCH_SIZE; v++) {
     if (my_space->cost[v] == level) {
       vid_t neighbor_count = my_space->vertices[v + 1] - my_space->vertices[v];
       vid_t* neighbors = &(graph.edges[my_space->vertices[v]]);
@@ -191,11 +194,10 @@ error_t bfs_vwarp_gpu(graph_t* graph, vid_t source_id, cost_t* cost) {
   // Create and initialize state on GPU
   graph_t* graph_d;
   cost_t* cost_d;
-  vid_t cost_length;
   bool* finished_d;
-  cost_length = VWARP_BATCH_SIZE * VWARP_BATCH_COUNT(graph->vertex_count);
-  CHK_SUCCESS(initialize_gpu(graph, source_id, cost_length, &graph_d,
-                             &cost_d, &finished_d), err_free_all);
+  CHK_SUCCESS(initialize_gpu(graph, source_id, 
+                             vwarp_default_state_length(graph->vertex_count),
+                             &graph_d, &cost_d, &finished_d), err_free_all);
 
   // {} used to limit scope and avoid problems with error handles.
   {
@@ -203,15 +205,16 @@ error_t bfs_vwarp_gpu(graph_t* graph, vid_t source_id, cost_t* cost) {
   // configured as shared memory rather than L1 cache
   dim3 blocks;
   dim3 threads_per_block;
-  vid_t thread_count = VWARP_WARP_SIZE * VWARP_BATCH_COUNT(graph->vertex_count);
-  KERNEL_CONFIGURE(thread_count, blocks, threads_per_block);
+  KERNEL_CONFIGURE(vwarp_default_thread_count(graph->vertex_count), blocks, 
+                   threads_per_block);
   cudaFuncSetCacheConfig(vwarp_bfs_kernel, cudaFuncCachePreferShared);
   bool finished = false;
   // while the current level has vertices to be processed.
   for (cost_t level = 0; !finished; level++) {
     CHK_CU_SUCCESS(cudaMemset(finished_d, true, 1), err_free_all);
-    vwarp_bfs_kernel<<<blocks, threads_per_block>>>(*graph_d, level, finished_d,
-                                                    cost_d, thread_count);
+    vwarp_bfs_kernel<<<blocks, threads_per_block>>>
+      (*graph_d, level, finished_d, cost_d, 
+       vwarp_default_thread_count(graph->vertex_count));
     CHK_CU_SUCCESS(cudaGetLastError(), err_free_all);
     CHK_CU_SUCCESS(cudaMemcpy(&finished, finished_d, sizeof(bool),
                               cudaMemcpyDeviceToHost), err_free_all);

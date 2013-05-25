@@ -637,8 +637,8 @@ error_t graph_initialize_device(const graph_t* graph_h, graph_t** graph_d,
   // like the extra vertex we used to have which enables calculating the number
   // of neighbors for the last vertex). Note that this padding does not affect
   // the algorithms that do not apply the virtual warp technique.
-  vid_t vertex_count_batch_padded = VWARP_BATCH_SIZE *
-    VWARP_BATCH_COUNT(graph_h->vertex_count);
+  vid_t vertex_count_batch_padded = 
+    vwarp_default_state_length(graph_h->vertex_count);
 
   // Allocate device buffers
   totem_mem_t mem_type = TOTEM_MEM_DEVICE;

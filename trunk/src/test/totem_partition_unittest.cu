@@ -59,8 +59,7 @@ class GraphPartitionTest : public TestWithParam<PartitionFunction> {
     // Ensure the minimum CUDA architecture is supported
     CUDA_CHECK_VERSION();
     partition_func_ = GetParam();
-    int gpu_count = 0;
-    CALL_CU_SAFE(cudaGetDeviceCount(&gpu_count));
+    int gpu_count = get_gpu_count();
     graph_ = NULL;
     partitions_ = NULL;
     partition_set_ = NULL;
@@ -160,12 +159,9 @@ class GraphPartitionTest : public TestWithParam<PartitionFunction> {
           &partition->outbox[remote_pid];
         if (remote_outbox->count == 0) continue;
         if (partition->processor.type == PROCESSOR_GPU) {
-          dim3 blocks, threads_per_block;
-          KERNEL_CONFIGURE(remote_outbox->count, blocks, threads_per_block);
-          memset_device<<<blocks, threads_per_block>>>
-            ((int*)remote_outbox->push_values, (int)remote_pid,
-             remote_outbox->count);
-          ASSERT_EQ(cudaSuccess, cudaGetLastError());
+          ASSERT_EQ(SUCCESS, totem_memset((int*)remote_outbox->push_values, 
+                                          (int)remote_pid,remote_outbox->count,
+                                          TOTEM_MEM_DEVICE));
           ASSERT_EQ(cudaSuccess, cudaThreadSynchronize());
         } else {
           ASSERT_EQ(PROCESSOR_CPU, partition->processor.type);

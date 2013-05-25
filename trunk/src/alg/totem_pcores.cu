@@ -197,7 +197,7 @@ error_t pcore_gpu(const graph_t* graph, uint32_t start, uint32_t step,
   return SUCCESS;
 
  err_free_all:
-  mem_free(round);
+  totem_free(round, TOTEM_MEM_HOST_PINNED);
  err_free_finish_flags:
   totem_free(round_d, TOTEM_MEM_DEVICE);
   totem_free(weights_sum_d, TOTEM_MEM_DEVICE);

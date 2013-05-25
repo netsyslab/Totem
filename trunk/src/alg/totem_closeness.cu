@@ -26,8 +26,8 @@ error_t check_special_cases(const graph_t* graph, bool* finished,
   }
 
   if (graph->edge_count == 0) {
-    *centrality_score =
-      (weight_t*)mem_alloc(graph->vertex_count * sizeof(weight_t));
+    totem_malloc(graph->vertex_count * sizeof(weight_t), 
+                 TOTEM_MEM_HOST_PINNED, (void**)centrality_score);
     memset(*centrality_score, (weight_t)0.0, graph->vertex_count
            * sizeof(weight_t));
     return SUCCESS;
@@ -90,7 +90,7 @@ error_t closeness_apsp_gpu(const graph_t* graph, vid_t source, graph_t* graph_d,
   CHK_CU_SUCCESS(cudaDeviceSynchronize(), err);
 
   bool finished = false;
-  int thread_count = VWARP_WARP_SIZE * VWARP_BATCH_COUNT(graph->vertex_count);
+  int thread_count = vwarp_default_thread_count(graph->vertex_count);
   KERNEL_CONFIGURE(thread_count, blocks, threads_per_block);
   cudaFuncSetCacheConfig(vwarp_bfs_kernel, cudaFuncCachePreferShared);
   while (!finished) {
@@ -148,9 +148,12 @@ error_t closeness_unweighted_gpu(const graph_t* graph,
   if (finished) return rc;
 
   // Allocate space for the results
-  weight_t* closeness_centrality =
-    (weight_t*)mem_alloc(graph->vertex_count * sizeof(weight_t));
-  cost_t* dists = (cost_t*)mem_alloc(graph->vertex_count * sizeof(cost_t));
+  weight_t* closeness_centrality = NULL;
+  totem_malloc(graph->vertex_count * sizeof(weight_t), TOTEM_MEM_HOST_PINNED, 
+               (void**)&closeness_centrality);
+  cost_t* dists = NULL;
+  totem_malloc(graph->vertex_count * sizeof(cost_t), TOTEM_MEM_HOST_PINNED, 
+               (void**)&dists);
 
   // Allocate memory and initialize state on the GPU
   graph_t* graph_d;
@@ -179,7 +182,7 @@ error_t closeness_unweighted_gpu(const graph_t* graph,
   }
 
   CHK_SUCCESS(finalize_gpu(graph_d, dist_d, finished_d), err_free_all);
-  mem_free(dists);
+  totem_free(dists, TOTEM_MEM_HOST_PINNED);
 
   // Return the centrality
   *centrality_score = closeness_centrality;
@@ -190,8 +193,8 @@ error_t closeness_unweighted_gpu(const graph_t* graph,
   cudaFree(dist_d);
   cudaFree(finished_d);
  err_free_closeness:
-  mem_free(closeness_centrality);
-  mem_free(dists);
+  totem_free(closeness_centrality, TOTEM_MEM_HOST_PINNED);
+  totem_free(dists, TOTEM_MEM_HOST_PINNED);
   return FAILURE;
 }
 
@@ -208,11 +211,12 @@ error_t closeness_unweighted_cpu(const graph_t* graph,
   if (finished) return rc;
 
   // Allocate space for the results
-  weight_t* closeness_centrality =
-    (weight_t*)mem_alloc(graph->vertex_count * sizeof(weight_t));
-
-  // Allocate and initialize state for the problem
-  cost_t* dists = (cost_t*)mem_alloc(graph->vertex_count * sizeof(cost_t));
+  weight_t* closeness_centrality = NULL;
+  totem_malloc(graph->vertex_count * sizeof(weight_t), TOTEM_MEM_HOST_PINNED, 
+               (void**)&closeness_centrality);
+  cost_t* dists = NULL;
+  totem_malloc(graph->vertex_count * sizeof(cost_t), TOTEM_MEM_HOST, 
+               (void**)&dists);
   memset(closeness_centrality, 0.0, graph->vertex_count * sizeof(weight_t));
 
   for (vid_t source = 0; source < graph->vertex_count; source++) {
@@ -244,7 +248,7 @@ error_t closeness_unweighted_cpu(const graph_t* graph,
   } // for
 
   // Cleanup phase
-  mem_free(dists);
+  totem_free(dists, TOTEM_MEM_HOST);
 
   // Return the centrality
   *centrality_score = closeness_centrality;
