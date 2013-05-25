@@ -21,6 +21,7 @@
 
 #include "totem_comkernel.cuh"
 #include "totem_partition.h"
+#include "totem_mem.h"
 
 /**
  * defines the execution context of the engine
@@ -219,11 +220,8 @@ void engine_set_outbox(uint32_t pid, T value) {
     if (!outbox->count) continue;
     T* values = (T*)outbox->push_values;
     if (par->processor.type == PROCESSOR_GPU) {
-      dim3 blocks, threads;
-      KERNEL_CONFIGURE(outbox->count, blocks, threads);
-      memset_device<<<blocks, threads, 0, par->streams[1]>>>(values, value,
-                                                             outbox->count);
-      CALL_CU_SAFE(cudaGetLastError());
+      CALL_SAFE(totem_memset(values, value, outbox->count, TOTEM_MEM_DEVICE,
+                             par->streams[1]));
     } else {
       assert(par->processor.type == PROCESSOR_CPU);
       OMP(omp parallel for)
@@ -282,6 +280,10 @@ inline vid_t engine_vertex_id_in_partition(vid_t v) {
 
 inline const graph_t* engine_get_graph() {
   return context.graph;
+}
+
+inline partition_algorithm_t engine_partition_algorithm() {
+  return context.attr.par_algo;
 }
 
 #endif  // TOTEM_ENGINE_INTERNAL_CUH

@@ -67,8 +67,8 @@ error_t check_special_cases(rank_t* rank, bool* finished) {
  * a single virtual warp.
  */
 typedef struct {
-  eid_t vertices[VWARP_BATCH_SIZE + 2];
-  rank_t rank[VWARP_BATCH_SIZE];
+  eid_t vertices[VWARP_DEFAULT_BATCH_SIZE + 2];
+  rank_t rank[VWARP_DEFAULT_BATCH_SIZE];
 } vwarp_mem_t;
 
 /**
@@ -80,15 +80,17 @@ __global__
 void vwarp_sum_neighbors_rank_kernel(partition_t par, rank_t* rank, 
                                      rank_t* rank_s, vid_t thread_count) {
   if (THREAD_GLOBAL_INDEX >= thread_count) return;
-  vid_t warp_offset = THREAD_GLOBAL_INDEX % VWARP_WARP_SIZE;
-  vid_t warp_id     = THREAD_GLOBAL_INDEX / VWARP_WARP_SIZE;
+  vid_t warp_offset = THREAD_GLOBAL_INDEX % VWARP_DEFAULT_WARP_WIDTH;
+  vid_t warp_id     = THREAD_GLOBAL_INDEX / VWARP_DEFAULT_WARP_WIDTH;
 
   // copy my work to local space
-  __shared__ vwarp_mem_t smem[(MAX_THREADS_PER_BLOCK / VWARP_WARP_SIZE)];
-  vwarp_mem_t* my_space = smem + (THREAD_GRID_INDEX / VWARP_WARP_SIZE);
-  vid_t v_ = warp_id * VWARP_BATCH_SIZE;
-  int my_batch_size = VWARP_BATCH_SIZE;
-  if (v_ + VWARP_BATCH_SIZE > par.subgraph.vertex_count) {
+  __shared__ vwarp_mem_t smem[MAX_THREADS_PER_BLOCK / 
+                              VWARP_DEFAULT_WARP_WIDTH];
+  vwarp_mem_t* my_space = &smem[THREAD_BLOCK_INDEX / 
+                                VWARP_DEFAULT_WARP_WIDTH];
+  vid_t v_ = warp_id * VWARP_DEFAULT_BATCH_SIZE;
+  int my_batch_size = VWARP_DEFAULT_BATCH_SIZE;
+  if (v_ + VWARP_DEFAULT_BATCH_SIZE > par.subgraph.vertex_count) {
     my_batch_size = par.subgraph.vertex_count - v_;
   }
   vwarp_memcpy(my_space->rank, &rank[v_], my_batch_size, warp_offset);
@@ -99,7 +101,7 @@ void vwarp_sum_neighbors_rank_kernel(partition_t par, rank_t* rank,
   for(vid_t v = 0; v < my_batch_size; v++) {
     vid_t nbr_count = my_space->vertices[v + 1] - my_space->vertices[v];
     vid_t* nbrs = &(par.subgraph.edges[my_space->vertices[v]]);
-    for(vid_t i = warp_offset; i < nbr_count; i += VWARP_WARP_SIZE) {
+    for(vid_t i = warp_offset; i < nbr_count; i += VWARP_DEFAULT_WARP_WIDTH) {
       const vid_t nbr = nbrs[i];
       rank_t* dst = engine_get_dst_ptr(par.id, nbr, par.outbox_d, rank_s);      
       atomicAdd(dst, my_space->rank[v]);
@@ -145,8 +147,7 @@ PRIVATE void page_rank_gpu(partition_t* par) {
   engine_set_outbox(par->id, 0);
   vwarp_sum_neighbors_rank_kernel<<<ps->blocks_sum, ps->threads_sum, 0,
     par->streams[1]>>>(*par, ps->rank, ps->rank_s, 
-                       VWARP_BATCH_COUNT(par->subgraph.vertex_count) *
-                       VWARP_WARP_SIZE);
+                       vwarp_default_thread_count(par->subgraph.vertex_count));
   CALL_CU_SAFE(cudaGetLastError());
 }
 
@@ -232,7 +233,7 @@ PRIVATE void page_rank_init(partition_t* par) {
   totem_mem_t type = TOTEM_MEM_HOST;
   if (par->processor.type == PROCESSOR_GPU) {
     type = TOTEM_MEM_DEVICE;
-    KERNEL_CONFIGURE(VWARP_WARP_SIZE * VWARP_BATCH_COUNT(vcount),
+    KERNEL_CONFIGURE(vwarp_default_thread_count(vcount),
                      ps->blocks_sum, ps->threads_sum);
     KERNEL_CONFIGURE(vcount, ps->blocks_rank, ps->threads_rank);
   }

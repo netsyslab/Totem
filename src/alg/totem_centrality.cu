@@ -107,7 +107,9 @@ error_t centrality_construct_r_edges(const graph_t* graph, vid_t** r_edges_p) {
   if (graph == NULL || r_edges_p == NULL) return FAILURE;
 
   // For every edge in the graph, save its source vertex
-  vid_t* r_edges = (vid_t*)mem_alloc(graph->edge_count * sizeof(vid_t));
+  vid_t* r_edges = NULL;
+  CALL_SAFE(totem_malloc(graph->edge_count * sizeof(vid_t), 
+                         TOTEM_MEM_HOST_PINNED, (void**)&r_edges));
   vid_t v = 0;
   for (eid_t e = 0; e < graph->edge_count; e++) {
     while (v <= graph->vertex_count

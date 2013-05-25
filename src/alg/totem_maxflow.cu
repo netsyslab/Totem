@@ -29,8 +29,8 @@ void init_preflow(graph_t graph, eid_t edge_base, eid_t edge_end,
    a single virtual warp.
  */
 typedef struct {
-  eid_t vertices[VWARP_BATCH_SIZE + 2];
-  uint32_t height[VWARP_BATCH_SIZE];
+  eid_t vertices[VWARP_DEFAULT_BATCH_SIZE + 2];
+  uint32_t height[VWARP_DEFAULT_BATCH_SIZE];
 } vwarp_mem_t;
 
 
@@ -187,22 +187,23 @@ void push_relabel_kernel(graph_t graph, weight_t* flow, weight_t* excess,
  * assumption is that the threads of a warp invoke this function to process the
  * warp's batch of work. In each iteration of the for loop, each thread
  * processes a neighbor. For example, thread 0 in the warp processes neighbors
- * at indices 0, VWARP_WARP_SIZE, (2 * VWARP_WARP_SIZE) etc. in the edges array,
- * while thread 1 in the warp processes neighbors 1, (1 + VWARP_WARP_SIZE),
- * (1 + 2 * VWARP_WARP_SIZE) and so on.
+ * at indices 0, VWARP_DEFAULT_WARP_WIDTH, (2 * VWARP_DEFAULT_WARP_WIDTH) etc. 
+ * in the edges array, while thread 1 in the warp processes neighbors 1, 
+ * (1 + VWARP_DEFAULT_WARP_WIDTH), (1 + 2 * VWARP_DEFAULT_WARP_WIDTH) and so on.
 */
 __device__ void
 vwarp_process_neighbors(vid_t warp_offset, vid_t warp_id, vid_t neighbor_count,
                         vid_t* neighbors, weight_t* flow, weight_t* weight,
                         uint32_t* height, uint32_t* lowest_height,
                         vid_t* best_edge_id) {
-  for (vid_t i = warp_offset; i < neighbor_count; i += VWARP_WARP_SIZE) {
+  for (vid_t i = warp_offset; i < neighbor_count; i += 
+         VWARP_DEFAULT_WARP_WIDTH) {
     vid_t neighbor_id = neighbors[i];
     if (weight[i] > flow[i]) {
       uint32_t h_pprime = height[neighbor_id];
       while (*lowest_height > h_pprime) {
         *lowest_height = h_pprime;
-        // TODO: remove synchronization when VWARP_WARP_SIZE <= 32
+        // TODO: remove synchronization when VWARP_DEFAULT_WARP_WIDTH <= 32
         __threadfence();
         if (height[neighbor_id] == *lowest_height) {
           *best_edge_id = i;
@@ -224,35 +225,39 @@ void vwarp_push_relabel_kernel(graph_t graph, weight_t* flow, weight_t* excess,
   const vid_t thread_id = THREAD_GLOBAL_INDEX;
   if (thread_id >= thread_count) return;
 
-  vid_t warp_offset = thread_id % VWARP_WARP_SIZE;
-  vid_t warp_id     = thread_id / VWARP_WARP_SIZE;
+  vid_t warp_offset = thread_id % VWARP_DEFAULT_WARP_WIDTH;
+  vid_t warp_id     = thread_id / VWARP_DEFAULT_WARP_WIDTH;
 
   __shared__ vwarp_mem_t shared_memory[(MAX_THREADS_PER_BLOCK /
-                                        VWARP_WARP_SIZE)];
-  __shared__ vid_t best_edge_ids[(MAX_THREADS_PER_BLOCK / VWARP_WARP_SIZE)];
-  __shared__ uint32_t lowest_heights[(MAX_THREADS_PER_BLOCK / VWARP_WARP_SIZE)];
-  vwarp_mem_t* my_space = shared_memory + (THREAD_GRID_INDEX / VWARP_WARP_SIZE);
+                                        VWARP_DEFAULT_WARP_WIDTH)];
+  __shared__ vid_t best_edge_ids[MAX_THREADS_PER_BLOCK / 
+                                 VWARP_DEFAULT_WARP_WIDTH];
+  __shared__ uint32_t lowest_heights[MAX_THREADS_PER_BLOCK / 
+                                     VWARP_DEFAULT_WARP_WIDTH];
+  vwarp_mem_t* my_space = &shared_memory[THREAD_BLOCK_INDEX / 
+                                         VWARP_DEFAULT_WARP_WIDTH];
 
   // copy my work to local space
-  vid_t v_ = warp_id * VWARP_BATCH_SIZE;
-  vwarp_memcpy(my_space->height, &(height[v_]), VWARP_BATCH_SIZE, warp_offset);
-  vwarp_memcpy(my_space->vertices, &(graph.vertices[v_]), VWARP_BATCH_SIZE + 1,
+  vid_t v_ = warp_id * VWARP_DEFAULT_BATCH_SIZE;
+  vwarp_memcpy(my_space->height, &(height[v_]), VWARP_DEFAULT_BATCH_SIZE, 
                warp_offset);
+  vwarp_memcpy(my_space->vertices, &(graph.vertices[v_]), 
+               VWARP_DEFAULT_BATCH_SIZE + 1, warp_offset);
 
   int count = KERNEL_CYCLES;
   while(count--) {
     // iterate over my work
-    for(vid_t v = 0; v < VWARP_BATCH_SIZE; v++) {
+    for(vid_t v = 0; v < VWARP_DEFAULT_BATCH_SIZE; v++) {
       vid_t vertex_id = v_ + v;
       if (excess[vertex_id] > 0 && (vertex_id != sink_id) &&
           my_space->height[v] < graph.vertex_count) {
-        vid_t* best_edge_id = &(best_edge_ids[(THREAD_GRID_INDEX /
-                                               VWARP_WARP_SIZE)]);
-        uint32_t* lowest_height = &(lowest_heights[(THREAD_GRID_INDEX /
-                                                    VWARP_WARP_SIZE)]);
+        vid_t* best_edge_id = &(best_edge_ids[(THREAD_BLOCK_INDEX /
+                                               VWARP_DEFAULT_WARP_WIDTH)]);
+        uint32_t* lowest_height = &(lowest_heights[(THREAD_BLOCK_INDEX /
+                                                    VWARP_DEFAULT_WARP_WIDTH)]);
         *best_edge_id = INFINITE;
         *lowest_height = INFINITE;
-        // TODO: remove synchronization when VWARP_WARP_SIZE <= 32
+        // TODO: remove synchronization when VWARP_DEFAULT_WARP_WIDTH <= 32
         __threadfence();
 
         vid_t* edges = &(graph.edges[my_space->vertices[v]]);
@@ -264,7 +269,7 @@ void vwarp_push_relabel_kernel(graph_t graph, weight_t* flow, weight_t* excess,
         vwarp_process_neighbors(warp_offset, warp_id, nbr_count, edges,
                                 flows, weights, height, lowest_height,
                                 best_edge_id);
-        // TODO: remove synchronization when VWARP_WARP_SIZE <= 32
+        // TODO: remove synchronization when VWARP_DEFAULT_WARP_WIDTH <= 32
         __threadfence();
 
         // Only one thread does this per vertex
@@ -334,29 +339,25 @@ error_t maxflow_vwarp_gpu(graph_t* graph, vid_t source_id, vid_t sink_id,
   graph_t* local_graph = graph_create_bidirectional(graph, &reverse_indices);
 
   // Create and initialize state on GPU
-  uint64_t vwarp_length = VWARP_BATCH_SIZE *
-                          VWARP_BATCH_COUNT(graph->vertex_count);
   graph_t* graph_d;
   weight_t* flow_d;
   weight_t* excess_d;
   uint32_t* height_d;
   eid_t* reverse_indices_d;
   bool* finished_d;
-  CHK_SUCCESS(initialize_gpu(local_graph, source_id, vwarp_length,
+  CHK_SUCCESS(initialize_gpu(local_graph, source_id, 
+                             vwarp_default_state_length(graph->vertex_count),
                              reverse_indices, &graph_d, &flow_d, &excess_d,
                              &height_d, &reverse_indices_d, &finished_d),
               err_free_all);
 
   // {} used to limit scope and avoid problems with error handles.
   {
+  CALL_SAFE(totem_memset(flow_d, (weight_t)0, local_graph->edge_count, 
+                         TOTEM_MEM_DEVICE));
   dim3 blocks;
   dim3 threads_per_block;
-  KERNEL_CONFIGURE(local_graph->edge_count, blocks, threads_per_block);
-  memset_device<<<blocks, threads_per_block>>>(flow_d, (weight_t)0,
-                                               local_graph->edge_count);
-
-  uint32_t thread_count = VWARP_WARP_SIZE *
-                          VWARP_BATCH_COUNT(graph->vertex_count);
+  uint32_t thread_count = vwarp_default_thread_count(graph->vertex_count);
   KERNEL_CONFIGURE(thread_count, blocks, threads_per_block);
   cudaFuncSetCacheConfig(vwarp_push_relabel_kernel, cudaFuncCachePreferShared);
   bool finished = false;
@@ -426,15 +427,13 @@ error_t maxflow_gpu(graph_t* graph, vid_t source_id, vid_t sink_id,
 
   // {} used to limit scope and avoid problems with error handles.
   {
+  CALL_SAFE(totem_memset(flow_d, (weight_t)0, local_graph->edge_count, 
+                         TOTEM_MEM_DEVICE));
+  // While there exists an applicable push or relabel operation, perform it
   dim3 blocks;
   dim3 threads_per_block;
-  KERNEL_CONFIGURE(local_graph->edge_count, blocks, threads_per_block);
-  memset_device<<<blocks, threads_per_block>>>(flow_d, (weight_t)0,
-                                               local_graph->edge_count);
-
-  // While there exists an applicable push or relabel operation, perform it
-  bool finished = false;
   KERNEL_CONFIGURE(local_graph->vertex_count, blocks, threads_per_block);
+  bool finished = false;
   while (!finished) {
     CHK_CU_SUCCESS(cudaMemset(finished_d, true, sizeof(bool)), err_free_all);
     // Perform push-relabel on each vertex, according to [Hong08]

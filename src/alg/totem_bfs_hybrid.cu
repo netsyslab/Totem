@@ -13,12 +13,11 @@
  * per-partition specific state
  */
 typedef struct bfs_state_s {
-  cost_t*   cost;     // one slot per vertex in the partition
-  bitmap_t* visited;  // a list of bitmaps, one for each remote partition
-  bool*     finished; // points to Totem's finish flag
-  cost_t    level;    // current level being processed by the partition
-  dim3      blocks;   // kernel configuration parameters
-  dim3      threads;
+  cost_t*   cost;             // one slot per vertex in the partition
+  bitmap_t* visited;          // a list of bitmaps one for each remote partition
+  bool*     finished;         // points to Totem's finish flag
+  vid_t*    est_active_count; // estimated number of active vertices
+  cost_t    level;            // current level being processed by the partition
 } bfs_state_t;
 
 /**
@@ -56,80 +55,6 @@ PRIVATE error_t check_special_cases(vid_t src, cost_t* cost, bool* finished) {
   return SUCCESS;
 }
 
-/**
- * This structure is used by the virtual warp-based implementation. It stores a
- * batch of work. It is typically allocated on shared memory and is processed by
- * a single virtual warp.
- */
-typedef struct {
-  eid_t vertices[VWARP_BATCH_SIZE + 2];
-  cost_t cost[VWARP_BATCH_SIZE];
-} vwarp_mem_t;
-
-/**
- * A warp-based implementation of the BFS kernel. Please refer to the
- * description of the warp technique for details. Also, please refer to
- * bfs_kernel for details on the BFS implementation.
- */
-__global__
-void bfs_kernel(partition_t par, cost_t level, bool* finished, 
-                cost_t* cost, bitmap_t* visited_arr, vid_t thread_count) {
-  if (THREAD_GLOBAL_INDEX >= thread_count) return;
-  vid_t warp_offset = THREAD_GLOBAL_INDEX % VWARP_WARP_SIZE;
-  vid_t warp_id     = THREAD_GLOBAL_INDEX / VWARP_WARP_SIZE;
-
-  // This flag is used to report the finish state of a block of threads. This
-  // is useful to avoid having many threads writing to the global finished
-  // flag, which can hurt performance (since "finished" is actually allocated
-  // on the host, and each write will cause a transfer over the PCI-E bus)
-  __shared__ bool finished_block;
-  finished_block = true;
-  __syncthreads();
-
-  // copy my work to local space
-  __shared__ vwarp_mem_t smem[(MAX_THREADS_PER_BLOCK / VWARP_WARP_SIZE)];
-  vwarp_mem_t* my_space = smem + (THREAD_GRID_INDEX / VWARP_WARP_SIZE);
-  vid_t v = warp_id * VWARP_BATCH_SIZE;
-  vid_t batch_size = (v + VWARP_BATCH_SIZE) > par.subgraph.vertex_count ?
-    (par.subgraph.vertex_count - v) : VWARP_BATCH_SIZE;
-  vwarp_memcpy(my_space->cost, &cost[v], batch_size, warp_offset);
-  vwarp_memcpy(my_space->vertices, &(par.subgraph.vertices[v]),
-               batch_size + 1, warp_offset);  
-
-  // iterate over my work
-  for(vid_t v = 0; v < batch_size; v++) {
-    if (my_space->cost[v] == level) {
-      eid_t nbr_count = my_space->vertices[v + 1] - my_space->vertices[v];
-      vid_t* nbrs = &(par.subgraph.edges[my_space->vertices[v]]);
-      for(vid_t i = warp_offset; i < nbr_count; i += VWARP_WARP_SIZE) {
-        int nbr_pid = GET_PARTITION_ID(nbrs[i]);
-        vid_t nbr = GET_VERTEX_ID(nbrs[i]);
-        bitmap_t visited = visited_arr[nbr_pid];
-        if (!bitmap_is_set(visited, nbr)) {
-          if (bitmap_set_gpu(visited, nbr)) {
-            if (nbr_pid == par.id) {
-              if (cost[nbr] == INF_COST) cost[nbr] = level + 1;
-            }
-            finished_block = false;
-          }
-        }
-      }
-    }
-  }
-  __syncthreads();
-  if (!finished_block && threadIdx.x == 0) *finished = false;
-}
-
-PRIVATE inline void bfs_gpu(partition_t* par) {
-  bfs_state_t* state = (bfs_state_t*)par->algo_state;
-  bfs_kernel<<<state->blocks, state->threads, 0, 
-    par->streams[1]>>>(*par, state->level, state->finished, state->cost, 
-                       state->visited, 
-                       VWARP_BATCH_COUNT(par->subgraph.vertex_count) *
-                       VWARP_WARP_SIZE);
-  CALL_CU_SAFE(cudaGetLastError());
-}
-
 void bfs_cpu(partition_t* par) {
   bfs_state_t* state = (bfs_state_t*)par->algo_state;
   graph_t* subgraph = &par->subgraph;
@@ -158,12 +83,144 @@ void bfs_cpu(partition_t* par) {
   if (!finished) *(state->finished) = false;
 }
 
+/**
+ * A warp-based implementation of the BFS kernel. Please refer to the
+ * description of the warp technique for details. Also, please refer to
+ * bfs_kernel for details on the BFS implementation.
+ */
+template<int VWARP_WIDTH, int VWARP_BATCH>
+__global__
+void bfs_kernel(partition_t par, bfs_state_t state) {
+  vid_t vertex_count = par.subgraph.vertex_count;
+  if (vwarp_block_start_vertex(VWARP_WIDTH, VWARP_BATCH) >= vertex_count) {
+    return;
+  }
+
+  // Copy the work of a thread-block to local space
+  const int block_max_batch_size = 
+    VWARP_BLOCK_MAX_BATCH_SIZE(VWARP_WIDTH, VWARP_BATCH);
+  __shared__ eid_t  vertices_s[block_max_batch_size + 1];
+  __shared__ cost_t cost_s[block_max_batch_size];
+  const vid_t block_start_vertex = 
+    vwarp_block_start_vertex(VWARP_WIDTH, VWARP_BATCH);
+  const vid_t block_batch_size = 
+    vwarp_block_batch_size(vertex_count, VWARP_WIDTH, VWARP_BATCH);
+  vwarp_memcpy(vertices_s, &(par.subgraph.vertices[block_start_vertex]),
+               block_batch_size + 1, THREAD_BLOCK_INDEX, blockDim.x);
+  vwarp_memcpy(cost_s, &state.cost[block_start_vertex], 
+               block_batch_size, THREAD_BLOCK_INDEX, blockDim.x);
+
+  // This flag is used to report the finish state of a block of threads. This
+  // is useful to avoid having many threads writing to the global finished
+  // flag, which can hurt performance (since "finished" is actually allocated
+  // on the host, and each write will cause a transfer over the PCI-E bus)
+  __shared__ bool finished_block;
+  finished_block = true;
+  __shared__ vid_t est_active_count;
+  est_active_count = 0;
+  __syncthreads();
+  if (THREAD_GLOBAL_INDEX >= 
+      vwarp_thread_count(vertex_count, VWARP_WIDTH, VWARP_BATCH)) return;
+
+  // Each virtual warp in a thread-block will process its share 
+  // of the thread-block batch of work
+  vid_t vwarp_start_vertex = vwarp_warp_start_vertex(VWARP_WIDTH, VWARP_BATCH);
+  eid_t* vwarp_vertices = &vertices_s[vwarp_start_vertex];
+  cost_t* vwarp_cost = &cost_s[vwarp_start_vertex];
+  vid_t vwarp_batch_size = vwarp_warp_batch_size(vertex_count, VWARP_WIDTH, 
+                                                 VWARP_BATCH);
+  vid_t local_est_active_count = 0;
+  for(vid_t v = 0; v < vwarp_batch_size; v++) {
+    if (vwarp_cost[v] == state.level) {
+      eid_t nbr_count = vwarp_vertices[v + 1] - vwarp_vertices[v];
+      vid_t* nbrs = &(par.subgraph.edges[vwarp_vertices[v]]);
+      for(vid_t i = vwarp_thread_index(VWARP_WIDTH); i < nbr_count; 
+          i += VWARP_WIDTH) {
+        int nbr_pid = GET_PARTITION_ID(nbrs[i]);
+        vid_t nbr = GET_VERTEX_ID(nbrs[i]);
+        bitmap_t visited = state.visited[nbr_pid];
+        if (!bitmap_is_set(visited, nbr)) {
+          if (bitmap_set_gpu(visited, nbr)) {
+            if (nbr_pid == par.id) {
+              if (state.cost[nbr] == INF_COST) { 
+                state.cost[nbr] = state.level + 1;
+                local_est_active_count++;
+              }
+            }
+            finished_block = false;
+          }
+        }
+      }
+    }
+  }
+
+  // If we want to get an exact count, the addition here should be atomic,
+  // however to avoid the overhead of atomic operation, and since an estimate
+  // count is good enough, we do not use atomic add.
+  if (local_est_active_count) est_active_count += local_est_active_count;
+  __syncthreads();
+
+  // Similar to the comment above, we accumulate here without using atomic 
+  // add to reduce the overhead
+  if (est_active_count && THREAD_BLOCK_INDEX == 0) {
+    *state.est_active_count += est_active_count;
+  }
+  if (!finished_block && THREAD_BLOCK_INDEX == 0) *state.finished = false;
+}
+
+PRIVATE void bfs_gpu_long_small(partition_t* par, bfs_state_t* state) {
+  dim3 blocks, threads;
+  KERNEL_CONFIGURE(vwarp_thread_count(par->subgraph.vertex_count,
+                                      VWARP_LONG_WARP_WIDTH,
+                                      VWARP_SMALL_BATCH_SIZE),
+                   blocks, threads);
+  bfs_kernel<VWARP_LONG_WARP_WIDTH, VWARP_SMALL_BATCH_SIZE>
+    <<<blocks, threads, 0, par->streams[1]>>>(*par, *state);
+}
+
+PRIVATE void bfs_gpu_short_small(partition_t* par, bfs_state_t* state) {
+  dim3 blocks, threads;
+  KERNEL_CONFIGURE(vwarp_thread_count(par->subgraph.vertex_count,
+                                      VWARP_SHORT_WARP_WIDTH,
+                                      VWARP_SMALL_BATCH_SIZE),
+                   blocks, threads);
+  bfs_kernel<VWARP_SHORT_WARP_WIDTH, VWARP_SMALL_BATCH_SIZE>
+    <<<blocks, threads, 0, par->streams[1]>>>(*par, *state);
+}
+
+PRIVATE void bfs_gpu_medium_large(partition_t* par, bfs_state_t* state) {
+  dim3 blocks, threads;
+  KERNEL_CONFIGURE(vwarp_thread_count(par->subgraph.vertex_count,
+                                      VWARP_MEDIUM_WARP_WIDTH,
+                                      VWARP_LARGE_BATCH_SIZE),
+                   blocks, threads);
+  bfs_kernel<VWARP_MEDIUM_WARP_WIDTH, VWARP_LARGE_BATCH_SIZE>
+    <<<blocks, threads, 0, par->streams[1]>>>(*par, *state);
+}
+
+typedef void(*bfs_gpu_func_t)(partition_t*, bfs_state_t*);
+PRIVATE const bfs_gpu_func_t BFS_GPU_FUNC[][2] = {
+  {bfs_gpu_medium_large, bfs_gpu_medium_large}, // RANDOM algorithm
+  {bfs_gpu_short_small, bfs_gpu_medium_large},  // HIGH partitioning
+  {bfs_gpu_long_small, bfs_gpu_long_small}      // LOW partitioning
+};
+
 PRIVATE void bfs(partition_t* par) {
   bfs_state_t* state = (bfs_state_t*)par->algo_state;
   if (par->processor.type == PROCESSOR_CPU) {
     bfs_cpu(par);
   } else if (par->processor.type == PROCESSOR_GPU) {
-    bfs_gpu(par);
+    vid_t est_active_count = 0;
+    CALL_CU_SAFE(cudaMemcpyAsync(&est_active_count, state->est_active_count,
+                                 sizeof(vid_t), cudaMemcpyDefault,
+                                 par->streams[1]));
+    cudaMemsetAsync(state->est_active_count, 0, sizeof(vid_t), 
+                    par->streams[1]);
+    int par_alg = engine_partition_algorithm();
+    int coarse_fine = (int)(est_active_count > 
+                            VWARP_ACTIVE_VERTICES_THRESHOLD);
+    BFS_GPU_FUNC[par_alg][coarse_fine](par, state);
+    CALL_CU_SAFE(cudaGetLastError());
   } else {
     assert(false);
   }
@@ -184,26 +241,24 @@ PRIVATE inline void bfs_scatter_cpu(grooves_box_table_t* inbox,
   }
 }
 
-__global__ void bfs_scatter_kernel(grooves_box_table_t inbox, cost_t* cost, 
-                                   cost_t level, bitmap_t* visited) {
+__global__ void bfs_scatter_kernel(grooves_box_table_t inbox, bfs_state_t state,
+                                   bitmap_t* visited) {
   vid_t index = THREAD_GLOBAL_INDEX;
   if (index >= inbox.count) return;
+  __shared__ vid_t est_active_count;
+  est_active_count = 0;
+  __syncthreads();  
   bitmap_t rmt_visited = (bitmap_t)inbox.push_values;
   vid_t vid = inbox.rmt_nbrs[index];
   if (bitmap_is_set(rmt_visited, index) &&
       !bitmap_is_set(*visited, vid)) {
     bitmap_set_gpu(*visited, vid);
-    cost[vid] = level;
+    state.cost[vid] = state.level;
+    est_active_count += 1;
   }
-}
-
-PRIVATE inline void bfs_scatter_gpu(grooves_box_table_t* inbox, 
-                                    bfs_state_t* state, bitmap_t* visited) {
-  dim3 blocks, threads;
-  KERNEL_CONFIGURE(inbox->count, blocks, threads);
-  bfs_scatter_kernel<<<blocks, threads>>>
-    (*inbox, state->cost, state->level, visited);
-  CALL_CU_SAFE(cudaGetLastError());
+  if (est_active_count && THREAD_BLOCK_INDEX == 0) {
+    *state.est_active_count += est_active_count;
+  }
 }
 
 PRIVATE void bfs_scatter(partition_t* par) {
@@ -215,7 +270,11 @@ PRIVATE void bfs_scatter(partition_t* par) {
     if (par->processor.type == PROCESSOR_CPU) {
       bfs_scatter_cpu(inbox, state, &(state->visited[par->id]));
     } else if (par->processor.type == PROCESSOR_GPU) {
-      bfs_scatter_gpu(inbox, state, &(state->visited[par->id]));
+      dim3 blocks, threads;
+      KERNEL_CONFIGURE(inbox->count, blocks, threads);
+      bfs_scatter_kernel<<<blocks, threads, 0, par->streams[1]>>>
+        (*inbox, *state, &(state->visited[par->id]));
+      CALL_CU_SAFE(cudaGetLastError());
     } else {
       assert(false);
     }
@@ -268,16 +327,16 @@ PRIVATE inline void bfs_init_gpu(partition_t* par) {
                           cudaMemcpyDefault));
   // set the source vertex as visited
   if (GET_PARTITION_ID(state_g.src) == par->id) {
-    KERNEL_CONFIGURE(1, state->blocks, state->threads);
-    bfs_init_kernel<<<state->blocks, state->threads, 0, par->streams[1]>>>
+    dim3 blocks, threads;
+    KERNEL_CONFIGURE(1, blocks, threads);
+    bfs_init_kernel<<<blocks, threads, 0, par->streams[1]>>>
       (visited[par->id], GET_VERTEX_ID(state_g.src));
     CALL_CU_SAFE(cudaGetLastError());
   }
-  KERNEL_CONFIGURE(VWARP_WARP_SIZE * 
-                   VWARP_BATCH_COUNT(par->subgraph.vertex_count),
-                   state->blocks, state->threads);
-  // Maximize available shared memory space at the expense of L1 cache
-  CALL_CU_SAFE(cudaFuncSetCacheConfig(bfs_kernel, cudaFuncCachePreferShared));
+  CALL_SAFE(totem_malloc(sizeof(vid_t), TOTEM_MEM_DEVICE, 
+                         (void **)&state->est_active_count));
+  totem_memset(state->est_active_count, (vid_t)0, 1, TOTEM_MEM_DEVICE, 
+               par->streams[1]);
 }
 
 PRIVATE inline void bfs_init_cpu(partition_t* par) {
@@ -334,6 +393,7 @@ PRIVATE void bfs_finalize(partition_t* par) {
     CALL_CU_SAFE(cudaMemcpy(&visited, &(state->visited[par->id]), 
                             sizeof(bitmap_t), cudaMemcpyDefault));
     bitmap_finalize_gpu(visited);
+    totem_free(state->est_active_count, TOTEM_MEM_DEVICE);
     type = TOTEM_MEM_DEVICE;
   } else {
     assert(false);
@@ -362,13 +422,13 @@ error_t bfs_hybrid(vid_t src, cost_t* cost) {
   engine_config(&config);
   if (engine_largest_gpu_partition()) {
     CALL_SAFE(totem_malloc(engine_largest_gpu_partition() * sizeof(cost_t), 
-                           TOTEM_MEM_HOST_PINNED, (void**)&state_g.cost_h));
+                           TOTEM_MEM_HOST, (void**)&state_g.cost_h));
   }
   engine_execute();
 
   // clean up and return
   if (engine_largest_gpu_partition()) {
-    totem_free(state_g.cost_h, TOTEM_MEM_HOST_PINNED);
+    totem_free(state_g.cost_h, TOTEM_MEM_HOST);
   }
   memset(&state_g, 0, sizeof(bfs_global_state_t));
   return SUCCESS;

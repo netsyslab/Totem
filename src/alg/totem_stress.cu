@@ -22,8 +22,8 @@ error_t check_special_cases(const graph_t* graph, bool* finished,
   }
 
   if (graph->edge_count == 0) {
-    *centrality_score =
-      (weight_t*)mem_alloc(graph->vertex_count * sizeof(weight_t));
+    totem_malloc(graph->vertex_count * sizeof(weight_t), TOTEM_MEM_HOST_PINNED, 
+                 (void**)centrality_score);
     memset(*centrality_score, (weight_t)0.0, graph->vertex_count
            * sizeof(weight_t));
     return SUCCESS;
@@ -190,11 +190,7 @@ error_t stress_apsp_gpu(const graph_t* graph, graph_t* graph_d, vid_t source,
                             * sizeof(uint32_t)), err);
   CHK_CU_SUCCESS(cudaDeviceSynchronize(), err);
   CHK_CU_SUCCESS(cudaMemset(&(dist_d[source]), 0, sizeof(uint32_t)), err);
-  KERNEL_CONFIGURE(1, blocks, threads_per_block);
-  memset_device<<<blocks, threads_per_block>>>
-    (&(sigma_d[source]), (uint32_t)1, 1);
-  CHK_CU_SUCCESS(cudaDeviceSynchronize(), err);
-
+  CALL_SAFE(totem_memset(&(sigma_d[source]), (uint32_t)1, 1, TOTEM_MEM_DEVICE));
   KERNEL_CONFIGURE(graph->vertex_count, blocks, threads_per_block);
   bool finished = false;
   while (!finished) {
@@ -259,8 +255,9 @@ error_t stress_unweighted_gpu(const graph_t* graph,
   if (finished) return rc;
 
   // Allocate space for the results
-  weight_t* stress_centrality =
-    (weight_t*)mem_alloc(graph->vertex_count * sizeof(weight_t));
+  weight_t* stress_centrality = NULL;
+  totem_malloc(graph->vertex_count * sizeof(weight_t), TOTEM_MEM_HOST_PINNED, 
+               (void**)&stress_centrality);
 
   // Allocate memory and initialize state on the GPU
   graph_t* graph_d;
@@ -305,7 +302,7 @@ error_t stress_unweighted_gpu(const graph_t* graph,
   cudaFree(finished_d);
   cudaFree(stress_centrality_d);
  err_free_stress:
-  mem_free(stress_centrality);
+  totem_free(stress_centrality, TOTEM_MEM_HOST_PINNED);
   return FAILURE;
 }
 
@@ -322,16 +319,20 @@ error_t stress_unweighted_cpu(const graph_t* graph,
   if (finished) return rc;
 
   // Allocate space for the results
-  weight_t* stress_centrality =
-    (weight_t*)mem_alloc(graph->vertex_count * sizeof(weight_t));
+  weight_t* stress_centrality = NULL;
+  totem_malloc(graph->vertex_count * sizeof(weight_t), TOTEM_MEM_HOST_PINNED, 
+               (void**)&stress_centrality);
 
   // Allocate and initialize state for the problem
-  uint32_t* sigma =
-    (uint32_t*)mem_alloc(graph->vertex_count * sizeof(uint32_t));
-  uint32_t* delta =
-    (uint32_t*)mem_alloc(graph->vertex_count * sizeof(uint32_t));
-  uint32_t* dists =
-    (uint32_t*)mem_alloc(graph->vertex_count * sizeof(uint32_t));
+  uint32_t* sigma = NULL;
+  totem_malloc(graph->vertex_count * sizeof(uint32_t), TOTEM_MEM_HOST, 
+               (void**)&sigma);
+  uint32_t* delta = NULL;
+  totem_malloc(graph->vertex_count * sizeof(uint32_t), TOTEM_MEM_HOST, 
+               (void**)&delta);
+  uint32_t* dists = NULL;
+  totem_malloc(graph->vertex_count * sizeof(uint32_t), TOTEM_MEM_HOST, 
+               (void**)&dists);
   memset(stress_centrality, 0.0, graph->vertex_count * sizeof(weight_t));
 
   for (vid_t source = 0; source < graph->vertex_count; source++) {
@@ -396,9 +397,9 @@ error_t stress_unweighted_cpu(const graph_t* graph,
   } // for
 
   // Cleanup phase
-  mem_free(sigma);
-  mem_free(delta);
-  mem_free(dists);
+  totem_free(sigma, TOTEM_MEM_HOST);
+  totem_free(delta, TOTEM_MEM_HOST);
+  totem_free(dists, TOTEM_MEM_HOST);
 
   // Return the centrality
   *centrality_score = stress_centrality;

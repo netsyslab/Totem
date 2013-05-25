@@ -30,8 +30,8 @@ typedef struct {
   // last vertex. Another one is added to ensure 8 bytes alignment irrespective 
   // whether sizeof(eid_t) is 4 or 8. Alignment is enforced for performance 
   // reasons.
-  eid_t  vertices[VWARP_BATCH_SIZE + 2];
-  rank_t rank[VWARP_BATCH_SIZE];
+  eid_t  vertices[VWARP_DEFAULT_BATCH_SIZE + 2];
+  rank_t rank[VWARP_DEFAULT_BATCH_SIZE];
 } vwarp_mem_t;
 
 /**
@@ -177,16 +177,17 @@ void compute_unnormalized_rank_kernel(graph_t graph, rank_t* rank,
  * to the mailbox of all neighbors. The assumption is that the threads of a warp
  * invoke this function to process the warp's batch of work. In each iteration
  * of the for loop, each thread processes a neighbor. For example, thread 0 in
- * the warp processes neighbors at indices 0, VWARP_WARP_SIZE,
- * (2 * VWARP_WARP_SIZE) etc. in the edges array, while thread 1 in the warp
- * processes neighbors 1, (1 + VWARP_WARP_SIZE), (1 + 2 * VWARP_WARP_SIZE) and
- * so on.
+ * the warp processes neighbors at indices 0, VWARP_DEFAULT_WARP_WIDTH,
+ * (2 * VWARP_DEFAULT_WARP_WIDTH) etc. in the edges array, while thread 1 in 
+ * the warp processes neighbors 1, (1 + VWARP_DEFAULT_WARP_WIDTH), 
+ * (1 + 2 * VWARP_DEFAULT_WARP_WIDTH) and so on.
 */
 __device__ inline
 void vwarp_process_neighbors(vid_t warp_offset, vid_t neighbor_count, 
                              vid_t* neighbors, rank_t my_rank, 
                              rank_t* mailbox) {
-  for(vid_t i = warp_offset; i < neighbor_count; i += VWARP_WARP_SIZE) {
+  for(vid_t i = warp_offset; i < neighbor_count; 
+      i += VWARP_DEFAULT_WARP_WIDTH) {
     const vid_t neighbor_id = neighbors[i];
     atomicAdd(&(mailbox[neighbor_id]), my_rank);
   }
@@ -201,21 +202,23 @@ __global__
 void vwarp_sum_neighbors_rank_kernel(graph_t graph, rank_t* rank, 
                                      rank_t* mailbox, uint32_t thread_count) {
   if (THREAD_GLOBAL_INDEX >= thread_count) return;
-  vid_t warp_offset = THREAD_GLOBAL_INDEX % VWARP_WARP_SIZE;
-  vid_t warp_id     = THREAD_GLOBAL_INDEX / VWARP_WARP_SIZE;
+  vid_t warp_offset = THREAD_GLOBAL_INDEX % VWARP_DEFAULT_WARP_WIDTH;
+  vid_t warp_id     = THREAD_GLOBAL_INDEX / VWARP_DEFAULT_WARP_WIDTH;
 
-  __shared__ vwarp_mem_t shared_memory[(MAX_THREADS_PER_BLOCK /
-                                        VWARP_WARP_SIZE)];
-  vwarp_mem_t* my_space = shared_memory + (THREAD_GRID_INDEX / VWARP_WARP_SIZE);
+  __shared__ vwarp_mem_t shared_memory[MAX_THREADS_PER_BLOCK /
+                                       VWARP_DEFAULT_WARP_WIDTH];
+  vwarp_mem_t* my_space = &shared_memory[THREAD_BLOCK_INDEX / 
+                                         VWARP_DEFAULT_WARP_WIDTH];
 
   // copy my work to local space
-  vid_t v_ = warp_id * VWARP_BATCH_SIZE;
-  vwarp_memcpy(my_space->rank, &rank[v_], VWARP_BATCH_SIZE, warp_offset);
-  vwarp_memcpy(my_space->vertices, &(graph.vertices[v_]), VWARP_BATCH_SIZE + 1,
-               warp_offset);
+  vid_t v_ = warp_id * VWARP_DEFAULT_BATCH_SIZE;
+  vwarp_memcpy(my_space->rank, &rank[v_], 
+               VWARP_DEFAULT_BATCH_SIZE, warp_offset);
+  vwarp_memcpy(my_space->vertices, &(graph.vertices[v_]), 
+               VWARP_DEFAULT_BATCH_SIZE + 1, warp_offset);
 
   // iterate over my work
-  for(vid_t v = 0; v < VWARP_BATCH_SIZE; v++) {
+  for(vid_t v = 0; v < VWARP_DEFAULT_BATCH_SIZE; v++) {
     vid_t neighbor_count = my_space->vertices[v + 1] - my_space->vertices[v];
     vid_t* neighbors = &(graph.edges[my_space->vertices[v]]);
     vwarp_process_neighbors(warp_offset, neighbor_count, neighbors,
@@ -273,15 +276,15 @@ error_t page_rank_vwarp_gpu(graph_t* graph, rank_t* rank_i, rank_t* rank) {
   rank_t* rank_d;
   rank_t* mailbox_d;
   vid_t rank_length;
-  rank_length = VWARP_BATCH_SIZE * VWARP_BATCH_COUNT(graph->vertex_count);
+  rank_length = vwarp_default_state_length(graph->vertex_count);
   CHK_SUCCESS(initialize_gpu(graph, rank_i, rank_length, &graph_d, &rank_d,
                              &mailbox_d), err);
 
   {// Configure the kernels. Setup the number of threads for phase1 and phase2,
   // configure the on-chip memory as shared memory rather than L1 cache
   dim3 blocks1, threads_per_block1, blocks2, threads_per_block2;
-  uint32_t phase1_thread_count = VWARP_WARP_SIZE * 
-    VWARP_BATCH_COUNT(graph->vertex_count);
+  vid_t phase1_thread_count = 
+    vwarp_default_thread_count(graph->vertex_count);
   KERNEL_CONFIGURE(phase1_thread_count, blocks1, threads_per_block1);
   KERNEL_CONFIGURE(graph->vertex_count, blocks2, threads_per_block2);
   cudaFuncSetCacheConfig(vwarp_sum_neighbors_rank_kernel,
@@ -329,10 +332,8 @@ error_t page_rank_gpu(graph_t* graph, rank_t* rank_i, rank_t* rank) {
   graph_t* graph_d;
   rank_t* rank_d;
   rank_t* mailbox_d;
-  vid_t rank_length;
-  rank_length = VWARP_BATCH_SIZE * VWARP_BATCH_COUNT(graph->vertex_count);
-  CHK_SUCCESS(initialize_gpu(graph, rank_i, rank_length, &graph_d, &rank_d,
-                             &mailbox_d), err);
+  CHK_SUCCESS(initialize_gpu(graph, rank_i, graph->vertex_count, 
+                             &graph_d, &rank_d, &mailbox_d), err);
 
   {
   dim3 blocks, threads_per_block;

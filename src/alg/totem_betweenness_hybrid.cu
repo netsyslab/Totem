@@ -23,8 +23,6 @@ typedef struct betweenness_state_s {
   bool*     done;        // pointer to global finish flag
   cost_t    level;       // current level being processed by the partition
   score_t*  betweenness; // betweenness score
-  dim3      blocks;      // kernel configuration parameters
-  dim3      threads;
 } betweenness_state_t;
 
 /**
@@ -40,35 +38,26 @@ typedef struct betweenness_global_state_s {
 PRIVATE betweenness_global_state_t bc_g = {NULL, NULL, 0, CENTRALITY_EXACT, 0};
 
 /**
- * This structure is used by the virtual warp-based implementation. It stores a
- * batch of work. It is allocated on shared memory and is processed by a single
- * virtual warp. Basically it caches the state of the vertices to be processed.
- */
-typedef struct {
-  eid_t    vertices[VWARP_BATCH_SIZE + 1];
-  cost_t   distance[VWARP_BATCH_SIZE];
-  uint32_t numSPs[VWARP_BATCH_SIZE];
-} batch_mem_t;
-
-/**
  * The neighbors forward propagation processing function. This function sets 
  * the level of the neighbors' vertex to one level more than the parent vertex.
  * The assumption is that the threads of a warp invoke this function to process
  * the warp's batch of work. In each iteration of the for loop, each thread 
  * processes a neighbor. For example, thread 0 in the warp processes neighbors 
- * at indices 0, VWARP_WARP_SIZE, (2 * VWARP_WARP_SIZE) etc. in the edges array,
- * while thread 1 in the warp processes neighbors 1, (1 + VWARP_WARP_SIZE),
- * (1 + 2 * VWARP_WARP_SIZE) and so on.
+ * at indices 0, VWARP_WIDTH, (2 * VWARP_WIDTH) etc. in the edges array, while
+ * thread 1 in the warp processes neighbors 1, (1 + VWARP_WIDTH), 
+ * (1 + 2 * VWARP_WIDTH) and so on.
  */
-__device__
-void forward_process_neighbors(partition_t* par, vid_t warp_offset, vid_t* nbrs,
-                               vid_t nbr_count, uint32_t v_numSPs,
-                               betweenness_state_t* state, bool& done_d) {
+template<int VWARP_WIDTH>
+__device__ void
+forward_process_neighbors(partition_t* par, vid_t* nbrs, vid_t nbr_count, 
+                          uint32_t v_numSPs, betweenness_state_t* state, 
+                          bool& done_d) {
   uint32_t* numSPs = state->numSPs[par->id];
   // Iterate through the portion of work
-  for(vid_t i = warp_offset; i < nbr_count; i += VWARP_WARP_SIZE) {
+  for(vid_t i = vwarp_thread_index(VWARP_WIDTH); i < nbr_count;
+      i += VWARP_WIDTH) {
     vid_t nbr = GET_VERTEX_ID(nbrs[i]);
-    int nbr_pid = GET_PARTITION_ID(nbrs[i]);    
+    int nbr_pid = GET_PARTITION_ID(nbrs[i]);
     cost_t* nbr_distance = state->distance[nbr_pid];
     if (nbr_distance[nbr] == INF_COST) {
       nbr_distance[nbr] = state->level + 1;
@@ -78,7 +67,7 @@ void forward_process_neighbors(partition_t* par, vid_t warp_offset, vid_t* nbrs,
       uint32_t* dst;
       if (nbr_pid != par->id) {
         // Need to place the updated numSPs value in the outbox to be sent
-        // to the remote partition during the communication phase 
+        // to the remote partition during the communication phase
         uint32_t* values = (uint32_t*)(par->outbox_d[nbr_pid].push_values);
         dst = &values[nbr];
       } else {
@@ -93,14 +82,33 @@ void forward_process_neighbors(partition_t* par, vid_t warp_offset, vid_t* nbrs,
 /**
  * Performs forward propagation
  */
-__global__
-void betweenness_gpu_forward_kernel(partition_t par, betweenness_state_t state,
-                                    uint32_t thread_count) {
-  if (THREAD_GLOBAL_INDEX >= thread_count) return;
-  // Determine the warp parameters for this processing unit
-  vid_t warp_offset = THREAD_GLOBAL_INDEX % VWARP_WARP_SIZE;
-  vid_t warp_id     = THREAD_GLOBAL_INDEX / VWARP_WARP_SIZE;
-  
+template<int VWARP_WIDTH, int VWARP_BATCH>
+__global__ void
+betweenness_gpu_forward_kernel(partition_t par, betweenness_state_t state) {
+  vid_t vertex_count = par.subgraph.vertex_count;
+  if (vwarp_block_start_vertex(VWARP_WIDTH, VWARP_BATCH) >= vertex_count) {
+    return;
+  }
+
+  // copy the work of a block of threads to local space
+  const int block_max_batch_size = 
+    VWARP_BLOCK_MAX_BATCH_SIZE(VWARP_WIDTH, VWARP_BATCH);
+  __shared__ eid_t  vertices_s[block_max_batch_size + 1];
+  __shared__ cost_t distance_s[block_max_batch_size];
+  __shared__ uint32_t numSPs_s[block_max_batch_size];
+
+  const vid_t block_start_vertex = 
+    vwarp_block_start_vertex(VWARP_WIDTH, VWARP_BATCH);
+  const vid_t block_batch_size = 
+    vwarp_block_batch_size(vertex_count, VWARP_WIDTH, VWARP_BATCH);
+
+  vwarp_memcpy(vertices_s, &(par.subgraph.vertices[block_start_vertex]),
+               block_batch_size + 1, THREAD_BLOCK_INDEX, blockDim.x);
+  vwarp_memcpy(distance_s, &((state.distance[par.id])[block_start_vertex]), 
+               block_batch_size, THREAD_BLOCK_INDEX, blockDim.x);
+  vwarp_memcpy(numSPs_s, &((state.numSPs[par.id])[block_start_vertex]), 
+               block_batch_size, THREAD_BLOCK_INDEX, blockDim.x);
+
   // This flag is used to report the finish state of a block of threads. This
   // is useful to avoid having many threads writing to the global finished
   // flag, which can hurt performance (since "finished" is actually allocated
@@ -108,36 +116,77 @@ void betweenness_gpu_forward_kernel(partition_t par, betweenness_state_t state,
   __shared__ bool finished_block;
   finished_block = true;
   __syncthreads();
+  if (THREAD_GLOBAL_INDEX >= 
+      vwarp_thread_count(vertex_count, VWARP_WIDTH, VWARP_BATCH)) return;
 
-  // Copy my work to local space
-  __shared__ batch_mem_t batch_s[(MAX_THREADS_PER_BLOCK / VWARP_WARP_SIZE)];
-  batch_mem_t* vwarp_batch_s = &batch_s[THREAD_GRID_INDEX / VWARP_WARP_SIZE];
-  vid_t base_v = warp_id * VWARP_BATCH_SIZE;
-  vwarp_memcpy(vwarp_batch_s->vertices, &(par.subgraph.vertices[base_v]), 
-               VWARP_BATCH_SIZE + 1, warp_offset);
-  vwarp_memcpy(vwarp_batch_s->distance, &((state.distance[par.id])[base_v]),
-               VWARP_BATCH_SIZE, warp_offset);
-  vwarp_memcpy(vwarp_batch_s->numSPs, &((state.numSPs[par.id])[base_v]), 
-               VWARP_BATCH_SIZE, warp_offset);
-
+  // iterate over this vwarp's work
+  // Each virtual warp in a thread-block will process its share 
+  // of the thread-block batch of work
+  vid_t vwarp_start_vertex = vwarp_warp_start_vertex(VWARP_WIDTH, VWARP_BATCH);
+  eid_t* vwarp_vertices = &vertices_s[vwarp_start_vertex];
+  cost_t* vwarp_distance = &distance_s[vwarp_start_vertex];
+  uint32_t* vwarp_numSPs = &numSPs_s[vwarp_start_vertex];
+  vid_t vwarp_batch_size = vwarp_warp_batch_size(vertex_count, VWARP_WIDTH, 
+                                                 VWARP_BATCH);
   // Iterate over my work
-  for(vid_t v = 0; v < VWARP_BATCH_SIZE; v++) {
-    if (vwarp_batch_s->distance[v] == state.level) {
+  for(vid_t v = 0; v < vwarp_batch_size; v++) {
+    if (vwarp_distance[v] == state.level) {
       // If the distance for this node is equal to the current level, then
       // forward process its neighbours to determine its contribution to
       // the number of shortest paths
-      vid_t* nbrs = &(par.subgraph.edges[vwarp_batch_s->vertices[v]]);
-      vid_t nbr_count = vwarp_batch_s->vertices[v + 1] - 
-        vwarp_batch_s->vertices[v];
-      forward_process_neighbors(&par, warp_offset, nbrs, nbr_count, 
-                                vwarp_batch_s->numSPs[v], &state, 
-                                finished_block);
+      vid_t* nbrs = &(par.subgraph.edges[vwarp_vertices[v]]);
+      eid_t nbr_count = vwarp_vertices[v + 1] - vwarp_vertices[v];
+      forward_process_neighbors<VWARP_WIDTH>
+        (&par, nbrs, nbr_count, vwarp_numSPs[v], &state, finished_block);
     }
   }
-  // If there is remaining work to do, set the done flag to false
+
   __syncthreads();
-  if (!finished_block && threadIdx.x == 0) *(state.done) = false;
+  // If there is remaining work to do, set the done flag to false
+  if (!finished_block && THREAD_BLOCK_INDEX == 0) *(state.done) = false;
 }
+
+
+PRIVATE void
+forward_gpu_long_small(partition_t* par, betweenness_state_t* state) {
+  dim3 blocks, threads;
+  KERNEL_CONFIGURE(vwarp_thread_count(par->subgraph.vertex_count,
+                                      VWARP_LONG_WARP_WIDTH,
+                                      VWARP_SMALL_BATCH_SIZE),
+                   blocks, threads);
+  betweenness_gpu_forward_kernel<VWARP_LONG_WARP_WIDTH, VWARP_SMALL_BATCH_SIZE>
+    <<<blocks, threads, 0, par->streams[1]>>>(*par, *state);
+}
+
+PRIVATE void
+forward_gpu_short_small(partition_t* par, betweenness_state_t* state) {
+  dim3 blocks, threads;
+  KERNEL_CONFIGURE(vwarp_thread_count(par->subgraph.vertex_count,
+                                      VWARP_SHORT_WARP_WIDTH,
+                                      VWARP_SMALL_BATCH_SIZE),
+                   blocks, threads);
+  betweenness_gpu_forward_kernel<VWARP_SHORT_WARP_WIDTH, VWARP_SMALL_BATCH_SIZE>
+    <<<blocks, threads, 0, par->streams[1]>>>(*par, *state);
+}
+
+PRIVATE void 
+forward_gpu_medium_medium(partition_t* par, betweenness_state_t* state) {
+  dim3 blocks, threads;
+  KERNEL_CONFIGURE(vwarp_thread_count(par->subgraph.vertex_count,
+                                      VWARP_MEDIUM_WARP_WIDTH,
+                                      VWARP_MEDIUM_BATCH_SIZE),
+                   blocks, threads);
+  betweenness_gpu_forward_kernel<VWARP_MEDIUM_WARP_WIDTH, 
+    VWARP_LARGE_BATCH_SIZE><<<blocks, threads, 0, par->streams[1]>>>(*par, 
+                                                                     *state);
+}
+
+typedef void(*bc_gpu_func_t)(partition_t*, betweenness_state_t*);
+PRIVATE const bc_gpu_func_t FORWARD_GPU_FUNC[] = {
+  forward_gpu_medium_medium, // RANDOM algorithm
+  forward_gpu_short_small,   // HIGH partitioning
+  forward_gpu_medium_medium  // LOW partitioning
+};
 
 /**
  * Entry point for forward propagation on the GPU
@@ -147,10 +196,8 @@ PRIVATE inline void betweenness_forward_gpu(partition_t* par) {
   betweenness_state_t* state = (betweenness_state_t*)par->algo_state;
   // Call the corresponding cuda kernel to perform forward propagation
   // given the current state of the algorithm
-  betweenness_gpu_forward_kernel<<<state->blocks, state->threads, 0, 
-    par->streams[1]>>>(*par, *state, 
-                       VWARP_BATCH_COUNT(par->subgraph.vertex_count) *
-                       VWARP_WARP_SIZE);
+  int par_alg = engine_partition_algorithm();
+  FORWARD_GPU_FUNC[par_alg](par, state);
   CALL_CU_SAFE(cudaGetLastError());
 }
 
@@ -218,18 +265,20 @@ PRIVATE void betweenness_forward(partition_t* par) {
   // Increment the level for the next round of forward propagation
   state->level++;
 }
+
 /**
  * The neighbors backward propagation processing function. This function 
  * computes the delta of a vertex.
  */
-__device__ inline
-void backward_process_neighbors(partition_t* par, vid_t warp_offset, 
-                                vid_t* nbrs, vid_t nbr_count, 
-                                uint32_t v_numSPs, score_t* vwarp_delta_s, 
-                                betweenness_state_t* state, vid_t v) {
+template<int VWARP_WIDTH>
+__device__ void
+backward_process_neighbors(partition_t* par, betweenness_state_t* state,
+                           vid_t* nbrs, vid_t nbr_count, uint32_t v_numSPs,
+                           score_t* vwarp_delta_s, vid_t v) {
+  int warp_offset = vwarp_thread_index(VWARP_WIDTH);
   vwarp_delta_s[warp_offset] = 0;
   // Iterate through the portion of work
-  for(vid_t i = warp_offset; i < nbr_count; i += VWARP_WARP_SIZE) {
+  for(vid_t i = warp_offset; i < nbr_count; i += VWARP_WIDTH) {
     vid_t nbr = GET_VERTEX_ID(nbrs[i]);
     int nbr_pid = GET_PARTITION_ID(nbrs[i]);
     cost_t* nbr_distance = state->distance[nbr_pid];  
@@ -246,16 +295,16 @@ void backward_process_neighbors(partition_t* par, vid_t warp_offset,
       }
       // Compute an intermediary delta value in shared memory
       uint32_t* nbr_numSPs = state->numSPs[nbr_pid];
-      vwarp_delta_s[warp_offset] += ((((score_t)v_numSPs) / 
-                                      ((score_t)nbr_numSPs[nbr])) * 
-                                     (nbr_delta + 1));
+      vwarp_delta_s[warp_offset] += 
+        ((((score_t)v_numSPs) / ((score_t)nbr_numSPs[nbr])) * (nbr_delta + 1));
     }
   }
 
   // Only one thread in the warp aggregates the final value of delta
+  if (VWARP_WIDTH > 32) __syncthreads();
   if (warp_offset == 0) {
     score_t delta = 0;
-    for (vid_t i = 0; i < VWARP_WARP_SIZE; i++) {
+    for (vid_t i = 0; i < VWARP_WIDTH; i++) {
       delta += vwarp_delta_s[i];
     }
     // Add the dependency to the BC sum
@@ -263,38 +312,51 @@ void backward_process_neighbors(partition_t* par, vid_t warp_offset,
       state->delta[v] = delta;
       state->betweenness[v] += delta;
     }
-  }
+  }  
 }
 
 /**
  * CUDA kernel which performs backward propagation
  */
-__global__
-void betweenness_gpu_backward_kernel(partition_t par, betweenness_state_t state,
-                                     uint32_t thread_count) {
-  if (THREAD_GLOBAL_INDEX >= thread_count) return;
-  // Determine the warp parameters for this processing unit
-  vid_t warp_offset = THREAD_GLOBAL_INDEX % VWARP_WARP_SIZE;
-  vid_t warp_id     = THREAD_GLOBAL_INDEX / VWARP_WARP_SIZE; 
-  
-  // Each warp has a single entry in the following shared memory array.
-  // The entry corresponds to a batch of work which will be processed
-  // in parallel by a warp of threads.
-  __shared__ batch_mem_t batch_s[(MAX_THREADS_PER_BLOCK / VWARP_WARP_SIZE)];
+template<int VWARP_WIDTH, int VWARP_BATCH>
+__global__ void
+betweenness_gpu_backward_kernel(partition_t par, betweenness_state_t state) {
+  vid_t vertex_count = par.subgraph.vertex_count;
+  if (vwarp_block_start_vertex(VWARP_WIDTH, VWARP_BATCH) >= vertex_count) {
+    return;
+  }
 
-  // Get a reference to the batch of work of the warp this thread belongs to
-  batch_mem_t* vwarp_batch_s = &batch_s[THREAD_GRID_INDEX / VWARP_WARP_SIZE];
+  // copy the work of a block of threads to local space
+  const int block_max_batch_size = 
+    VWARP_BLOCK_MAX_BATCH_SIZE(VWARP_WIDTH, VWARP_BATCH);
+  __shared__ eid_t  vertices_s[block_max_batch_size + 1];
+  __shared__ cost_t distance_s[block_max_batch_size];
+  __shared__ uint32_t numSPs_s[block_max_batch_size];
 
-  // Calculate the starting vertex of the batch
-  vid_t base_v = warp_id * VWARP_BATCH_SIZE;
+  const vid_t block_start_vertex = 
+    vwarp_block_start_vertex(VWARP_WIDTH, VWARP_BATCH);
+  const vid_t block_batch_size = 
+    vwarp_block_batch_size(vertex_count, VWARP_WIDTH, VWARP_BATCH);
 
-  // Cache the state of my warp's batch in the shared memory space
-  vwarp_memcpy(vwarp_batch_s->vertices, &(par.subgraph.vertices[base_v]),
-               VWARP_BATCH_SIZE + 1, warp_offset);
-  vwarp_memcpy(vwarp_batch_s->distance, &((state.distance[par.id])[base_v]), 
-               VWARP_BATCH_SIZE, warp_offset);
-  vwarp_memcpy(vwarp_batch_s->numSPs, &((state.numSPs[par.id])[base_v]),
-               VWARP_BATCH_SIZE, warp_offset);
+  vwarp_memcpy(vertices_s, &(par.subgraph.vertices[block_start_vertex]),
+               block_batch_size + 1, THREAD_BLOCK_INDEX, blockDim.x);
+  vwarp_memcpy(distance_s, &((state.distance[par.id])[block_start_vertex]), 
+               block_batch_size, THREAD_BLOCK_INDEX, blockDim.x);
+  vwarp_memcpy(numSPs_s, &((state.numSPs[par.id])[block_start_vertex]), 
+               block_batch_size, THREAD_BLOCK_INDEX, blockDim.x);
+  __syncthreads();
+  if (THREAD_GLOBAL_INDEX >= 
+      vwarp_thread_count(vertex_count, VWARP_WIDTH, VWARP_BATCH)) return;
+
+  // iterate over this vwarp's work
+  // Each virtual warp in a thread-block will process its share 
+  // of the thread-block batch of work
+  vid_t vwarp_start_vertex = vwarp_warp_start_vertex(VWARP_WIDTH, VWARP_BATCH);
+  eid_t* vwarp_vertices = &vertices_s[vwarp_start_vertex];
+  cost_t* vwarp_distance = &distance_s[vwarp_start_vertex];
+  uint32_t* vwarp_numSPs = &numSPs_s[vwarp_start_vertex];
+  vid_t vwarp_batch_size = vwarp_warp_batch_size(vertex_count, VWARP_WIDTH, 
+                                                 VWARP_BATCH);
 
   // Each thread in every warp has an entry in the following array which will be
   // used to calculate intermediary delta values in shared memory
@@ -302,23 +364,64 @@ void betweenness_gpu_backward_kernel(partition_t par, betweenness_state_t state,
 
   // Get a reference to the entry of the first thread in the warp. This will be
   // indexed later using warp_offset
-  int index = THREAD_GRID_INDEX / VWARP_WARP_SIZE;
-  score_t* vwarp_delta_s = &delta_s[index * VWARP_WARP_SIZE];
+  int index = THREAD_BLOCK_INDEX / VWARP_WIDTH;
+  score_t* vwarp_delta_s = &delta_s[index * VWARP_WIDTH];
 
   // Iterate over the warp's batch of work
-  for(vid_t v = 0; v < VWARP_BATCH_SIZE; v++) {
-    if (vwarp_batch_s->distance[v] == state.level) {
+  for(vid_t v = 0; v < vwarp_batch_size; v++) {
+    if (vwarp_distance[v] == state.level) {
       // If the vertex is at the current level, determine its contribution
       // to the source vertex's delta value
-      vid_t* nbrs = &(par.subgraph.edges[vwarp_batch_s->vertices[v]]);
-      vid_t nbr_count = vwarp_batch_s->vertices[v + 1] - 
-        vwarp_batch_s->vertices[v];
-      backward_process_neighbors(&par, warp_offset, nbrs, nbr_count, 
-                                 vwarp_batch_s->numSPs[v], vwarp_delta_s,
-                                 &state, base_v + v);
+      vid_t* nbrs = &(par.subgraph.edges[vwarp_vertices[v]]);
+      vid_t nbr_count = vwarp_vertices[v + 1] - vwarp_vertices[v];
+      backward_process_neighbors<VWARP_WIDTH>
+        (&par, &state, nbrs, nbr_count, vwarp_numSPs[v], vwarp_delta_s,
+         block_start_vertex + vwarp_start_vertex + v);
     }
   }
 }
+
+PRIVATE void
+backward_gpu_long_small(partition_t* par, betweenness_state_t* state) {
+  dim3 blocks, threads;
+  KERNEL_CONFIGURE(vwarp_thread_count(par->subgraph.vertex_count,
+                                      VWARP_LONG_WARP_WIDTH,
+                                      VWARP_SMALL_BATCH_SIZE),
+                   blocks, threads);
+  betweenness_gpu_backward_kernel<VWARP_LONG_WARP_WIDTH, VWARP_SMALL_BATCH_SIZE>
+    <<<blocks, threads, 0, par->streams[1]>>>(*par, *state);
+}
+
+PRIVATE void
+backward_gpu_short_small(partition_t* par, betweenness_state_t* state) {
+  dim3 blocks, threads;
+  KERNEL_CONFIGURE(vwarp_thread_count(par->subgraph.vertex_count,
+                                      VWARP_SHORT_WARP_WIDTH,
+                                      VWARP_SMALL_BATCH_SIZE),
+                   blocks, threads);
+  betweenness_gpu_backward_kernel<VWARP_SHORT_WARP_WIDTH, 
+    VWARP_SMALL_BATCH_SIZE>
+    <<<blocks, threads, 0, par->streams[1]>>>(*par, *state);
+}
+
+PRIVATE void 
+backward_gpu_medium_medium(partition_t* par, betweenness_state_t* state) {
+  dim3 blocks, threads;
+  KERNEL_CONFIGURE(vwarp_thread_count(par->subgraph.vertex_count,
+                                      VWARP_MEDIUM_WARP_WIDTH,
+                                      VWARP_MEDIUM_BATCH_SIZE),
+                   blocks, threads);
+  betweenness_gpu_backward_kernel<VWARP_MEDIUM_WARP_WIDTH, 
+    VWARP_LARGE_BATCH_SIZE><<<blocks, threads, 0, par->streams[1]>>>(*par, 
+                                                                     *state);
+}
+
+typedef void(*bc_gpu_func_t)(partition_t*, betweenness_state_t*);
+PRIVATE const bc_gpu_func_t BACKWARD_GPU_FUNC[] = {
+  backward_gpu_medium_medium, // RANDOM algorithm
+  backward_gpu_short_small,   // HIGH partitioning
+  backward_gpu_medium_medium  // LOW partitioning
+};
 
 /**
  * Entry point for backward propagation on GPU
@@ -328,10 +431,8 @@ PRIVATE inline void betweenness_backward_gpu(partition_t* par) {
   betweenness_state_t* state = (betweenness_state_t*)par->algo_state;
   // Given this state, invoke the CUDA kernel which performs
   // backward propagation
-  betweenness_gpu_backward_kernel<<<state->blocks, state->threads, 0, 
-    par->streams[1]>>>(*par, *state,
-                       VWARP_BATCH_COUNT(par->subgraph.vertex_count) *
-                       VWARP_WARP_SIZE);
+  int par_alg = engine_partition_algorithm();
+  BACKWARD_GPU_FUNC[par_alg](par, state);
   CALL_CU_SAFE(cudaGetLastError());
 }
 
@@ -344,9 +445,9 @@ void betweenness_backward_cpu(partition_t* par) {
   graph_t* subgraph = &par->subgraph;
   cost_t* distance = state->distance[par->id];
   uint32_t* numSPs = state->numSPs[par->id];
-  
+
   // In parallel, iterate over vertices which are at the current level
-  OMP(omp parallel for)
+  OMP(omp parallel for schedule(runtime))
   for (vid_t v = 0; v < subgraph->vertex_count; v++) {
     if (distance[v] == state->level) {
       // For all neighbors of v, iterate over paths
@@ -416,7 +517,7 @@ PRIVATE inline void betweenness_scatter_cpu(int pid, grooves_box_table_t* inbox,
                                             betweenness_state_t* state) {
   cost_t* distance = state->distance[pid];
   uint32_t* numSPs = state->numSPs[pid];
-  OMP(omp parallel for schedule(static))
+  OMP(omp parallel for schedule(runtime))
   for (vid_t index = 0; index < inbox->count; index++) {
     // Get the values that have been pushed to this vertex
     vid_t vid = inbox->rmt_nbrs[index];
@@ -444,6 +545,7 @@ __global__ void betweenness_scatter_kernel(grooves_box_table_t inbox,
                                            cost_t level, bool* done) {
   vid_t index = THREAD_GLOBAL_INDEX;
   if (index >= inbox.count) return;
+
   // Get the values that have been pushed to this vertex
   vid_t vid = inbox.rmt_nbrs[index];
   uint32_t* inbox_values = (uint32_t*)inbox.push_values;
@@ -464,14 +566,15 @@ __global__ void betweenness_scatter_kernel(grooves_box_table_t inbox,
 /*
  * Parallel GPU implementation of betweenness scatter function
  */
-PRIVATE inline void betweenness_scatter_gpu(int pid, grooves_box_table_t* inbox,
+PRIVATE inline void betweenness_scatter_gpu(partition_t* par, 
+                                            grooves_box_table_t* inbox,
                                             betweenness_state_t* state) {
   dim3 blocks, threads;
   KERNEL_CONFIGURE(inbox->count, blocks, threads);
   // Invoke the appropriate CUDA kernel to perform the scatter functionality
-  betweenness_scatter_kernel<<<blocks, threads>>>(*inbox, state->distance[pid], 
-                                                  state->numSPs[pid], 
-                                                  state->level, state->done);
+  betweenness_scatter_kernel<<<blocks, threads, 0, par->streams[1]>>>
+    (*inbox, state->distance[par->id], state->numSPs[par->id], state->level, 
+     state->done);
   CALL_CU_SAFE(cudaGetLastError());
 }
 
@@ -496,7 +599,7 @@ PRIVATE void betweenness_scatter_forward(partition_t* par) {
     if (par->processor.type == PROCESSOR_CPU) {
       betweenness_scatter_cpu(par->id, inbox, state);
     } else if (par->processor.type == PROCESSOR_GPU) {
-      betweenness_scatter_gpu(par->id, inbox, state);
+      betweenness_scatter_gpu(par, inbox, state);
     } else {
       assert(false);
     }
@@ -510,7 +613,7 @@ PRIVATE inline void betweenness_gather_cpu(int pid, grooves_box_table_t* inbox,
                                            betweenness_state_t* state,
                                            score_t* values) {
   cost_t* distance = state->distance[pid];
-  OMP(omp parallel for schedule(static))
+  OMP(omp parallel for schedule(runtime))
   for (vid_t index = 0; index < inbox->count; index++) {
     vid_t vid = inbox->rmt_nbrs[index];
     // Check whether the vertex's distance is equal to level + 1
@@ -542,15 +645,15 @@ __global__ void betweenness_gather_kernel(grooves_box_table_t inbox,
 /*
  * Parallel GPU implementation of betweenness gather function
  */
-PRIVATE inline void betweenness_gather_gpu(int pid, grooves_box_table_t* inbox,
+PRIVATE inline void betweenness_gather_gpu(partition_t* par, 
+                                           grooves_box_table_t* inbox,
                                            betweenness_state_t* state,
                                            score_t* values) {
   dim3 blocks, threads;
   KERNEL_CONFIGURE(inbox->count, blocks, threads); 
   // Invoke the appropriate CUDA kernel to perform the gather functionality
-  betweenness_gather_kernel<<<blocks, threads>>>(*inbox, state->distance[pid], 
-                                                 state->level, state->delta, 
-                                                 values);
+  betweenness_gather_kernel<<<blocks, threads, 0, par->streams[1]>>>
+    (*inbox, state->distance[par->id], state->level, state->delta, values);
   CALL_CU_SAFE(cudaGetLastError());
 }
 
@@ -576,7 +679,7 @@ PRIVATE void betweenness_gather_backward(partition_t* par) {
     if (par->processor.type == PROCESSOR_CPU) {
       betweenness_gather_cpu(par->id, inbox, state, values);
     } else if (par->processor.type == PROCESSOR_GPU) {
-      betweenness_gather_gpu(par->id, inbox, state, values);
+      betweenness_gather_gpu(par, inbox, state, values);
     } else {
       assert(false);
     }   
@@ -597,11 +700,6 @@ PRIVATE void betweenness_init_backward(partition_t* par) {
   totem_mem_t type = TOTEM_MEM_HOST; 
   if (par->processor.type == PROCESSOR_GPU) { 
     type = TOTEM_MEM_DEVICE;
-    // If this is a GPU partition, also initial the kernel parameters
-    KERNEL_CONFIGURE(VWARP_WARP_SIZE * VWARP_BATCH_COUNT(vcount),
-                     state->blocks, state->threads);
-    CALL_CU_SAFE(cudaFuncSetCacheConfig(betweenness_gpu_backward_kernel,
-                                        cudaFuncCachePreferShared));
   }
 
   // Initialize the delta values to 0
@@ -626,12 +724,6 @@ PRIVATE void betweenness_init_forward(partition_t* par) {
   totem_mem_t type = TOTEM_MEM_HOST; 
   if (par->processor.type == PROCESSOR_GPU) { 
     type = TOTEM_MEM_DEVICE;
-    // If this is a GPU partition, also initialize the kernel parameters
-    KERNEL_CONFIGURE(VWARP_WARP_SIZE * VWARP_BATCH_COUNT(vcount),
-                     state->blocks, state->threads);
-    // Maximize available shared memory space at the expense of L1 cache
-    CALL_CU_SAFE(cudaFuncSetCacheConfig(betweenness_gpu_forward_kernel,
-                                        cudaFuncCachePreferShared));
   }
 
   // Initialize the distances to infinity and numSPs to 0
@@ -696,7 +788,7 @@ PRIVATE void betweenness_init(partition_t* par) {
   state->done = engine_get_finished_ptr(par->id);
 
   // Initialize the state
-  betweenness_init_forward(par); 
+  betweenness_init_forward(par);
 }
 
 /**

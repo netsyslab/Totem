@@ -4,9 +4,8 @@
  * This includes (i) device utility functions (i.e., used only from within a
  * kernel) such as double precision atomicMin and atomicAdd, (ii) utility
  * functions to allocate, copy and free a device resident graph structure (e.g.,
- * graph_initialize_device and graph_finalize_device), (iii) utility kernels
- * such as memset_device and (iv) common constants and functions related to the
- * virtual warp technique (described below).
+ * graph_initialize_device and graph_finalize_device) and (iii) utility kernels
+ * such as memset_device.
  *
  *  Created on: 2011-03-07
  *  Author: Abdullah Gharaibeh
@@ -19,32 +18,10 @@
 #include "totem_comdef.h"
 #include "totem_graph.h"
 
-// Virtual warp paramters are prefixed with "vwarp". Virtual warp is a technique
-// to reduce divergence among threads within a warp. The idea is to have all the
-// threads that belong to a warp work as a unit. To this end, instead of
-// dividing the work among threads, the work is divided among warps. A warp goes
-// through phases of SISD and SIMD in complete lock-step as if they were all a
-// single thread. The technique divides the work into batches, where each warp
-// is responsible for one batch of work. Typically, the threads of a warp
-// collaborate to fetch their assigned batch data to shared memory, and together
-// process the batch. The technique is presented in [Hong11] S. Hong, S. Kim,
-// T. Oguntebi and K.Olukotun "Accelerating CUDA Graph Algorithms at Maximum
-// Warp, PPoPP11.
-
-/**
- * the number of threads a warp consists of
- */
-const int VWARP_WARP_SIZE = 32;
-
-/**
- * the size of the batch of work assigned to each virtual warp
- */
-const int VWARP_BATCH_SIZE = 64;
-
 /**
  * Determines the maximum number of threads per block.
  */
-const int MAX_THREADS_PER_BLOCK = 512;
+const int MAX_THREADS_PER_BLOCK = 192;
 
 /**
  * Determines the maximum number of dimensions of a grid block.
@@ -62,7 +39,7 @@ const int MAX_BLOCK_PER_DIMENSION = 65535;
 const int MAX_THREAD_COUNT =
   (MAX_THREADS_PER_BLOCK * pow(MAX_BLOCK_PER_DIMENSION, MAX_BLOCK_DIMENSION));
 
-/*
+/**
  * Minimum percentage of device memory reserved for algorithm state
  */
 const double GPU_MIN_ALG_STATE = .05;
@@ -74,17 +51,14 @@ const double GPU_MIN_ALG_STATE = .05;
                              * (gridDim.x * blockIdx.y + blockIdx.x))
 
 /**
- * Grid scope linear thread index
+ * Block scope linear thread index.
  */
-#define THREAD_GRID_INDEX (threadIdx.x)
+#define THREAD_BLOCK_INDEX (threadIdx.x)
 
 /**
- * number of batches of size "VWARP_BATCH_SIZE" vertices
- * TODO(abdullah): change this to an inline function
+ * Global linear thread-block index
  */
-#define VWARP_BATCH_COUNT(vertex_count) \
-  (((vertex_count) / VWARP_BATCH_SIZE) + \
-   ((vertex_count) % VWARP_BATCH_SIZE == 0 ? 0 : 1))
+#define BLOCK_GLOBAL_INDEX (gridDim.x * blockIdx.y + blockIdx.x)
 
 /**
  * Computes a kernel configuration based on the number of vertices.
@@ -138,40 +112,6 @@ const double GPU_MIN_ALG_STATE = .05;
     }                                                                   \
   } while(0)
 
-/**
- * A SIMD version of memcpy for the virtual warp technique. The assumption is
- * that the threads of a warp invoke this function to copy their batch of work
- * from global memory (src) to shared memory (dst). In each iteration of the for
- * loop, each thread copies one element. For example, thread 0 in the warp
- * copies elements 0, VWARP_WARP_SIZE, (2 * VWARP_WARP_SIZE) etc., while thread
- * thread 1 in the warp copies elements 1, (1 + VWARP_WARP_SIZE),
- * (1 + 2 * VWARP_WARP_SIZE) and so on. Finally, this function is called only
- * from within a kernel.
- * @param[in] dst destination buffer (typically shared memory buffer)
- * @param[in] src the source buffer (typically global memory buffer)
- * @param[in] size number of elements to copy
- * @param[in] thread_offset_in_warp thread index within its warp
- */
-template<typename T>
-__device__ void vwarp_memcpy(T* dst, T* src, uint32_t size,
-                             uint32_t thread_offset_in_warp) {
-  for(int i = thread_offset_in_warp; i < size; i += VWARP_WARP_SIZE)
-    dst[i] = src[i];
-}
-
-/**
- * A templatized version of memset for device buffers, the assumption is that
- * the caller will dispatch a number of threads at least equal to "size"
- * @param[in] buffer the buffer to be set
- * @param[in] value the value the buffer elements are set to
- * @param[in] size number of elements in the buffer
- */
-template<typename T>
-__global__ void memset_device(T* buffer, T value, uint32_t size) {
-  uint32_t index = THREAD_GLOBAL_INDEX;
-  if (index >= size) return;
-  buffer[index] = value;
-}
 
 /**
  * A double precision atomic add. Based on the algorithm in the NVIDIA CUDA
@@ -238,5 +178,7 @@ inline __device__ float atomicMin(float* address, float val) {
   } while (assumed != old);
   return __int_as_float(old);
 }
+
+#include "totem_vwarp.cuh"
 
 #endif  // TOTEM_COMKERNEL_CUH

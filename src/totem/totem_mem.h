@@ -26,21 +26,6 @@ typedef enum {
 } totem_mem_t;
 
 /**
- * Allocates a buffer of size "size". Depending on the feature
- * FEATURE_PINNED_MEMORY, the buffer is either allocated in pinned or pageable
- * memory.
- * @param[in] size buffer size to allocate
- * @return allocated buffer
- */
-void* mem_alloc(size_t size);
-
-/**
- * Frees a buffer allocated by mem_alloc
- * @param[in] buf to be freed
- */
-void mem_free(void* buf);
-
-/**
  * Allocates a buffer of size "size". Depending on the type, the buffer is
  * either allocated on the host or on the device. In case of the former,
  * the buffer can be either pinned or not.
@@ -71,6 +56,20 @@ error_t totem_calloc(size_t size, totem_mem_t type, void** ptr);
 void totem_free(void* ptr, totem_mem_t type);
 
 /**
+ * A templatized version of memset for device buffers, the assumption is that
+ * the caller will dispatch a number of threads at least equal to "size"
+ * @param[in] buffer the buffer to be set
+ * @param[in] value the value the buffer elements are set to
+ * @param[in] size number of elements in the buffer
+ */
+template<typename T>
+__global__ void totem_memset_kernel(T* buffer, T value, uint32_t size) {
+  uint32_t index = THREAD_GLOBAL_INDEX;
+  if (index >= size) return;
+  buffer[index] = value;
+}
+
+/**
  * A templatized version of memset.
  * @param[in] ptr pointer the buffer to be set
  * @param[in] value the value the buffer elements are set to
@@ -98,7 +97,7 @@ error_t totem_memset(T* ptr, T value, size_t size, totem_mem_t type,
     case TOTEM_MEM_DEVICE: {
       dim3 blocks; dim3 threads;
       KERNEL_CONFIGURE(size, blocks, threads);
-      memset_device<<<blocks, threads, 0, stream>>>(ptr, value, size);
+      totem_memset_kernel<<<blocks, threads, 0, stream>>>(ptr, value, size);
       if (cudaGetLastError() != cudaSuccess) return FAILURE;      
       break;
     }
