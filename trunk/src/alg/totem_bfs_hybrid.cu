@@ -14,7 +14,8 @@
  */
 typedef struct bfs_state_s {
   cost_t*   cost;             // one slot per vertex in the partition
-  bitmap_t* visited;          // a list of bitmaps one for each remote partition
+  bitmap_t  visited[MAX_PARTITION_COUNT]; // a list of bitmaps one for each 
+                                          // remote partition
   bool*     finished;         // points to Totem's finish flag
   vid_t*    est_active_count; // estimated number of active vertices
   cost_t    level;            // current level being processed by the partition
@@ -65,7 +66,7 @@ void bfs_cpu(partition_t* par) {
   // or omp_set_schedule interface.
   OMP(omp parallel for schedule(runtime) reduction(& : finished))
   for (vid_t v = 0; v < subgraph->vertex_count; v++) {
-    if (state->cost[v] != state->level) continue;
+    if (state->cost[v] != state->level) continue;  
     for (eid_t i = subgraph->vertices[v]; i < subgraph->vertices[v + 1]; i++) {
       int nbr_pid = GET_PARTITION_ID(subgraph->edges[i]);
       vid_t nbr = GET_VERTEX_ID(subgraph->edges[i]);
@@ -228,21 +229,21 @@ PRIVATE void bfs(partition_t* par) {
 }
 
 PRIVATE inline void bfs_scatter_cpu(grooves_box_table_t* inbox, 
-                                    bfs_state_t* state, bitmap_t* visited) {
+                                    bfs_state_t* state, bitmap_t visited) {
   bitmap_t remotely_visited = (bitmap_t)inbox->push_values;
   OMP(omp parallel for schedule(runtime))
   for (vid_t index = 0; index < inbox->count; index++) {
     vid_t vid = inbox->rmt_nbrs[index];
     if (bitmap_is_set(remotely_visited, index) &&
-        !bitmap_is_set(*visited, vid)) {
-      bitmap_set_cpu(*visited, vid);
+        !bitmap_is_set(visited, vid)) {
+      bitmap_set_cpu(visited, vid);
       state->cost[vid] = state->level;
     }
   }
 }
 
 __global__ void bfs_scatter_kernel(grooves_box_table_t inbox, bfs_state_t state,
-                                   bitmap_t* visited) {
+                                   bitmap_t visited) {
   vid_t index = THREAD_GLOBAL_INDEX;
   if (index >= inbox.count) return;
   __shared__ vid_t est_active_count;
@@ -251,8 +252,8 @@ __global__ void bfs_scatter_kernel(grooves_box_table_t inbox, bfs_state_t state,
   bitmap_t rmt_visited = (bitmap_t)inbox.push_values;
   vid_t vid = inbox.rmt_nbrs[index];
   if (bitmap_is_set(rmt_visited, index) &&
-      !bitmap_is_set(*visited, vid)) {
-    bitmap_set_gpu(*visited, vid);
+      !bitmap_is_set(visited, vid)) {
+    bitmap_set_gpu(visited, vid);
     state.cost[vid] = state.level;
     est_active_count += 1;
   }
@@ -268,12 +269,12 @@ PRIVATE void bfs_scatter(partition_t* par) {
     grooves_box_table_t* inbox = &par->inbox[rmt_pid];
     if (!inbox->count) continue;
     if (par->processor.type == PROCESSOR_CPU) {
-      bfs_scatter_cpu(inbox, state, &(state->visited[par->id]));
+      bfs_scatter_cpu(inbox, state, state->visited[par->id]);
     } else if (par->processor.type == PROCESSOR_GPU) {
       dim3 blocks, threads;
       KERNEL_CONFIGURE(inbox->count, blocks, threads);
       bfs_scatter_kernel<<<blocks, threads, 0, par->streams[1]>>>
-        (*inbox, *state, &(state->visited[par->id]));
+        (*inbox, *state, state->visited[par->id]);
       CALL_CU_SAFE(cudaGetLastError());
     } else {
       assert(false);
@@ -312,25 +313,19 @@ __global__ void bfs_init_kernel(bitmap_t visited, vid_t src) {
 
 PRIVATE inline void bfs_init_gpu(partition_t* par) {
   bfs_state_t* state = (bfs_state_t*)par->algo_state;
-  bitmap_t visited[MAX_PARTITION_COUNT];
-  visited[par->id] = bitmap_init_gpu(par->subgraph.vertex_count);
+  state->visited[par->id] = bitmap_init_gpu(par->subgraph.vertex_count);
   for (int pid = 0; pid < engine_partition_count(); pid++) {
     if (pid != par->id && par->outbox[pid].count != 0) {
-      visited[pid] = (bitmap_t)par->outbox[pid].push_values;
-      bitmap_reset_gpu(visited[pid], par->outbox[pid].count);
+      state->visited[pid] = (bitmap_t)par->outbox[pid].push_values;
+      bitmap_reset_gpu(state->visited[pid], par->outbox[pid].count);
     }
   }
-  CALL_SAFE(totem_malloc(MAX_PARTITION_COUNT * sizeof(bitmap_t), 
-                         TOTEM_MEM_DEVICE, (void**)&(state->visited)));
-  CALL_CU_SAFE(cudaMemcpy(state->visited, visited, 
-                          MAX_PARTITION_COUNT * sizeof(bitmap_t),
-                          cudaMemcpyDefault));
   // set the source vertex as visited
   if (GET_PARTITION_ID(state_g.src) == par->id) {
     dim3 blocks, threads;
     KERNEL_CONFIGURE(1, blocks, threads);
     bfs_init_kernel<<<blocks, threads, 0, par->streams[1]>>>
-      (visited[par->id], GET_VERTEX_ID(state_g.src));
+      (state->visited[par->id], GET_VERTEX_ID(state_g.src));
     CALL_CU_SAFE(cudaGetLastError());
   }
   CALL_SAFE(totem_malloc(sizeof(vid_t), TOTEM_MEM_DEVICE, 
@@ -341,8 +336,6 @@ PRIVATE inline void bfs_init_gpu(partition_t* par) {
 
 PRIVATE inline void bfs_init_cpu(partition_t* par) {
   bfs_state_t* state = (bfs_state_t*)par->algo_state;
-  CALL_SAFE(totem_malloc(MAX_PARTITION_COUNT * sizeof(bitmap_t),
-                         TOTEM_MEM_HOST, (void**)&(state->visited)));
   state->visited[par->id] = bitmap_init_cpu(par->subgraph.vertex_count);
   for (int pid = 0; pid < engine_partition_count(); pid++) {
     if (pid != par->id && par->outbox[pid].count != 0) {
@@ -389,16 +382,12 @@ PRIVATE void bfs_finalize(partition_t* par) {
   if (par->processor.type == PROCESSOR_CPU) {
     bitmap_finalize_cpu(state->visited[par->id]);
   } else if (par->processor.type == PROCESSOR_GPU) {
-    bitmap_t visited;
-    CALL_CU_SAFE(cudaMemcpy(&visited, &(state->visited[par->id]), 
-                            sizeof(bitmap_t), cudaMemcpyDefault));
-    bitmap_finalize_gpu(visited);
+    bitmap_finalize_gpu(state->visited[par->id]);
     totem_free(state->est_active_count, TOTEM_MEM_DEVICE);
     type = TOTEM_MEM_DEVICE;
   } else {
     assert(false);
   }
-  totem_free(state->visited, type);
   totem_free(state->cost, type);
   free(state);
   par->algo_state = NULL;
