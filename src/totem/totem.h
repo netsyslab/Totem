@@ -13,6 +13,7 @@
 
 #include "totem_comdef.h"
 #include "totem_graph.h"
+#include "totem_partition.h"
 
 /**
  * Execution platform options
@@ -33,6 +34,12 @@ typedef enum {
   PAR_SORTED_DSC,
   PAR_MAX
 } partition_algorithm_t;
+
+/**
+ * Callback function on a partition to enable algorithm-specific per-partition
+ * state allocation/finalization.
+ */
+typedef void(*totem_cb_func_t)(partition_t*);
 
 /**
  * Defines the attributes used to initialize a Totem
@@ -58,13 +65,17 @@ typedef struct totem_attr_s {
                                             processors equally. */
   size_t                push_msg_size; /**< push comm. message size in bits */
   size_t                pull_msg_size; /**< pull comm. message size in bits */
+  totem_cb_func_t       alloc_func;    /**< callback function to allocate 
+                                            application-specific state */
+  totem_cb_func_t       free_func;     /**< callback function to free 
+                                            application-specific state */
 } totem_attr_t;
 
 // default attributes: hybrid (one GPU + CPU) platform, random 50-50 
 // partitioning, no mapped memory, push message size is word and zero
 // pull message size
 #define TOTEM_DEFAULT_ATTR {PAR_RANDOM, PLATFORM_HYBRID, 1, false, false, 0.5, \
-      MSG_SIZE_WORD, MSG_SIZE_ZERO}
+      MSG_SIZE_WORD, MSG_SIZE_ZERO, NULL, NULL}
 
 /**
  * Defines the set of timers measured internally by Totem
