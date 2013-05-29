@@ -336,6 +336,14 @@ error_t engine_init(graph_t* graph, totem_attr_t* attr) {
   init_partition(pcount, gpu_count, shares, processors);
   init_context_partitions_state();
 
+  // allocate application specific state
+  if (attr->alloc_func) {
+    for (int pid = 0; pid < context.pset->partition_count; pid++) {
+      set_processor(&context.pset->partitions[pid]);
+      attr->alloc_func(&context.pset->partitions[pid]);
+    }
+  }
+
   context.timing.engine_init = stopwatch_elapsed(&stopwatch);
   return SUCCESS;
 }
@@ -359,6 +367,13 @@ error_t engine_config(engine_config_t* config) {
 }
 
 void engine_finalize() {
+  // free application-specific state
+  if (context.attr.free_func) {
+    for (int pid = 0; pid < context.pset->partition_count; pid++) {
+      set_processor(&context.pset->partitions[pid]);
+      context.attr.free_func(&context.pset->partitions[pid]);
+    }
+  }
   assert(context.initialized);
   context.initialized = false;
   CALL_CU_SAFE(cudaFreeHost(context.finished));
