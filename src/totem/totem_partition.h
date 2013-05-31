@@ -71,37 +71,29 @@ typedef struct partition_s {
   graph_t              subgraph;     /**< the subgraph this partition
                                         represents */
   vid_t*               map;          /**< maps the a vertex id in a partition
-                                         to its original id in the graph. used
-                                         when aggregating the final results */
-  grooves_box_table_t* outbox;       /**< manages messages pushed and/or pulled
-                                        via boundary edges in the partition that
-                                        hosts the source vertex 
-                                        TODO(Abdullah): change the name to 
-                                        something more meaningful */
-  grooves_box_table_t* inbox;        /**< manages messages pushed and/or pulled
-                                        via boundary edges in the partition that
-                                        hosts the destination vertex 
-                                        TODO(Abdullah): change the name to 
-                                        something more meaningful */
+                                        to its original id in the graph. used
+                                        when aggregating the final results */
+  grooves_box_table_t outbox[MAX_PARTITION_COUNT]; /**< manages messages pushed
+                                                      and/or pulled via boundary
+                                                      edges in the partition 
+                                                      that hosts the destination
+                                                      vertex 
+                                                      TODO(Abdullah): change the
+                                                      name to something more 
+                                                      meaningful */
+  grooves_box_table_t inbox[MAX_PARTITION_COUNT]; /**< manages messages pushed
+                                                     and/or pulled via boundary
+                                                     edges in the partition 
+                                                     that hosts the destination
+                                                     vertex 
+                                                     TODO(Abdullah): change the
+                                                     name to something more 
+                                                     meaningful */
   processor_t          processor;    /**< the processor this partition will be
                                         processed on. */
   void*                algo_state;   /**< algorithm-specific state (allocated
                                         and finalized by algorithm-specific
                                         callback functions). */
-  grooves_box_table_t* outbox_d;     /**< a mirror of the outbox table on the
-                                        GPU for GPU-resident partitions. Note
-                                        that this just maintains the references
-                                        to the gpu-allocated state (i.e., the
-                                        state itself is not mirrored on both
-                                        the host and the GPU). This is needed
-                                        to allow easy management of the state,
-                                        which sometimes is managed by the host
-                                        (e.g., to initiate transfers where
-                                        in/outbox references should be used)
-                                        and sometimes by the GPU (e.g., during
-                                        actual processing where in/outbox_d
-                                        should be used) */
-  grooves_box_table_t* inbox_d;      /**< a mirror of the inbox table */
   cudaStream_t         streams[2];   /**< used in GPU-resident partitions to
                                         enable overlapped operations (e.g.,
                                         communication among all devices or with

@@ -23,7 +23,7 @@ __global__ void degree_kernel(partition_t par) {
   for (eid_t i = par.subgraph.vertices[v];
        i < par.subgraph.vertices[v + 1]; i++) {
     vid_t nbr = par.subgraph.edges[i];
-    int* dst = engine_get_dst_ptr(par.id, nbr, par.outbox_d, 
+    int* dst = engine_get_dst_ptr(par.id, nbr, par.outbox, 
                                   (int*)par.algo_state);
     atomicAdd(dst, 1);
   }
