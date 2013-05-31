@@ -39,7 +39,13 @@ typedef enum {
 typedef struct grooves_box_table_s {
   vid_t* rmt_nbrs;      /**< remote neighbors' ids. */
   void*  push_values;   /**< data pushed to remote vertices */
+  void*  push_values_s; /**< shadow buffer of data pushed to remote vertices.
+                             this is used to enable overlap of computation and 
+                             communication via double buffering */
   void*  pull_values;   /**< data pulled from remote vertices */
+  void*  pull_values_s; /**< shadow buffer of data pulled from remote vertices.
+                             this is used to enable overlap of computation and 
+                             communication via double buffering */
   vid_t  count;         /**< number of remote neighbors */
 } grooves_box_table_t;
 
@@ -63,18 +69,22 @@ error_t grooves_finalize(partition_set_t* pset);
  * launching asynchronous transfers of the values arrays of a partition's inbox
  * and outbox buffers.
  * @param[in] pset the partition set to operate on
+ * @param[in] pid partition id for which communication will be launched
  * @param[in] direction the direction of communication, PULL or PUSH
  * @return generic success or failure
  */
-error_t grooves_launch_communications(partition_set_t* pset, 
+error_t grooves_launch_communications(partition_set_t* pset, int pid,
                                       grooves_direction_t direction);
 
 /**
  * Blocks until all data transfers initiated by grooves_launch_communications
- * have finished.
+ * have finished. Also, swaps inbox/outbox data buffers used to enable double
+ * buffering (i.e., enable overlap communication with computation). 
  * @param[in] pset the partition set to operate on
+ * @param[in] direction the direction of communication, PULL or PUSH
  * @return generic success or failure
  */
-error_t grooves_synchronize(partition_set_t* pset);
+error_t grooves_synchronize(partition_set_t* pset, 
+                            grooves_direction_t direction);
 
 #endif  // TOTEM_GROOVES_H

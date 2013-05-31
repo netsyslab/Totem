@@ -68,7 +68,7 @@ forward_process_neighbors(partition_t* par, vid_t* nbrs, vid_t nbr_count,
       if (nbr_pid != par->id) {
         // Need to place the updated numSPs value in the outbox to be sent
         // to the remote partition during the communication phase
-        uint32_t* values = (uint32_t*)(par->outbox_d[nbr_pid].push_values);
+        uint32_t* values = (uint32_t*)(par->outbox[nbr_pid].push_values);
         dst = &values[nbr];
       } else {
         // Fetch from local state
@@ -288,7 +288,7 @@ backward_process_neighbors(partition_t* par, betweenness_state_t* state,
       if (nbr_pid != par->id) {
         // The neighbour is remote, so we'll need to pull their values as they
         // will not be stored in the processing unit's local memory
-        nbr_delta = ((score_t*) ((par->outbox_d)[nbr_pid].pull_values))[nbr];
+        nbr_delta = ((score_t*) ((par->outbox)[nbr_pid].pull_values))[nbr];
       } else {
         // Can just handle the updates locally
         nbr_delta = state->delta[nbr];

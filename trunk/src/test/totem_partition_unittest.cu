@@ -29,7 +29,7 @@ __global__ void VerifyPartitionGPUKernel(partition_t partition, uint32_t pid,
     int  nbr_pid = GET_PARTITION_ID(nbr);
     KERNEL_EXPECT_TRUE(nbr_pid < pcount);
     if (nbr_pid != pid) {
-      KERNEL_EXPECT_TRUE(partition.outbox_d[nbr_pid].count > 0);
+      KERNEL_EXPECT_TRUE(partition.outbox[nbr_pid].count > 0);
     }
   }
 }
@@ -38,7 +38,7 @@ __global__ void VerifyPartitionInboxGPUKernel(partition_t partition,
                                               uint32_t pid, uint32_t pcount) {
   const int index = THREAD_GLOBAL_INDEX;
   for (int r = 0; r < pcount; r++) {
-    grooves_box_table_t* inbox = &partition.inbox_d[r];
+    grooves_box_table_t* inbox = &partition.inbox[r];
     if (index >= inbox->count) continue;
     KERNEL_EXPECT_TRUE(inbox->rmt_nbrs[index] <
                        partition.subgraph.vertex_count);
@@ -204,9 +204,11 @@ class GraphPartitionTest : public TestWithParam<PartitionFunction> {
 
   void TestCommunication() {
     InitOutboxValues();
-    EXPECT_EQ(SUCCESS, grooves_launch_communications(partition_set_, 
-                                                     GROOVES_PUSH));
-    EXPECT_EQ(SUCCESS, grooves_synchronize(partition_set_));
+    for (int pid = 0; pid < partition_set_->partition_count; pid++) {
+      EXPECT_EQ(SUCCESS, grooves_launch_communications(partition_set_, pid,
+                                                       GROOVES_PUSH));
+    }
+    EXPECT_EQ(SUCCESS, grooves_synchronize(partition_set_, GROOVES_PUSH));
     CheckInboxValues();
   }
 

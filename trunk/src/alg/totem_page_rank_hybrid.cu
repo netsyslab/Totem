@@ -103,7 +103,7 @@ void vwarp_sum_neighbors_rank_kernel(partition_t par, rank_t* rank,
     vid_t* nbrs = &(par.subgraph.edges[my_space->vertices[v]]);
     for(vid_t i = warp_offset; i < nbr_count; i += VWARP_DEFAULT_WARP_WIDTH) {
       const vid_t nbr = nbrs[i];
-      rank_t* dst = engine_get_dst_ptr(par.id, nbr, par.outbox_d, rank_s);      
+      rank_t* dst = engine_get_dst_ptr(par.id, nbr, par.outbox, rank_s);      
       atomicAdd(dst, my_space->rank[v]);
     }
   }

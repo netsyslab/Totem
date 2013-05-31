@@ -19,12 +19,11 @@ inline PRIVATE void set_processor(partition_t* par) {
 /**
  * Blocks until all kernels initiated by the client have finished.
  */
-inline PRIVATE void superstep_compute_synchronize() {
-  float max_gpu_time = 0;
+inline PRIVATE double superstep_compute_synchronize() {
+  double max_gpu_time = 0;
   for (int pid = 0; pid < context.pset->partition_count; pid++) {
     partition_t* par = &context.pset->partitions[pid];
     if (par->processor.type == PROCESSOR_CPU) continue;
-    CALL_CU_SAFE(cudaStreamSynchronize(par->streams[1]));
     float time;
     cudaEventElapsedTime(&time, par->event_start, par->event_end);
     // log the total time spent computing on GPUs
@@ -37,27 +36,49 @@ inline PRIVATE void superstep_compute_synchronize() {
   }
   // log the time of the slowest gpu
   context.timing.alg_gpu_comp += max_gpu_time;
+  return max_gpu_time;
 }
 
 /**
  * Launches the compute kernel on each partition
  */
-inline PRIVATE void superstep_compute() {
+inline PRIVATE void superstep_execute() {
   stopwatch_t stopwatch;
   stopwatch_start(&stopwatch);
+
   // invoke the per superstep callback function
   if (context.config.ss_kernel_func) {
     context.config.ss_kernel_func();
   }
+
+  // If pull-based, launch the data transfer in the context of the destination
+  // stream. Note that we skip the first BSP round as the main kernel has not 
+  // been called yet
+  if (context.config.direction == GROOVES_PULL &&
+      context.superstep > 1) {
+    for (int pid = 0; pid < context.pset->partition_count; pid++) {
+      grooves_launch_communications(context.pset, pid, GROOVES_PULL);
+    }
+  }
+
+  double cpu_time = 0;
   for (int pid = 0; pid < context.pset->partition_count; pid++) {
+    partition_t* par = &context.pset->partitions[pid];
+    set_processor(par);
+
+    // If push-based communication, launch scatter kernels. Note that
+    // we skip the first BSP round as the main kernel has not been called yet
+    if (context.superstep > 1 && (context.config.direction == GROOVES_PUSH) &&
+        (context.config.par_scatter_func != NULL)) {
+        context.config.par_scatter_func(par);
+      }    
+
     // The kernel for GPU partitions is supposed not to block. The client is
     // supposedly invoking the GPU kernel asynchronously, and using the compute
     // "stream" available for each partition
-    partition_t* par = &context.pset->partitions[pid];
     stopwatch_t stopwatch_cpu;
     if (par->processor.type == PROCESSOR_GPU) {
       CALL_CU_SAFE(cudaEventRecord(par->event_start, par->streams[1]));
-      set_processor(par);
     } else {
       stopwatch_start(&stopwatch_cpu);
     }
@@ -65,58 +86,39 @@ inline PRIVATE void superstep_compute() {
     if (par->processor.type == PROCESSOR_GPU) {
       CALL_CU_SAFE(cudaEventRecord(par->event_end, par->streams[1]));
     } else {
-      double time = stopwatch_elapsed(&stopwatch_cpu);
-      context.timing.alg_cpu_comp += time;
+      cpu_time = stopwatch_elapsed(&stopwatch_cpu);
+      context.timing.alg_cpu_comp += cpu_time;
 #ifdef FEATURE_VERBOSE_TIMING
-      printf("#\tCPU: %0.2f", time);
+      printf("#\tCPU: %0.2f", cpu_time);
 #endif
     }
-  }
-#ifdef FEATURE_VERBOSE_TIMING
-  printf("\tbefSync: %0.2f", stopwatch_elapsed(&stopwatch));
-#endif
-  stopwatch_t stopwatch_sync;
-  stopwatch_start(&stopwatch_sync);
-  superstep_compute_synchronize();
-  double time_sync = stopwatch_elapsed(&stopwatch_sync);
-  double time = stopwatch_elapsed(&stopwatch);
-  context.timing.alg_comp += time;
-#ifdef FEATURE_VERBOSE_TIMING
-  printf("\tSync: %0.2f\tTotalComp: %0.2f", time_sync, time);
-#endif
-}
 
-/**
- * Triggers grooves to synchronize state across partitions
- */
-inline PRIVATE void superstep_communicate() {
-  stopwatch_t stopwatch;
-  stopwatch_start(&stopwatch);
-  if (context.config.par_gather_func) {
-    for (int pid = 0; pid < context.pset->partition_count; pid++) {
-      set_processor(&context.pset->partitions[pid]);
-      context.config.par_gather_func(&context.pset->partitions[pid]);
+    // If push-based, launch communication; if pull-based, launch gather kernels
+    if (context.config.direction == GROOVES_PUSH) {
+      // communication will be launched in the context of the source stream it
+      // will start only after the kernel in the source partition finished
+      // execution
+      grooves_launch_communications(context.pset, pid, GROOVES_PUSH);
+    } else if ((context.config.direction == GROOVES_PULL) &&
+               (context.config.par_gather_func != NULL)) {
+      context.config.par_gather_func(par);      
     }
   }
-  context.timing.alg_gather += stopwatch_elapsed(&stopwatch);
-  grooves_launch_communications(context.pset, context.config.direction);
-  grooves_synchronize(context.pset);
-  stopwatch_t stopwatch_scatter;
-  stopwatch_start(&stopwatch_scatter);
-  if (context.config.par_scatter_func) {
-    for (int pid = 0; pid < context.pset->partition_count; pid++) {
-      set_processor(&context.pset->partitions[pid]);
-      context.config.par_scatter_func(&context.pset->partitions[pid]);
-    }
-  }
-  double time_scatter = stopwatch_elapsed(&stopwatch_scatter);
-  context.timing.alg_scatter += time_scatter;
-  double time_comm = stopwatch_elapsed(&stopwatch);
-  context.timing.alg_comm += time_comm;
+
+  // Synchronize the streams (data transfers and kernels) and swap the buffers
+  // used for double buffering to overlap communication with computation
+  grooves_synchronize(context.pset, context.config.direction);
+  double gpu_time = superstep_compute_synchronize();
+
+  // Record the time spent on computation and communication
+  double total_time = stopwatch_elapsed(&stopwatch);
+  double comp_time = cpu_time > gpu_time ? cpu_time : gpu_time;
+  context.timing.alg_comp += comp_time;
+  double comm_time = total_time - comp_time;
+  context.timing.alg_comm += comm_time;
 #ifdef FEATURE_VERBOSE_TIMING
-  printf("\tcomm: %0.2f\tscatter: %0.2f\tTotalComm: %0.2f\n", 
-         time_comm - time_scatter,
-         time_scatter, time_comm);
+  printf("\tComp: %0.2f\tComm: %0.2f\tTotal: %0.2f\n", comp_time, 
+         comm_time, total_time);
 #endif
 }
 
@@ -145,14 +147,10 @@ error_t engine_execute() {
   stopwatch_start(&stopwatch);
   while (true) {
     superstep_next();             // prepare state for the next round
-    superstep_compute();          // compute phase
-    if (*context.finished) break; // check for termination
-    superstep_communicate();      // communication/synchronize phase
+    superstep_execute();          // compute phase
     if (*context.finished) break; // check for termination
   }
-#ifdef FEATURE_VERBOSE_TIMING
-  printf("\n");
-#endif
+
   context.timing.alg_exec += stopwatch_elapsed(&stopwatch);
   engine_aggregate();
   stopwatch_start(&stopwatch);
