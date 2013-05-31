@@ -278,6 +278,14 @@ inline vid_t engine_vertex_id_in_partition(vid_t v) {
   return context.pset->id_in_partition[v];
 }
 
+inline vid_t engine_vertex_id_local_to_global(vid_t v) {
+  int pid = GET_PARTITION_ID(v);
+  vid_t vid = GET_VERTEX_ID(v);
+  assert(pid < context.pset->partition_count);
+  assert(vid < context.pset->partitions[pid].subgraph.vertex_count);
+  return context.pset->partitions[pid].map[vid];
+}
+
 inline const graph_t* engine_get_graph() {
   return context.graph;
 }

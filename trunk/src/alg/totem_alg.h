@@ -13,6 +13,7 @@
 #include "totem_comkernel.cuh"
 #include "totem_graph.h"
 #include "totem_mem.h"
+#include "totem_partition.h"
 
 /**
  * A type for bfs cost. This is useful to allow changes in size.
@@ -78,6 +79,20 @@ error_t bfs_queue_cpu(graph_t* graph, vid_t source_id, cost_t* cost);
 error_t bfs_gpu(graph_t* graph, vid_t src_id, cost_t* cost);
 error_t bfs_vwarp_gpu(graph_t* graph, vid_t src_id, cost_t* cost);
 error_t bfs_hybrid(vid_t src_id, cost_t* cost);
+
+/**
+ * Given an undirected, unweighted graph and a source vertex, compute the 
+ * corresponding BFS tree.
+ *
+ * @param[in]  graph  the graph to perform BFS on
+ * @param[in]  src    id of the source vertex
+ * @param[out] tree   the BFS tree (the parent of each vertex)
+ * @return generic success or failure
+*/
+error_t graph500_cpu(graph_t* graph, vid_t src, vid_t* tree);
+error_t graph500_hybrid(vid_t src, vid_t* tree);
+void graph500_free(partition_t* par);
+void graph500_alloc(partition_t* par);
 
 /**
  * Given a weighted graph \f$G = (V, E, w)\f$ and a source vertex \f$v\inV\f$,
