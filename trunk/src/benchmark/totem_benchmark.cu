@@ -14,6 +14,7 @@ PRIVATE void benchmark_bfs(graph_t*, void*, totem_attr_t*);
 PRIVATE void benchmark_pagerank(graph_t*, void*, totem_attr_t*);
 PRIVATE void benchmark_dijkstra(graph_t*, void*, totem_attr_t*);
 PRIVATE void benchmark_betweenness(graph_t*, void*, totem_attr_t*);
+PRIVATE void benchmark_graph500(graph_t* graph, void* tree, totem_attr_t* attr);
 const benchmark_attr_t BENCHMARKS[] = {
   {
     benchmark_bfs,
@@ -21,7 +22,9 @@ const benchmark_attr_t BENCHMARKS[] = {
     sizeof(cost_t),
     true,
     1,
-    MSG_SIZE_ZERO
+    MSG_SIZE_ZERO,
+    NULL,
+    NULL
   },
   {
     benchmark_pagerank,
@@ -29,7 +32,9 @@ const benchmark_attr_t BENCHMARKS[] = {
     sizeof(rank_t),
     true,
     MSG_SIZE_ZERO,
-    sizeof(rank_t) * BITS_PER_BYTE
+    sizeof(rank_t) * BITS_PER_BYTE,
+    NULL,
+    NULL
   },
   {
     benchmark_dijkstra,
@@ -37,7 +42,9 @@ const benchmark_attr_t BENCHMARKS[] = {
     sizeof(weight_t),
     false,
     sizeof(weight_t) * BITS_PER_BYTE,
-    MSG_SIZE_ZERO
+    MSG_SIZE_ZERO,
+    NULL,
+    NULL
   },
   {
     benchmark_betweenness,
@@ -45,7 +52,19 @@ const benchmark_attr_t BENCHMARKS[] = {
     sizeof(weight_t),
     true,
     sizeof(uint32_t) * BITS_PER_BYTE,
-    sizeof(score_t) * BITS_PER_BYTE
+    sizeof(score_t) * BITS_PER_BYTE,
+    NULL,
+    NULL
+  },
+  {
+    benchmark_graph500,
+    "GRAPH500",
+    sizeof(vid_t),
+    true,
+    sizeof(vid_t) * BITS_PER_BYTE,
+    MSG_SIZE_ZERO,
+    graph500_alloc,
+    graph500_free
   }
 };
 
@@ -160,6 +179,15 @@ PRIVATE void benchmark_betweenness(graph_t* graph, void* betweenness_score,
   }
 }
 
+PRIVATE
+void benchmark_graph500(graph_t* graph, void* tree, totem_attr_t* attr) {
+  if (options->platform == PLATFORM_CPU) {
+    CALL_SAFE(graph500_cpu(graph, get_random_src(graph), (vid_t*)tree));
+  } else {
+    CALL_SAFE(graph500_hybrid(get_random_src(graph), (vid_t*)tree));
+  }
+}
+
 /**
  * The main execution loop of the benchmark
  */
@@ -190,6 +218,8 @@ PRIVATE void benchmark_run() {
     attr.gpu_par_randomized = options->gpu_par_randomized;
     attr.push_msg_size = BENCHMARKS[options->benchmark].push_msg_size;
     attr.pull_msg_size = BENCHMARKS[options->benchmark].pull_msg_size;
+    attr.alloc_func = BENCHMARKS[options->benchmark].alloc_func;
+    attr.free_func = BENCHMARKS[options->benchmark].free_func;
     CALL_SAFE(totem_init(graph, &attr));
   }
 

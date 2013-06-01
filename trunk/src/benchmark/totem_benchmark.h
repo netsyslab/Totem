@@ -21,6 +21,7 @@ typedef enum {
   BENCHMARK_PAGERANK,
   BENCHMARK_DIJKSTRA,
   BENCHMARK_BETWEENNESS,
+  BENCHMARK_GRAPH500,
   BENCHMARK_MAX
 } benchmark_t;
 
@@ -29,12 +30,16 @@ typedef enum {
  */
 typedef struct benchmark_attr_s {
   void(*func)(graph_t*, void*, totem_attr_t*); /**< benchmark function */
-  const char* name;       /**< benchmark name */
-  size_t output_size;     /**< per-vertex output size */
-  bool has_totem;         /**< true if the benchmark has a Totem-based 
-                               implementation */
-  size_t push_msg_size;   /**< push message size (for Totem-based impl.) */
-  size_t pull_msg_size;   /**< pull message size (for Totem-based impl.) */
+  const char*     name;          /**< benchmark name */
+  size_t          output_size;   /**< per-vertex output size */
+  bool            has_totem;     /**< true if the benchmark has a Totem-based 
+                                      implementation */
+  size_t          push_msg_size; /**< push message size (Totem-based alg.) */
+  size_t          pull_msg_size; /**< pull message size (Totem-based alg.) */
+  totem_cb_func_t alloc_func;    /**< allocation callback function 
+                                      (Totem-based alg.) */
+  totem_cb_func_t free_func;     /**< free callback function 
+                                      (Totem-based alg.) */
 } benchmark_attr_t;
 
 /**
