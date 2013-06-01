@@ -47,6 +47,7 @@ PRIVATE void display_help(char* exe_name, int exit_err) {
          "     %d: PageRank\n"
          "     %d: Dijkstra\n"
          "     %d: Betweenness\n"
+         "     %d: Graph500\n"
          "  -gNUM [0-%d] Number of GPUs to use. This is applicable for GPU\n"
          "        and Hybrid platforms only (default 1).\n"
          "  -iNUM Partitioning Algorithm\n"
@@ -70,10 +71,11 @@ PRIVATE void display_help(char* exe_name, int exit_err) {
          "  -tNUM [1-%d] Number of CPU threads to use (default %d).\n" 
          "  -h Print this help message\n",
          exe_name, BENCHMARK_BFS, BENCHMARK_PAGERANK, BENCHMARK_DIJKSTRA, 
-         BENCHMARK_BETWEENNESS, get_gpu_count(), PAR_RANDOM, PAR_SORTED_ASC, 
-         PAR_SORTED_DSC, PLATFORM_CPU, PLATFORM_GPU, PLATFORM_HYBRID, 
-         REPEAT_MAX, omp_sched_static, omp_sched_dynamic, omp_sched_guided, 
-         omp_get_max_threads(), omp_get_max_threads());
+         BENCHMARK_BETWEENNESS, BENCHMARK_GRAPH500, get_gpu_count(), 
+         PAR_RANDOM, PAR_SORTED_ASC, PAR_SORTED_DSC, PLATFORM_CPU, 
+         PLATFORM_GPU, PLATFORM_HYBRID, REPEAT_MAX, omp_sched_static, 
+         omp_sched_dynamic, omp_sched_guided, omp_get_max_threads(), 
+         omp_get_max_threads());
   exit(exit_err);
 }
 
