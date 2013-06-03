@@ -1,8 +1,7 @@
 /** 
- * Cache unfriendly Memory Intensive Benchmark 
- * for Power Measurement Experiments
+ * CPU and Memory Intensive Benchmark for Power Measurement Experiments
  * 
- * Created on: 2013-05-17
+ * Created on: 2013-05-28
  * Author: Sidney Pontes Filho
  */
 
@@ -10,8 +9,9 @@
 #include "totem_intensive_benchmark.h"
 
 /**
- * A non-cache friendly memory intensive routine that reads a 
- * large array in random positions in parallel using OMP.
+ * A CPU and memory intensive routine that reads a large array in 
+ * random positions and uses the read number to calculate 
+ * multiplication and modulus in parallel using OMP.
  * @param[in] argv[1] duration of the running time in seconds 
  */
 int main (int argc, char *argv[]) {
@@ -41,12 +41,18 @@ int main (int argc, char *argv[]) {
     ar[i] = num;
   }
 
-  // Reads a random position on array during a defined time.
+  // Reads a random position on array, then that read number is 
+  // used to calculate multiplication and modulus with a random 
+  // number during a defined time.
   OMP(omp parallel)
   {
     uint64_t index = random_uint64(LARGE_ARRAY_SIZE);
+    uint64_t num;
     do {
-      index = ar[index];
+
+      // "(uint64_t)(-1)" is equal to the maximum possible value. 
+      num = random_uint64((uint64_t)(-1));
+      index = (num * ar[index]) % LARGE_ARRAY_SIZE;
       time(&end);
     } while (difftime(end, start) < duration);
   }
