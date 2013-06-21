@@ -170,10 +170,8 @@ TEST_P(EngineTest, CompleteGraph) {
 
 TEST_P(EngineTest, InvalidGPUCount) {
   graph_initialize(DATA_FOLDER("chain_1000_nodes.totem"), false, &_graph);
-  totem_attr_t attr = {
-    PAR_RANDOM, PLATFORM_HYBRID, get_gpu_count() + 1, 
-    .3, sizeof(int) * BITS_PER_BYTE
-  };
+  totem_attr_t attr = TOTEM_DEFAULT_ATTR;
+  attr.gpu_count = get_gpu_count() + 1;
   EXPECT_EQ(FAILURE, engine_init(_graph, &attr));
   attr.platform = PLATFORM_GPU;
   EXPECT_EQ(FAILURE, engine_init(_graph, &attr));

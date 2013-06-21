@@ -219,8 +219,8 @@ PRIVATE const partition_func_t PARTITION_FUNC[] = {
  * @param[in] partition_labels an array with a partition id for each vertex as
  *                             identified by the array position
  * @param[in] partition_count the number of partitions
- * @param[in] mapped offers the option to allocate the vertices array as a 
- *                   memory-mapped buffer on the host.
+ * @param[in] gpu_graph_mem the type of memory used to allocate the graph data
+ *                          structure of GPU-based partitions
  * @param[in] push_msg_size  the size of a push communication element
  * @param[in] pull_msg_size  the size of a pull communication element
  * @param[out] partition_set the set of resulting graphs
@@ -228,7 +228,8 @@ PRIVATE const partition_func_t PARTITION_FUNC[] = {
  */
 error_t partition_set_initialize(graph_t* graph, vid_t* partition_labels,
                                  processor_t* partition_processor,
-                                 int partition_count, bool mapped,
+                                 int partition_count, 
+                                 gpu_graph_mem_t gpu_graph_mem,
                                  size_t push_msg_size, size_t pull_msg_size, 
                                  partition_set_t** partition_set);
 

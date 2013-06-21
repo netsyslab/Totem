@@ -21,7 +21,7 @@
 /**
  * Determines the maximum number of threads per block.
  */
-const int MAX_THREADS_PER_BLOCK = 192;
+const int MAX_THREADS_PER_BLOCK = 1024;
 
 /**
  * Determines the maximum number of dimensions of a grid block.
@@ -104,8 +104,8 @@ const double GPU_MIN_ALG_STATE = .05;
  */
 #define CALL_CU_SAFE(cuda_call)                                         \
   do {                                                                  \
-    if ((cuda_call) != cudaSuccess) {                                   \
-      cudaError_t err = cudaGetLastError();                             \
+    cudaError_t err = cuda_call;                                        \
+    if (err != cudaSuccess) {                                           \
       fprintf(stderr, "Cuda Error in file '%s' in line %i : %s.\n",     \
               __FILE__, __LINE__, cudaGetErrorString(err));             \
       assert(false);                                                    \

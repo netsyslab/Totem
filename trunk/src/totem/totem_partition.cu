@@ -20,7 +20,6 @@ typedef struct vdegree_s {
   vid_t degree; // vertex degree
 } vdegree_t;
 
-
 error_t partition_modularity(graph_t* graph, partition_set_t* partition_set,
                              double* modularity) {
   assert(graph && partition_set);
@@ -206,26 +205,27 @@ error_t partition_by_sorted_degree(graph_t* graph, int partition_count,
   *partition_labels = (vid_t*)calloc(graph->vertex_count, sizeof(vid_t));
   assert(*partition_labels);
 
+  // At the beginning, assume that all vertices belong to the last partition
+  for (vid_t v = 0; v < graph->vertex_count; v++) {
+    (*partition_labels)[v] = partition_count - 1;
+  }
+
   // Assign vertices to partitions. Considering the sum of edges and vertices as
   // the normalizing factor allows to create a partition with space complexity 
   // proportional to the requested fraction. This is important when creating 
   // partitions with few edges but many vertices (e.g., a partition dominated by
   // low-degree vertices). 
-  double total_elements = (double)graph->vertex_count + 
+  double total_elements = (double)graph->vertex_count +
     (double)graph->edge_count;
   vid_t index = 0;
   for (int pid = 0; pid < partition_count - 1; pid++) {
     double assigned = 0;
     while ((assigned / total_elements < partition_fraction[pid]) &&
            (index < graph->vertex_count)) {
-      assigned += vd[index].degree + 1;
-      (*partition_labels)[vd[index].id] = pid;
-      index++;
+        assigned += vd[index].degree + 1;
+        (*partition_labels)[vd[index].id] = pid;
+        index++;
     }
-  }
-  // Assign the rest to the last partition
-  for (; index < graph->vertex_count; index++) {
-    (*partition_labels)[vd[index].id] = partition_count - 1;
   }
 
   // Clean up
@@ -340,9 +340,11 @@ PRIVATE void init_build_partitions(partition_set_t* pset, vid_t* plabels,
   for (vid_t vid = 0; vid < graph->vertex_count; vid++) {
     partition_t* partition = &pset->partitions[plabels[vid]];
     graph_t* subgraph = &partition->subgraph;
-    subgraph->vertices[subgraph->vertex_count] =
-      subgraph->edge_count;
-    for (eid_t i = graph->vertices[vid]; i < graph->vertices[vid + 1]; i++) {
+    vid_t local_id = subgraph->vertex_count;
+    vid_t global_id = partition->map[local_id];
+    subgraph->vertices[local_id] = subgraph->edge_count;    
+    for (eid_t i = graph->vertices[global_id]; 
+         i < graph->vertices[global_id + 1]; i++) {
       subgraph->edges[subgraph->edge_count] =
         pset->id_in_partition[graph->edges[i]];
       if (graph->weighted) {
@@ -371,7 +373,8 @@ PRIVATE void init_sort_nbrs(partition_set_t* pset) {
   }
 }
 
-PRIVATE void init_build_partitions_gpu(partition_set_t* pset, bool mapped) {
+PRIVATE void init_build_partitions_gpu(partition_set_t* pset, 
+                                       gpu_graph_mem_t gpu_graph_mem) {
   uint32_t pcount = pset->partition_count;
   for (uint32_t pid = 0; pid < pcount; pid++) {
     partition_t* partition = &pset->partitions[pid];
@@ -385,7 +388,7 @@ PRIVATE void init_build_partitions_gpu(partition_set_t* pset, bool mapped) {
     assert(subgraph_h);
     memcpy(subgraph_h, &partition->subgraph, sizeof(graph_t));
     graph_t* subgraph_d = NULL;
-    CALL_SAFE(graph_initialize_device(subgraph_h, &subgraph_d, mapped));
+    CALL_SAFE(graph_initialize_device(subgraph_h, &subgraph_d, gpu_graph_mem));
     graph_finalize(subgraph_h);
     memcpy(&partition->subgraph, subgraph_d, sizeof(graph_t));
     free(subgraph_d);
@@ -393,7 +396,8 @@ PRIVATE void init_build_partitions_gpu(partition_set_t* pset, bool mapped) {
 }
 
 error_t partition_set_initialize(graph_t* graph, vid_t* plabels,
-                                 processor_t* pproc, int pcount, bool mapped,
+                                 processor_t* pproc, int pcount, 
+                                 gpu_graph_mem_t gpu_graph_mem,
                                  size_t push_msg_size, size_t pull_msg_size,
                                  partition_set_t** pset) {
   assert(graph && plabels && pproc);
@@ -419,7 +423,7 @@ error_t partition_set_initialize(graph_t* graph, vid_t* plabels,
   grooves_initialize(*pset);
 
   // Build the state on the GPU(s) for GPU residing partitions
-  init_build_partitions_gpu(*pset, mapped);
+  init_build_partitions_gpu(*pset, gpu_graph_mem);
 
   return SUCCESS;
  err:
@@ -440,12 +444,19 @@ error_t partition_set_finalize(partition_set_t* pset) {
       CALL_CU_SAFE(cudaEventDestroy(partition->event_end));
       // TODO(abdullah): use graph_finalize instead of manually
       // freeing the buffers
-      CALL_CU_SAFE(cudaFree(subgraph->edges));
-      if (subgraph->mapped) {
-        totem_free(subgraph->vertices, TOTEM_MEM_HOST_MAPPED);
+      if (subgraph->gpu_graph_mem == GPU_GRAPH_MEM_MAPPED ||
+          subgraph->gpu_graph_mem == GPU_GRAPH_MEM_MAPPED_VERTICES) {
+        totem_free(subgraph->mapped_vertices, TOTEM_MEM_HOST_MAPPED);
       } else {
-        CALL_CU_SAFE(cudaFree(subgraph->mapped_vertices));
+        totem_free(subgraph->vertices, TOTEM_MEM_DEVICE);
       }
+      if (subgraph->gpu_graph_mem == GPU_GRAPH_MEM_MAPPED ||
+          subgraph->gpu_graph_mem == GPU_GRAPH_MEM_MAPPED_EDGES) {
+        totem_free(subgraph->mapped_edges, TOTEM_MEM_HOST_MAPPED);
+      } else {
+        totem_free(subgraph->edges, TOTEM_MEM_DEVICE);
+      }
+
       if (subgraph->weighted && subgraph->weights)
         CALL_CU_SAFE(cudaFree(subgraph->weights));
     } else {

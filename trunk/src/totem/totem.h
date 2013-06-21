@@ -48,10 +48,9 @@ typedef struct totem_attr_s {
   partition_algorithm_t par_algo;      /**< CPU-GPU partitioning strategy */
   platform_t            platform;      /**< the execution platform */
   uint32_t              gpu_count;     /**< number of GPUs to use  */
-  bool                  mapped;        /**< whether the vertices array of GPU 
-                                            partitions is allocated as memory
-                                            mapped buffer on the host or on the
-                                            GPU memory */
+  gpu_graph_mem_t     gpu_graph_mem;   /**< determines the type of memory used
+                                            to place the graph data structure of
+                                            GPU partitions */
   bool                  gpu_par_randomized; /**< whether the placement of 
                                                  vertices across GPUs is random
                                                  or according to par_algo */
@@ -72,10 +71,10 @@ typedef struct totem_attr_s {
 } totem_attr_t;
 
 // default attributes: hybrid (one GPU + CPU) platform, random 50-50 
-// partitioning, no mapped memory, push message size is word and zero
-// pull message size
-#define TOTEM_DEFAULT_ATTR {PAR_RANDOM, PLATFORM_HYBRID, 1, false, false, 0.5, \
-      MSG_SIZE_WORD, MSG_SIZE_ZERO, NULL, NULL}
+// partitioning, push message size is word and zero pull message size
+#define TOTEM_DEFAULT_ATTR {PAR_RANDOM, PLATFORM_HYBRID, 1, \
+      GPU_GRAPH_MEM_DEVICE, false, 0.5, MSG_SIZE_WORD, MSG_SIZE_ZERO, \
+      NULL, NULL}
 
 /**
  * Defines the set of timers measured internally by Totem

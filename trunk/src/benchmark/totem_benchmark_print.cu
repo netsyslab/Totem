@@ -12,6 +12,8 @@ PRIVATE const char* PLATFORM_STR[] = {"CPU", "GPU", "HYBRID"};
 PRIVATE const char* PAR_ALGO_STR[] = {"RANDOM", "HIGH", "LOW"};
 PRIVATE const char* OMP_SCHEDULE_STR[] = {"", "STATIC", "DYNAMIC", "GUIDED", 
                                           "RUNTIME"};
+PRIVATE const char* GPU_GRAPH_MEM_STR[] = {"DEVICE", "MAPPED", 
+                                           "MAPPED_VERTICES", "MAPPED_EDGES"};
 
 /**
  * Prints partitioning characteristics
@@ -53,14 +55,14 @@ void print_config(graph_t* graph, benchmark_options_t* options,
   printf("file:%s\tbenchmark:%s\tvertices:%llu\tedges:%llu\tpartitioning:%s\t"
          "platform:%s\talpha:%d\trepeat:%d\tgpu_count:%d\t"
          "thread_count:%d\tthread_sched:%s\tthread_bind:%s\t"
-         "mapped:%s\tgpu_par_randomized:%s",
+         "gpu_graph_mem:%s\tgpu_par_randomized:%s",
          options->graph_file, benchmark_name, 
          (uint64_t)graph->vertex_count, (uint64_t)graph->edge_count, 
          PAR_ALGO_STR[options->par_algo], PLATFORM_STR[options->platform], 
          options->alpha, options->repeat, options->gpu_count, 
          options->thread_count, OMP_SCHEDULE_STR[options->omp_sched], 
          OMP_PROC_BIND == NULL ? "false" : OMP_PROC_BIND,
-         options->mapped ? "true" : "false",
+         GPU_GRAPH_MEM_STR[options->gpu_graph_mem],
          options->gpu_par_randomized ? "true" : "false");
   fflush(stdout);
 }

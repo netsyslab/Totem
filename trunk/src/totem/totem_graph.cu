@@ -616,7 +616,7 @@ error_t graph_finalize(graph_t* graph) {
 }
 
 error_t graph_initialize_device(const graph_t* graph_h, graph_t** graph_d,
-                                bool mapped) {
+                                gpu_graph_mem_t gpu_graph_mem) {
   assert(graph_h);
 
   // Allocate the graph struct that will host references to device buffers
@@ -625,7 +625,7 @@ error_t graph_initialize_device(const graph_t* graph_h, graph_t** graph_d,
   // Copy basic data types within the structure, the buffers pointers will be
   // overwritten next with device pointers
   **graph_d = *graph_h;
-  (*graph_d)->mapped = mapped;
+  (*graph_d)->gpu_graph_mem = gpu_graph_mem;
 
   // Nothing to be done if this is an empty graph
   if (!graph_h->vertex_count) return SUCCESS;
@@ -642,20 +642,30 @@ error_t graph_initialize_device(const graph_t* graph_h, graph_t** graph_d,
 
   // Allocate device buffers
   totem_mem_t mem_type = TOTEM_MEM_DEVICE;
-  if (mapped) {
-    CALL_SAFE(totem_malloc((vertex_count_batch_padded + 1) * sizeof(eid_t), 
-                           TOTEM_MEM_HOST_MAPPED, 
+  if ((*graph_d)->gpu_graph_mem == GPU_GRAPH_MEM_MAPPED ||
+      (*graph_d)->gpu_graph_mem == GPU_GRAPH_MEM_MAPPED_VERTICES) {
+    CALL_SAFE(totem_malloc((vertex_count_batch_padded + 1) * sizeof(eid_t),
+                           TOTEM_MEM_HOST_MAPPED,
                            (void**)&(*graph_d)->mapped_vertices));
-    CALL_CU_SAFE(cudaHostGetDevicePointer((void**)&((*graph_d)->vertices), 
-                 (*graph_d)->mapped_vertices, 0));
+    CALL_CU_SAFE(cudaHostGetDevicePointer((void**)&((*graph_d)->vertices),
+                                          (*graph_d)->mapped_vertices, 0));
   } else {
     CALL_SAFE(totem_malloc((vertex_count_batch_padded + 1) * sizeof(eid_t), 
                            mem_type, (void**)&(*graph_d)->vertices));
   }
 
   if (graph_h->edge_count != 0) {
-    CALL_SAFE(totem_malloc(graph_h->edge_count * sizeof(vid_t), mem_type,
-                           (void**)&(*graph_d)->edges));
+    if ((*graph_d)->gpu_graph_mem == GPU_GRAPH_MEM_MAPPED ||
+        (*graph_d)->gpu_graph_mem == GPU_GRAPH_MEM_MAPPED_EDGES) {
+      CALL_SAFE(totem_malloc(graph_h->edge_count * sizeof(vid_t), 
+                             TOTEM_MEM_HOST_MAPPED,
+                             (void**)&(*graph_d)->mapped_edges));
+      CALL_CU_SAFE(cudaHostGetDevicePointer((void**)&((*graph_d)->edges), 
+                                            (*graph_d)->mapped_edges, 0));
+    } else {
+      CALL_SAFE(totem_malloc(graph_h->edge_count * sizeof(vid_t), mem_type,
+                             (void**)&(*graph_d)->edges));
+    }
   }
 
   if (graph_h->weighted) {
@@ -697,13 +707,21 @@ error_t graph_initialize_device(const graph_t* graph_h, graph_t** graph_d,
 void graph_finalize_device(graph_t* graph_d) {
   assert(graph_d);
   if (graph_d->vertex_count) {
-    if (graph_d->mapped) {
+    if (graph_d->gpu_graph_mem == GPU_GRAPH_MEM_MAPPED ||
+        graph_d->gpu_graph_mem == GPU_GRAPH_MEM_MAPPED_VERTICES) {
       totem_free(graph_d->mapped_vertices, TOTEM_MEM_HOST_MAPPED);
     } else {
       totem_free(graph_d->vertices, TOTEM_MEM_DEVICE);
     }
   }
-  if (graph_d->edge_count) totem_free(graph_d->edges, TOTEM_MEM_DEVICE);
+  if (graph_d->edge_count) {
+    if (graph_d->gpu_graph_mem == GPU_GRAPH_MEM_MAPPED ||
+        graph_d->gpu_graph_mem == GPU_GRAPH_MEM_MAPPED_EDGES) {
+      totem_free(graph_d->mapped_edges, TOTEM_MEM_HOST_MAPPED);
+    } else {
+      totem_free(graph_d->edges, TOTEM_MEM_DEVICE);
+    }
+  }
   if (graph_d->weighted) totem_free(graph_d->weights, TOTEM_MEM_DEVICE);
   totem_free(graph_d, TOTEM_MEM_HOST);
 }

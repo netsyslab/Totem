@@ -51,35 +51,41 @@ inline PRIVATE void superstep_execute() {
     context.config.ss_kernel_func();
   }
 
-  // If pull-based, launch the data transfer in the context of the destination
-  // stream. Note that we skip the first BSP round as the main kernel has not 
-  // been called yet
-  if (context.config.direction == GROOVES_PULL &&
-      context.superstep > 1) {
-    for (int pid = 0; pid < context.pset->partition_count; pid++) {
-      grooves_launch_communications(context.pset, pid, GROOVES_PULL);
-    }
-  }
-
   double cpu_time = 0;
+  double cpu_gather_time = 0;
+  double cpu_scatter_time = 0;
   for (int pid = 0; pid < context.pset->partition_count; pid++) {
     partition_t* par = &context.pset->partitions[pid];
-    set_processor(par);
 
     // If push-based communication, launch scatter kernels. Note that
     // we skip the first BSP round as the main kernel has not been called yet
-    if (context.superstep > 1 && (context.config.direction == GROOVES_PUSH) &&
-        (context.config.par_scatter_func != NULL)) {
+    if (context.superstep > 1) {
+      if ((context.config.direction == GROOVES_PUSH) &&
+          (context.config.par_scatter_func != NULL)) {
+        stopwatch_t scatter;
+        stopwatch_start(&scatter);
+        set_processor(par);
         context.config.par_scatter_func(par);
-      }    
+        cpu_scatter_time += stopwatch_elapsed(&scatter);
+      }
+    }
 
     // The kernel for GPU partitions is supposed not to block. The client is
     // supposedly invoking the GPU kernel asynchronously, and using the compute
     // "stream" available for each partition
     stopwatch_t stopwatch_cpu;
     if (par->processor.type == PROCESSOR_GPU) {
+      set_processor(par);
       CALL_CU_SAFE(cudaEventRecord(par->event_start, par->streams[1]));
     } else {
+      // This is to make sure that data pulled from a GPU partition to the
+      // CPU partition is available
+      for (int rmt_pid = 0; rmt_pid < context.pset->partition_count; 
+           rmt_pid++) {
+        if (rmt_pid == pid) continue;
+        partition_t* rmt_par = &context.pset->partitions[rmt_pid];
+        CALL_CU_SAFE(cudaStreamSynchronize(rmt_par->streams[0]));
+      }
       stopwatch_start(&stopwatch_cpu);
     }
     context.config.par_kernel_func(par);
@@ -101,7 +107,12 @@ inline PRIVATE void superstep_execute() {
       grooves_launch_communications(context.pset, pid, GROOVES_PUSH);
     } else if ((context.config.direction == GROOVES_PULL) &&
                (context.config.par_gather_func != NULL)) {
-      context.config.par_gather_func(par);      
+      stopwatch_t gather;
+      stopwatch_start(&gather);
+      set_processor(par);
+      context.config.par_gather_func(par);
+      cpu_gather_time += stopwatch_elapsed(&gather);
+      grooves_launch_communications(context.pset, pid, GROOVES_PULL);
     }
   }
 
@@ -116,9 +127,13 @@ inline PRIVATE void superstep_execute() {
   context.timing.alg_comp += comp_time;
   double comm_time = total_time - comp_time;
   context.timing.alg_comm += comm_time;
+  context.timing.alg_scatter += cpu_scatter_time;
+  context.timing.alg_gather += cpu_gather_time;
 #ifdef FEATURE_VERBOSE_TIMING
-  printf("\tComp: %0.2f\tComm: %0.2f\tTotal: %0.2f\n", comp_time, 
-         comm_time, total_time);
+  printf("\tComp: %0.2f\tComm: %0.2f\tCPUScatter: %0.2f"
+         "\tCPUGather: %0.2f\tTotal: %0.2f\n",
+         comp_time, comm_time, cpu_scatter_time, cpu_gather_time,
+         total_time);
 #endif
 }
 
@@ -250,7 +265,8 @@ PRIVATE void init_partition(int pcount, int gpu_count, double* shares,
 
   context.timing.engine_par = stopwatch_elapsed(&stopwatch_par);
   CALL_SAFE(partition_set_initialize(context.graph, par_labels,
-                                     processors, pcount, context.attr.mapped,
+                                     processors, pcount, 
+                                     context.attr.gpu_graph_mem,
                                      context.attr.push_msg_size,
                                      context.attr.pull_msg_size,
                                      &context.pset));
@@ -292,7 +308,7 @@ PRIVATE void init_context_partitions_state() {
 
 PRIVATE error_t init_check_space(graph_t* graph, totem_attr_t* attr, int pcount,
                                  double* shares, processor_t* processors) {
-  if (attr->mapped) return SUCCESS;
+  if (attr->gpu_graph_mem != GPU_GRAPH_MEM_DEVICE) return SUCCESS;
   for (int pid = 0; pid < pcount; pid++) {
     if (processors[pid].type == PROCESSOR_GPU) {
       size_t needed = (((double)graph->vertex_count + 
