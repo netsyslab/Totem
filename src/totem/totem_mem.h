@@ -83,7 +83,7 @@ __global__ void totem_memset_kernel(T* buffer, T value, uint32_t size) {
  */
 template<typename T>
 error_t totem_memset(T* ptr, T value, size_t size, totem_mem_t type, 
-                  cudaStream_t stream = 0) {
+                     cudaStream_t stream = 0) {
   switch (type) {
     case TOTEM_MEM_HOST:
     case TOTEM_MEM_HOST_PINNED: 
@@ -98,7 +98,7 @@ error_t totem_memset(T* ptr, T value, size_t size, totem_mem_t type,
       dim3 blocks; dim3 threads;
       KERNEL_CONFIGURE(size, blocks, threads);
       totem_memset_kernel<<<blocks, threads, 0, stream>>>(ptr, value, size);
-      if (cudaGetLastError() != cudaSuccess) return FAILURE;      
+      CALL_CU_SAFE(cudaGetLastError());
       break;
     }
     default:

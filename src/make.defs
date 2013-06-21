@@ -6,7 +6,6 @@
 #   EID=64          // 64-bit edge ids
 #   VERBOSE=NO      // disable verbose timing of Totem execution rounds
 #   DEBUG=DEVICE    // produce device debugging symbols
-#   MAXREG=[number] // maximum number of registers per cuda thread (default 16)
 #   L1=YES          // enable using GPU L1 cache (default disabled)
 # Created on: 2011-02-28
 # Author: Abdullah Gharaibeh
@@ -31,9 +30,6 @@ endif
 ifeq ($(DEBUG), DEVICE)
   NVCCFLAGS  += -G
 endif
-
-# Maximum number of registers per cuda thread
-MAXREG ?= 16
 
 # Enable/disable GPU L1 cache
 ifneq ($(L1), YES)
@@ -64,8 +60,7 @@ CCFLAGS   += -g $(OPENMP) $(OPTFLAGS) -Wall -Wno-format \
              -I$(CUDA_INSTALL_PATH)/include -D__STDC_LIMIT_MACROS
 LFLAGS     =  -lm $(OPENMP) -lcudart -I. -L. -L$(CUDA_INSTALL_PATH)/lib$(ARCH)
 NVCCFLAGS += -g -Xcompiler "$(OPENMP) -fno-strict-aliasing" -O3 -I. \
-             -I$(CUDA_INSTALL_PATH)/include  -arch=sm_20 -D__STDC_LIMIT_MACROS \
-             -maxrregcount=$(MAXREG)
+             -I$(CUDA_INSTALL_PATH)/include  -arch=sm_35 -D__STDC_LIMIT_MACROS
 
 # source files and their corresponding objects and dependencies
 CCSRC   = $(wildcard *.cc)

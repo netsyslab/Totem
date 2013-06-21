@@ -49,7 +49,7 @@ __global__ void CheckInboxValuesGPUKernel(uint32_t pid, int* values,
                                           uint32_t count) {
   const int index = THREAD_GLOBAL_INDEX;
   if (index >= count) return;
-  KERNEL_EXPECT_TRUE(values[index] == pid);
+  KERNEL_EXPECT_TRUE(values[index] == pid + 1);
 }
 
 typedef error_t(*PartitionFunction)(graph_t*, int, double*, vid_t**);
@@ -159,15 +159,16 @@ class GraphPartitionTest : public TestWithParam<PartitionFunction> {
           &partition->outbox[remote_pid];
         if (remote_outbox->count == 0) continue;
         if (partition->processor.type == PROCESSOR_GPU) {
+          printf("remote pid %d\n", remote_pid);
           ASSERT_EQ(SUCCESS, totem_memset((int*)remote_outbox->push_values, 
-                                          (int)remote_pid,remote_outbox->count,
+                                          (int)(remote_pid + 1), remote_outbox->count,
                                           TOTEM_MEM_DEVICE));
           ASSERT_EQ(cudaSuccess, cudaThreadSynchronize());
         } else {
           ASSERT_EQ(PROCESSOR_CPU, partition->processor.type);
           int* values = (int*)remote_outbox->push_values;
           for (int i = 0; i < remote_outbox->count; i++) {
-            values[i] = remote_pid;
+            values[i] = remote_pid + 1;
           }
         }
       }
@@ -181,21 +182,19 @@ class GraphPartitionTest : public TestWithParam<PartitionFunction> {
       grooves_box_table_t* inbox = partition->inbox;
       uint32_t bcount = partition_set_->partition_count;
       for (uint32_t bindex = 0; bindex < bcount; bindex++) {
-        if (inbox[bindex].count == 0) continue;
+        if (inbox[bindex].count == 0 || bindex == pid) continue;
+        int* values = (int*)inbox[bindex].push_values;
         if (partition->processor.type == PROCESSOR_GPU) {
           dim3 blocks, threads_per_block;
           KERNEL_CONFIGURE(inbox[bindex].count, blocks, threads_per_block);
           CheckInboxValuesGPUKernel<<<blocks, threads_per_block>>>
-            (pid, (int*)inbox[bindex].push_values, inbox[bindex].count);
+            (pid, values, inbox[bindex].count);
           ASSERT_EQ(cudaSuccess, cudaGetLastError());
           ASSERT_EQ(cudaSuccess, cudaThreadSynchronize());
         } else {
           ASSERT_EQ(PROCESSOR_CPU, partition->processor.type);
-          for (uint32_t bindex = 0; bindex < bcount; bindex++) {
-            int* values = (int*)inbox[bindex].push_values;
-            for (int i = 0; i < inbox[bindex].count; i++) {
-              EXPECT_EQ(pid, values[i]);
-            }
+          for (vid_t v = 0; v < inbox[bindex].count; v++) {
+              EXPECT_EQ(pid + 1, values[v]);
           }
         }
       }
@@ -219,7 +218,7 @@ class GraphPartitionTest : public TestWithParam<PartitionFunction> {
     EXPECT_EQ(SUCCESS, partition_set_initialize(graph_, partitions_, 
                                                 partition_processor_,
                                                 partition_count_,
-                                                false,
+                                                GPU_GRAPH_MEM_DEVICE,
                                                 MSG_SIZE_WORD,
                                                 MSG_SIZE_ZERO,
                                                 &partition_set_));
@@ -310,7 +309,7 @@ TEST_P(GraphPartitionTest , GetPartitionsSingleNodeGraph) {
   EXPECT_EQ(SUCCESS, partition_set_initialize(graph_, partitions_,
                                               partition_processor_,
                                               partition_count_,
-                                              false,
+                                              GPU_GRAPH_MEM_DEVICE,
                                               MSG_SIZE_WORD,
                                               MSG_SIZE_ZERO,
                                               &partition_set_));
@@ -350,7 +349,7 @@ TEST_P(GraphPartitionTest, GetPartitionsImbalancedChainGraph) {
   EXPECT_EQ(SUCCESS, partition_set_initialize(graph_, partitions_,
                                               partition_processor_,
                                               partition_count_,
-                                              false,
+                                              GPU_GRAPH_MEM_DEVICE,
                                               MSG_SIZE_WORD,
                                               MSG_SIZE_ZERO,
                                               &partition_set_));

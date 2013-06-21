@@ -40,7 +40,7 @@ const int PAGE_RANK_ROUNDS = 5;
  * function to enable more flexibility and experimentation. This however 
  * increases register usage and may affect performance
  */
-const double PAGE_RANK_DAMPING_FACTOR = 0.85;
+const rank_t PAGE_RANK_DAMPING_FACTOR = 0.85;
 
 /**
  * Specifies a type for centrality scores. This is useful to allow future

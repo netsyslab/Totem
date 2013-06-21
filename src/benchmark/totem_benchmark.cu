@@ -68,6 +68,7 @@ const benchmark_attr_t BENCHMARKS[] = {
   }
 };
 
+
 // A reference to the options used to configure the benchmark
 PRIVATE benchmark_options_t* options = NULL;
 PRIVATE const int SEED = 1985;
@@ -131,11 +132,7 @@ PRIVATE vid_t get_random_src(graph_t* graph) {
  * Runs BFS benchmark according to Graph500 specification
  */
 PRIVATE void benchmark_bfs(graph_t* graph, void* cost, totem_attr_t* attr) {
-  if (options->platform == PLATFORM_CPU) {
-    CALL_SAFE(bfs_cpu(graph, get_random_src(graph), (cost_t*)cost));
-  } else {
-    CALL_SAFE(bfs_hybrid(get_random_src(graph), (cost_t*)cost));
-  }
+  CALL_SAFE(bfs_hybrid(get_random_src(graph), (cost_t*)cost));
 }
 
 /**
@@ -143,11 +140,7 @@ PRIVATE void benchmark_bfs(graph_t* graph, void* cost, totem_attr_t* attr) {
  */
 PRIVATE void benchmark_pagerank(graph_t* graph, void* rank, 
                                 totem_attr_t* attr) {
-  if (options->platform == PLATFORM_CPU) {
-    CALL_SAFE(page_rank_incoming_cpu(graph, NULL, (rank_t*)rank));
-  } else {
-    CALL_SAFE(page_rank_incoming_hybrid(NULL, (rank_t*)rank));
-  }
+  CALL_SAFE(page_rank_incoming_hybrid(NULL, (rank_t*)rank));
 }
 
 /**
@@ -170,22 +163,13 @@ PRIVATE void benchmark_dijkstra(graph_t* graph, void* distance,
  */
 PRIVATE void benchmark_betweenness(graph_t* graph, void* betweenness_score, 
                                    totem_attr_t* attr) {
-  if (options->platform == PLATFORM_CPU) {
-    CALL_SAFE(betweenness_cpu(graph, CENTRALITY_SINGLE, 
-                              (score_t*)betweenness_score));
-  } else {
-    CALL_SAFE(betweenness_hybrid(CENTRALITY_SINGLE,
-                                 (score_t*)betweenness_score));
-  }
+  CALL_SAFE(betweenness_hybrid(CENTRALITY_SINGLE,
+                               (score_t*)betweenness_score));
 }
 
 PRIVATE
 void benchmark_graph500(graph_t* graph, void* tree, totem_attr_t* attr) {
-  if (options->platform == PLATFORM_CPU) {
-    CALL_SAFE(graph500_cpu(graph, get_random_src(graph), (vid_t*)tree));
-  } else {
-    CALL_SAFE(graph500_hybrid(get_random_src(graph), (vid_t*)tree));
-  }
+  CALL_SAFE(graph500_hybrid(get_random_src(graph), (vid_t*)tree));
 }
 
 /**
@@ -205,16 +189,14 @@ PRIVATE void benchmark_run() {
                TOTEM_MEM_HOST, (void**)&benchmark_state);
   assert(benchmark_state || (BENCHMARKS[options->benchmark].output_size == 0));
 
-  bool totem_based = BENCHMARKS[options->benchmark].has_totem && 
-    options->platform != PLATFORM_CPU;
-
+  bool totem_based = BENCHMARKS[options->benchmark].has_totem;
   totem_attr_t attr = TOTEM_DEFAULT_ATTR;
   if (totem_based) {
     attr.par_algo = options->par_algo;
     attr.cpu_par_share = (float)options->alpha / 100.0;
     attr.platform = options->platform;
     attr.gpu_count = options->gpu_count;
-    attr.mapped = options->mapped;
+    attr.gpu_graph_mem = options->gpu_graph_mem;
     attr.gpu_par_randomized = options->gpu_par_randomized;
     attr.push_msg_size = BENCHMARKS[options->benchmark].push_msg_size;
     attr.pull_msg_size = BENCHMARKS[options->benchmark].pull_msg_size;

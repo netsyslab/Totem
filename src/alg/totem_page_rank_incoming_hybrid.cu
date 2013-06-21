@@ -118,6 +118,11 @@ PRIVATE void page_rank_incoming_cpu(partition_t* par, bool last_round) {
 PRIVATE void page_rank_incoming(partition_t* par) {
   if (engine_superstep() > 1) {
     page_rank_state_t* ps = (page_rank_state_t*)par->algo_state;
+    for (int pid = 0; pid < engine_partition_count(); pid++) {
+      if (pid == par->id) continue;
+      ps->rank_s[pid] = (rank_t*)par->outbox[pid].pull_values;
+    }
+
     rank_t* tmp = ps->rank;
     ps->rank = ps->rank_s[par->id];
     ps->rank_s[par->id] = tmp;
@@ -170,14 +175,14 @@ PRIVATE void page_rank_incoming_init(partition_t* par) {
     type = TOTEM_MEM_DEVICE;
     KERNEL_CONFIGURE(vcount, ps->blocks, ps->threads);
   }
-  for (int pid = 0; pid < engine_partition_count(); pid++) {
-    if (pid == par->id) {
-      CALL_SAFE(totem_malloc(vcount * sizeof(rank_t), type, 
-                             (void**)&(ps->rank_s[par->id])));
-    } else {
-      ps->rank_s[pid] = (rank_t*)par->outbox[pid].pull_values;
-    }
-  }
+  /* for (int pid = 0; pid < engine_partition_count(); pid++) { */
+  /*   if (pid == par->id) { */
+  CALL_SAFE(totem_malloc(vcount * sizeof(rank_t), type, 
+                         (void**)&(ps->rank_s[par->id])));
+  /*   } else { */
+  /*     ps->rank_s[pid] = (rank_t*)par->outbox[pid].pull_values; */
+  /*   } */
+  /* } */
   CALL_SAFE(totem_malloc(vcount * sizeof(rank_t), type, (void**)&(ps->rank)));
   rank_t init_value = 1 / (rank_t)engine_vertex_count();
   totem_memset(ps->rank, init_value, vcount, type, par->streams[1]);

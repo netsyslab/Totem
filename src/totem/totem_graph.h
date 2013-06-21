@@ -101,6 +101,18 @@ const weight_t DEFAULT_EDGE_WEIGHT =  1;
 const weight_t DEFAULT_VERTEX_VALUE = 0;
 
 /**
+ * Type of memory used to place the GPU graph data structure
+ */
+typedef enum {
+  GPU_GRAPH_MEM_DEVICE = 0,   // Places the graph on device memory
+  GPU_GRAPH_MEM_MAPPED,       // Places the graph on the host as memory 
+                              // mapped space
+  GPU_GRAPH_MEM_MAPPED_VERTICES, // Places only the vertices array on the host
+  GPU_GRAPH_MEM_MAPPED_EDGES,     // Places only the edges array on the host
+  GPU_GRAPH_MEM_MAX
+} gpu_graph_mem_t;
+
+/**
  * A graph type based on adjacency list representation.
  * Modified from [Harish07]:
  * A graph G(V,E) is represented as adjacency list, with adjacency lists packed
@@ -126,16 +138,23 @@ typedef struct graph_s {
   bool      valued;          /**< indicates if vertices have values. */
   bool      weighted;        /**< indicates if edges have weights. */
   bool      directed;        /**< indicates if the graph is directed. */
-  bool      mapped;          /**< indicates if the vertices array in the graph
-                                  is placed on host mapped memory, which can be
-                                  accessed diretly by a GPU. */
+  gpu_graph_mem_t gpu_graph_mem; /**< the type of memory used to allocate the
+                                       graph data structure of GPU-based 
+                                       partitions*/
   eid_t*    mapped_vertices; /**< maintains the host pointer of the vertices
                                   array in case it is allocated as a memory
                                   mapped buffer for GPU-resident graphs. Keeping
                                   this pointer is necessary when freeing the
                                   buffer. Note that in this case, vertices will 
                                   maintain the pointer to the buffer in the 
-                                  device address. */
+                                  device address space. */
+  eid_t*    mapped_edges;    /**< maintains the host pointer of the edges
+                                  array in case it is allocated as a memory
+                                  mapped buffer for GPU-resident graphs. Keeping
+                                  this pointer is necessary when freeing the
+                                  buffer. Note that in this case, edges will 
+                                  maintain the pointer to the buffer in the 
+                                  device address space. */
 } graph_t;
 
 /**
@@ -181,12 +200,13 @@ error_t graph_finalize(graph_t* graph);
  * graph_h.
  * @param[in] graph_h source graph which hosts references to main memory buffers
  * @param[out] graph_d allocated graph that hosts references to device buffers
- * @param[in] mapped an optional parameter that offers the option to allocate 
- *                   the vertices array as a memory-mapped buffer on the host.
+ * @param[in] gpu_graph_mem an optional parameter that allows to specify the 
+                            type of memory used to place the data structure
  * @return generic success or failure
  */
 error_t graph_initialize_device(const graph_t* graph_h, graph_t** graph_d,
-                                bool mapped = true);
+                                gpu_graph_mem_t gpu_graph_mem = 
+                                GPU_GRAPH_MEM_DEVICE);
 
 /**
  * Free allocated device buffers associated with the graph

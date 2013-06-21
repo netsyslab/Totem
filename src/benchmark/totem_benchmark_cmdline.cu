@@ -20,8 +20,7 @@ PRIVATE benchmark_options_t options = {
   5,                     // repeat
   50,                    // alpha
   PAR_RANDOM,            // partitioning algorithm
-  false,                 // do not use mapped memory for vertices array of 
-                         // GPU partitions
+  GPU_GRAPH_MEM_DEVICE,  // allocate gpu-based partitions on the device
   false,                 // do not randomize vertex placement across
                          // GPU partitions
 };
@@ -54,8 +53,11 @@ PRIVATE void display_help(char* exe_name, int exit_err) {
          "     %d: Random (default)\n"
          "     %d: High degree nodes on CPU\n"
          "     %d: Low degree nodes on CPU\n"
-         "  -m Enables allocating the vertices array of the GPU partitions\n"
-         "     as a memory mapped buffer on the host (default FALSE)\n"
+         "  -mNUM Type of memory to use for GPU-based partitions\n"
+         "     %d: Device (default)\n"
+         "     %d: Host as memory mapped\n"
+         "     %d: Only the vertices array on the host\n"
+         "     %d: Only the edges array on the host\n"
          "  -o Enables random placement of vertices across GPU partitions\n"
          "     in case of multi-GPU setups (default FALSE)\n"
          "  -pNUM Platform\n"
@@ -72,10 +74,11 @@ PRIVATE void display_help(char* exe_name, int exit_err) {
          "  -h Print this help message\n",
          exe_name, BENCHMARK_BFS, BENCHMARK_PAGERANK, BENCHMARK_DIJKSTRA, 
          BENCHMARK_BETWEENNESS, BENCHMARK_GRAPH500, get_gpu_count(), 
-         PAR_RANDOM, PAR_SORTED_ASC, PAR_SORTED_DSC, PLATFORM_CPU, 
-         PLATFORM_GPU, PLATFORM_HYBRID, REPEAT_MAX, omp_sched_static, 
-         omp_sched_dynamic, omp_sched_guided, omp_get_max_threads(), 
-         omp_get_max_threads());
+         PAR_RANDOM, PAR_SORTED_ASC, PAR_SORTED_DSC, GPU_GRAPH_MEM_DEVICE, 
+         GPU_GRAPH_MEM_MAPPED, GPU_GRAPH_MEM_MAPPED_VERTICES, 
+         GPU_GRAPH_MEM_MAPPED_EDGES, PLATFORM_CPU, PLATFORM_GPU, 
+         PLATFORM_HYBRID, REPEAT_MAX, omp_sched_static, omp_sched_dynamic,
+         omp_sched_guided, omp_get_max_threads(), omp_get_max_threads());
   exit(exit_err);
 }
 
@@ -86,8 +89,8 @@ PRIVATE void display_help(char* exe_name, int exit_err) {
  */
 benchmark_options_t* benchmark_cmdline_parse(int argc, char** argv) {
   optarg = NULL;
-  int ch, benchmark, platform, par_algo;
-  while(((ch = getopt(argc, argv, "a:b:g:i:mop:r:s:t:h")) != EOF)) {
+  int ch, benchmark, platform, par_algo, gpu_graph_mem;
+  while(((ch = getopt(argc, argv, "a:b:g:i:m:op:r:s:t:h")) != EOF)) {
     switch (ch) {
       case 'a':
         options.alpha = atoi(optarg);
@@ -120,7 +123,12 @@ benchmark_options_t* benchmark_cmdline_parse(int argc, char** argv) {
         options.par_algo = (partition_algorithm_t)par_algo;
         break;
       case 'm':
-        options.mapped = true;
+        gpu_graph_mem = atoi(optarg);
+        if (gpu_graph_mem >= GPU_GRAPH_MEM_MAX || gpu_graph_mem < 0) {
+          fprintf(stderr, "Invalid GPU graph memory type\n");
+          display_help(argv[0], -1);
+        }
+        options.gpu_graph_mem = (gpu_graph_mem_t)gpu_graph_mem;
         break;
       case 'o':
         options.gpu_par_randomized = true;
