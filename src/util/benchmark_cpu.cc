@@ -12,9 +12,9 @@
 /**
  * A cpu-intensive routine that computes some mathematical operations
  * in parallel using OMP.
- * @param[in] duration duration of the running time in seconds
  */
-void compute_intensive_cpu(double duration) {
+error_t compute_intensive_cpu(double duration) {
+  printf("CPU Intensive Benchmark\n");
   time_t start, end;
   time(&start);
   OMP(omp parallel)
@@ -27,15 +27,16 @@ void compute_intensive_cpu(double duration) {
       time(&end);
     } while (difftime(end, start) < duration);
   }
+  return SUCCESS;
 }
 
 /**
  * A CPU and memory intensive routine that reads a large array in
  * random positions and uses the read number to calculate
  * multiplication, addition or subtraction in parallel using OMP.
- * @param[in] duration duration of the running time in seconds
  */
-void compute_memory_intensive_cpu(double duration) {
+error_t compute_memory_intensive_cpu(double duration) {
+  printf("CPU and Memory Intensive Benchmark\n");
   time_t start, end;
   time(&start);
   uint64_t *ar = (uint64_t *)malloc(LARGE_ARRAY_SIZE * sizeof(uint64_t));
@@ -68,14 +69,15 @@ void compute_memory_intensive_cpu(double duration) {
     } while (difftime(end, start) < duration);
   }
   free(ar);
+  return SUCCESS;
 }
 
 /**
  * A cache friendly memory intensive routine that reads a array
  * in ascending order in parallel using OMP.
- * @param[in] duration duration of the running time in seconds
  */
-void memory_intensive_cache_friendly_cpu(double duration) {
+error_t memory_intensive_cache_friendly_cpu(double duration) {
+  printf("Cache Friendly Memory Intensive Benchmark\n");
   time_t start, end;
   time(&start);
   unsigned char *ar =
@@ -100,14 +102,15 @@ void memory_intensive_cache_friendly_cpu(double duration) {
     } while (difftime(end, start) < duration);
   }
   free(ar);
+  return SUCCESS;
 }
 
 /**
  * A cache unfriendly memory intensive routine that reads a
  * large array in random positions in parallel using OMP.
- * @param[in] duration duration of the running time in seconds
  */
-void memory_intensive_cache_unfriendly_cpu(double duration) {
+error_t memory_intensive_cache_unfriendly_cpu(double duration) {
+  printf("Cache Unfriendly Memory Intensive Benchmark\n"); 
   time_t start, end;
   time(&start);
   uint64_t *ar = (uint64_t *)malloc(LARGE_ARRAY_SIZE * sizeof(uint64_t));
@@ -134,13 +137,14 @@ void memory_intensive_cache_unfriendly_cpu(double duration) {
     } while (difftime(end, start) < duration);
   }
   free(ar);
+  return SUCCESS;
 }
 
 /**
  * A memory copy routine between two arrays in parallel using OMP.
- * @param[in] duration duration of the running time in seconds
  */
-void memory_copy_intensive_cpu(double duration) {
+error_t memory_copy_intensive_cpu(double duration) {
+  printf("Memory Copy Intensive Benchmark\n");
   time_t start, end;
   time(&start);
   uint64_t *ar1 = (uint64_t *)malloc(SMALL_ARRAY_SIZE * sizeof(uint64_t));
@@ -181,4 +185,5 @@ void memory_copy_intensive_cpu(double duration) {
   }
   free(ar1);
   free(ar2);
+  return SUCCESS;
 }
