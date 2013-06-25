@@ -185,7 +185,7 @@ PRIVATE void forward_gpu(partition_t* par, betweenness_state_t* state,
 typedef void(*bc_gpu_func_t)(partition_t*, betweenness_state_t*, vid_t);
 PRIVATE const bc_gpu_func_t FORWARD_GPU_FUNC[] = {
   // RANDOM partitioning
-  forward_gpu<VWARP_SHORT_WARP_WIDTH,  VWARP_SMALL_BATCH_SIZE>,
+  forward_gpu<VWARP_MEDIUM_WARP_WIDTH,  VWARP_MEDIUM_BATCH_SIZE>,
   // HIGH partitioning
   forward_gpu<VWARP_MEDIUM_WARP_WIDTH,  VWARP_MEDIUM_BATCH_SIZE>,
   // LOW partitioning
@@ -298,7 +298,7 @@ backward_process_neighbors(partition_t* par, betweenness_state_t* state,
     }
   }
 
-  // Only one thread in the warp aggregates the final value of delta
+  // Perform prefix-sum to aggregate the final result
   if (VWARP_WIDTH > 32) __syncthreads();
   for (uint32_t s = VWARP_WIDTH / 2; s > 0; s >>= 1) {
     if (warp_offset < s) {
