@@ -22,7 +22,7 @@ const uint64_t LARGE_ARRAY_SIZE = 1000000;
 /*
  * Benchmark function data type
  */
-typedef void (*benchmark_func_t)(double);
+typedef error_t (*benchmark_func_t)(double);
 
 /**
  * Random Unsigned Integer Generator.
@@ -37,35 +37,80 @@ inline uint64_t random_uint64(uint64_t max_range) {
  * A cpu-intensive routine that computes some mathematical operations
  * in parallel using OMP.
  * @param[in] duration duration of the running time in seconds
+ * @return generic success or failure
  */
-void compute_intensive_cpu(double duration);
+error_t compute_intensive_cpu(double duration);
 
 /**
  * A CPU and memory intensive routine that reads a large array in
  * random positions and uses the read number to calculate
  * multiplication, addition or subtraction in parallel using OMP.
  * @param[in] duration duration of the running time in seconds
+ * @return generic success or failure
  */
-void compute_memory_intensive_cpu(double duration);
+error_t compute_memory_intensive_cpu(double duration);
 
 /**
  * A cache friendly memory intensive routine that reads a array
  * in ascending order in parallel using OMP.
  * @param[in] duration duration of the running time in seconds
+ * @return generic success or failure
  */
-void memory_intensive_cache_friendly_cpu(double duration);
+error_t memory_intensive_cache_friendly_cpu(double duration);
 
 /**
  * A cache unfriendly memory intensive routine that reads a
  * large array in random positions in parallel using OMP.
  * @param[in] duration duration of the running time in seconds
+ * @return generic success or failure
  */
-void memory_intensive_cache_unfriendly_cpu(double duration);
+error_t memory_intensive_cache_unfriendly_cpu(double duration);
 
 /**
  * A memory copy routine between two arrays in parallel using OMP.
  * @param[in] duration duration of the running time in seconds
+ * @return generic success or failure
  */
-void memory_copy_intensive_cpu(double duration);
+error_t memory_copy_intensive_cpu(double duration);
+
+/**
+ * A gpu-intensive routine that computes some mathematical operations
+ * in parallel using CUDA.
+ * @param[in] duration duration of the running time in seconds
+ * @return generic success or failure
+ */
+error_t compute_intensive_gpu(double duration);
+
+/**
+ * A GPU and memory intensive routine that reads a large array in
+ * random positions and uses the read number to calculate
+ * multiplication and modulus in parallel using CUDA.
+ * @param[in] duration duration of the running time in seconds
+ * @return generic success or failure
+ */
+error_t compute_memory_intensive_gpu(double duration);
+
+/**
+ * A cache friendly memory intensive routine that reads a array
+ * in ascending order in parallel using CUDA.
+ * @param[in] duration duration of the running time in seconds
+ * @return generic success or failure
+ */
+error_t memory_intensive_cache_friendly_gpu(double duration);
+
+/**
+ * A cache unfriendly memory intensive routine that reads a
+ * large array in random positions in parallel using CUDA.
+ * @param[in] duration duration of the running time in seconds
+ * @return generic success or failure
+ */
+error_t memory_intensive_cache_unfriendly_gpu(double duration);
+
+/**
+ * A memory copy routine between two arrays in parallel using CUDA.
+ * @param[in] duration duration of the running time in seconds
+ * @return generic success or failure
+ */
+error_t memory_copy_intensive_gpu(double duration);
 
 #endif  // BENCHMARK_H
