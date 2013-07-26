@@ -56,21 +56,74 @@ template<int VWARP_WIDTH>
 PRIVATE __device__ void 
 sum_neighbors(const vid_t* __restrict nbrs, const vid_t nbr_count,
               rank_t** rank_s, rank_t* vwarp_rank, int warp_offset) {
-  vwarp_rank[warp_offset] = 0;
+  if (VWARP_WIDTH > 32) __syncthreads();
+  rank_t sum = 0;
   for (vid_t i = warp_offset; i < nbr_count; i+= VWARP_WIDTH) {
     vid_t nbr = GET_VERTEX_ID(nbrs[i]);
     int nbr_pid = GET_PARTITION_ID(nbrs[i]);
     rank_t* nbr_rank = rank_s[nbr_pid];
-    vwarp_rank[warp_offset] += nbr_rank[nbr];
+    sum += nbr_rank[nbr];
   }
-  __syncthreads();
-  
-  // prefix-sum the values
-  for (uint32_t s = VWARP_WIDTH / 2; s > 0; s >>= 1) {
-    if (warp_offset < s) {
-      vwarp_rank[warp_offset] += vwarp_rank[warp_offset + s];
+  vwarp_rank[warp_offset] = sum;
+  if (VWARP_WIDTH > 32) __syncthreads();
+
+  // completely unrolled parallel reduction
+  if (warp_offset < VWARP_WIDTH / 2) {
+    if (warp_offset < 32) {
+      // now that we are using warp-synchronous programming (below)
+      // we need to declare our shared memory volatile so that the compiler
+      // doesn't reorder stores to it and induce incorrect behavior.
+      volatile rank_t *smem = vwarp_rank;
+      
+      // do reduction in shared mem
+      if (VWARP_WIDTH > 1024) assert(false);
+      if (VWARP_WIDTH == 1024) {
+        if (warp_offset < 512) {
+          vwarp_rank[warp_offset] = sum = sum + vwarp_rank[warp_offset + 512];
+        }
+        __syncthreads();
+      }
+      
+      if (VWARP_WIDTH >= 512) {
+        if (warp_offset < 256) {
+          vwarp_rank[warp_offset] = sum = sum + vwarp_rank[warp_offset + 256];
+        }
+        __syncthreads();
+      }
+      
+      if (VWARP_WIDTH >= 256) {
+        if (warp_offset < 128) {
+          vwarp_rank[warp_offset] = sum = sum + vwarp_rank[warp_offset + 128];
+        }
+        __syncthreads();
+      }
+      
+      if (VWARP_WIDTH >= 128) {
+        if (warp_offset <  64) {
+          vwarp_rank[warp_offset] = sum = sum + vwarp_rank[warp_offset + 64];
+        }
+        __syncthreads();
+      }
+      
+      if (VWARP_WIDTH >= 64) {
+        smem[warp_offset] = sum = sum + smem[warp_offset + 32];
+      }
+      if (VWARP_WIDTH >= 32) {
+        smem[warp_offset] = sum = sum + smem[warp_offset + 16];
+      }
+      if (VWARP_WIDTH >= 16) {
+        smem[warp_offset] = sum = sum + smem[warp_offset + 8];
+      }
+      if (VWARP_WIDTH >= 8) {
+        smem[warp_offset] = sum = sum + smem[warp_offset + 4];
+      }
+      if (VWARP_WIDTH >= 4) {
+        smem[warp_offset] = sum = sum + smem[warp_offset + 2];
+      }
+      if (VWARP_WIDTH >= 2) {
+        smem[warp_offset] = sum = sum + smem[warp_offset + 1];
+      }
     }
-    __syncthreads();
   }
 }
 
