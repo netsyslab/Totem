@@ -179,10 +179,6 @@ PRIVATE void init_outbox_table(partition_t* partition, uint32_t pcount,
                                                pull_msg_size),
                                  TOTEM_MEM_HOST_PINNED, 
                                  &(outbox[rmt_pid].pull_values)));
-          CALL_SAFE(totem_malloc(bits_to_bytes(outbox[rmt_pid].count * 
-                                               pull_msg_size),
-                                 TOTEM_MEM_HOST_PINNED, 
-                                 &(outbox[rmt_pid].pull_values_s)));
         }
       }
     }
@@ -243,6 +239,10 @@ PRIVATE void init_inbox(partition_set_t* pset) {
                                                pset->pull_msg_size), 
                                  TOTEM_MEM_HOST_PINNED, 
                                  &(partition->inbox[src_pid].pull_values)));
+          CALL_SAFE(totem_malloc(bits_to_bytes(partition->inbox[src_pid].count *
+                                               pset->pull_msg_size), 
+                                 TOTEM_MEM_HOST_PINNED, 
+                                 &(partition->inbox[src_pid].pull_values_s)));
         }
       }
     }
@@ -293,7 +293,7 @@ PRIVATE void init_table_gpu(partition_t* par, partition_set_t* pset,
       if (pset->pull_msg_size > 0) {
         CALL_CU_SAFE(cudaMalloc((void**)&(box[rmt_pid].pull_values),
                                 bits_to_bytes(count * pset->pull_msg_size)));
-        if (!inbox) {
+        if (inbox) {
           CALL_CU_SAFE(cudaMalloc((void**)&(box[rmt_pid].pull_values_s),
                                   bits_to_bytes(count * pset->pull_msg_size)));
         }
@@ -341,7 +341,7 @@ PRIVATE void finalize_table_gpu(partition_set_t* pset,
       }
       if (pset->pull_msg_size > 0) {
         CALL_CU_SAFE(cudaFree(btable[pid].pull_values));
-        if (!inbox) {
+        if (inbox) {
           CALL_CU_SAFE(cudaFree(btable[pid].pull_values_s));
         }
       }
@@ -384,8 +384,6 @@ PRIVATE void finalize_outbox(partition_set_t* pset) {
           if (pset->pull_msg_size > 0) {
             totem_free(partition->outbox[rmt_pid].pull_values, 
                        TOTEM_MEM_HOST_PINNED);
-            totem_free(partition->outbox[rmt_pid].pull_values_s, 
-                       TOTEM_MEM_HOST_PINNED);
           }
         }
       }
@@ -420,6 +418,8 @@ PRIVATE void finalize_inbox(partition_set_t* pset) {
           if (pset->pull_msg_size > 0) {
             totem_free(partition->inbox[rmt_pid].pull_values, 
                        TOTEM_MEM_HOST_PINNED);
+            totem_free(partition->inbox[rmt_pid].pull_values_s, 
+                       TOTEM_MEM_HOST_PINNED);
           }
         }
       }
@@ -453,20 +453,18 @@ void launch_communications_setup(partition_set_t* pset,
       CALL_CU_SAFE(cudaSetDevice(pset->partitions[remote_pid].processor.id));
       *stream = &pset->partitions[remote_pid].streams[0];
     }
-
   } else if (direction == GROOVES_PULL) {
-
     *msg_size = pset->pull_msg_size;
-
-    *src = pset->partitions[local_pid].inbox[remote_pid].pull_values;
-    *dst = pset->partitions[remote_pid].outbox[local_pid].pull_values_s;
+    *src = pset->partitions[local_pid].inbox[remote_pid].pull_values_s;
+    *dst = pset->partitions[remote_pid].outbox[local_pid].pull_values;
     *count = pset->partitions[local_pid].inbox[remote_pid].count;
-    if (pset->partitions[local_pid].processor.type == PROCESSOR_GPU) {
-      CALL_CU_SAFE(cudaSetDevice(pset->partitions[local_pid].processor.id));
-      *stream = &pset->partitions[local_pid].streams[1];
-    } else {
+
+    if (pset->partitions[remote_pid].processor.type == PROCESSOR_GPU) {
       CALL_CU_SAFE(cudaSetDevice(pset->partitions[remote_pid].processor.id));
-      *stream = &pset->partitions[remote_pid].streams[0];
+      *stream = &pset->partitions[remote_pid].streams[1];
+    } else {
+      CALL_CU_SAFE(cudaSetDevice(pset->partitions[local_pid].processor.id));
+      *stream = &pset->partitions[local_pid].streams[0];
     }
   } else {
     printf("Direction not supported: %s", direction); 
@@ -523,9 +521,9 @@ error_t grooves_synchronize(partition_set_t* pset,
       par->inbox[rmt_pid].push_values_s = tmp;
 
       // For pull-based communication
-      tmp = par->outbox[rmt_pid].pull_values;
-      par->outbox[rmt_pid].pull_values = par->outbox[rmt_pid].pull_values_s;
-      par->outbox[rmt_pid].pull_values_s = tmp;
+      tmp = par->inbox[rmt_pid].pull_values;
+      par->inbox[rmt_pid].pull_values = par->inbox[rmt_pid].pull_values_s;
+      par->inbox[rmt_pid].pull_values_s = tmp;
     }
   }
   return SUCCESS;

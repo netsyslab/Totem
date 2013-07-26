@@ -51,24 +51,32 @@ inline PRIVATE void superstep_execute() {
     context.config.ss_kernel_func();
   }
 
-  double cpu_time = 0;
-  double cpu_gather_time = 0;
-  double cpu_scatter_time = 0;
-  for (int pid = 0; pid < context.pset->partition_count; pid++) {
-    partition_t* par = &context.pset->partitions[pid];
-
-    // If push-based communication, launch scatter kernels. Note that
-    // we skip the first BSP round as the main kernel has not been called yet
-    if (context.superstep > 1) {
+  stopwatch_t scatter;
+  stopwatch_start(&scatter);
+  if ((context.superstep > 1)) {
+    for (int pid = 0; pid < engine_partition_count(); pid++) {
       if ((context.config.direction == GROOVES_PUSH) &&
           (context.config.par_scatter_func != NULL)) {
-        stopwatch_t scatter;
-        stopwatch_start(&scatter);
-        set_processor(par);
+        partition_t* par = &context.pset->partitions[pid];
+        if (par->processor.type == PROCESSOR_GPU) {
+          set_processor(par);
+        }
         context.config.par_scatter_func(par);
-        cpu_scatter_time += stopwatch_elapsed(&scatter);
+      } else if (context.config.direction == GROOVES_PULL) {
+        grooves_launch_communications(context.pset, pid, GROOVES_PULL);
+      } else {
+        assert(false);
+        fprintf(stderr, "Unsupported communication type %d\n", 
+                context.config.direction); fflush(stderr);
       }
     }
+  }
+  double cpu_scatter_time = stopwatch_elapsed(&scatter);
+
+  double cpu_time = 0;
+  double cpu_gather_time = 0;
+  for (int pid = 0; pid < context.pset->partition_count; pid++) {
+    partition_t* par = &context.pset->partitions[pid];
 
     // The kernel for GPU partitions is supposed not to block. The client is
     // supposedly invoking the GPU kernel asynchronously, and using the compute
@@ -112,9 +120,13 @@ inline PRIVATE void superstep_execute() {
       set_processor(par);
       context.config.par_gather_func(par);
       cpu_gather_time += stopwatch_elapsed(&gather);
-      grooves_launch_communications(context.pset, pid, GROOVES_PULL);
+    } else {
+      assert(false);
+      fprintf(stderr, "Unsupported communication type %d\n", 
+              context.config.direction); fflush(stderr);
     }
   }
+  double launch_time = stopwatch_elapsed(&stopwatch);
 
   // Synchronize the streams (data transfers and kernels) and swap the buffers
   // used for double buffering to overlap communication with computation
@@ -130,9 +142,9 @@ inline PRIVATE void superstep_execute() {
   context.timing.alg_scatter += cpu_scatter_time;
   context.timing.alg_gather += cpu_gather_time;
 #ifdef FEATURE_VERBOSE_TIMING
-  printf("\tComp: %0.2f\tComm: %0.2f\tCPUScatter: %0.2f"
+  printf("\tComp: %0.2f\tComm: %0.2f\tLaunch: %0.2f\tCPUScatter: %0.2f"
          "\tCPUGather: %0.2f\tTotal: %0.2f\n",
-         comp_time, comm_time, cpu_scatter_time, cpu_gather_time,
+         comp_time, comm_time, launch_time, cpu_scatter_time, cpu_gather_time,
          total_time);
 #endif
 }
