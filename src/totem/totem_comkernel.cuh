@@ -19,9 +19,10 @@
 #include "totem_graph.h"
 
 /**
- * Determines the maximum number of threads per block.
+ * Determines the maximum number of threads per block. This value can be set 
+ * to 1024 for GPUs with compute capability higher than 3
  */
-const int MAX_THREADS_PER_BLOCK = 1024;
+const int MAX_THREADS_PER_BLOCK = 512;
 
 /**
  * Determines the maximum number of dimensions of a grid block.
