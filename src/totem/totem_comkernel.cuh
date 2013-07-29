@@ -25,6 +25,11 @@
 const int MAX_THREADS_PER_BLOCK = 512;
 
 /**
+ * The default number of threads per block
+ */
+const int DEFAULT_THREADS_PER_BLOCK = 256;
+
+/**
  * Determines the maximum number of dimensions of a grid block.
  */
 const int MAX_BLOCK_DIMENSION = 2;
@@ -37,8 +42,9 @@ const int MAX_BLOCK_PER_DIMENSION = 65535;
 /**
  * Determines the maximum number of threads a kernel can be configured with.
  */
-const int MAX_THREAD_COUNT =
-  (MAX_THREADS_PER_BLOCK * pow(MAX_BLOCK_PER_DIMENSION, MAX_BLOCK_DIMENSION));
+const int64_t MAX_THREAD_COUNT = ((int64_t)MAX_THREADS_PER_BLOCK * 
+                                  pow(MAX_BLOCK_PER_DIMENSION, 
+                                      MAX_BLOCK_DIMENSION));
 
 /**
  * Minimum percentage of device memory reserved for algorithm state
@@ -85,6 +91,33 @@ const double GPU_MIN_ALG_STATE = .05;
     dim3 my_blocks(x_blocks, y_blocks);                                 \
     blocks = my_blocks;                                                 \
   } while(0)
+
+/**
+ * Computes the number of block-threads based on the requested number of threads
+ * and threads per block. It assumes a 2D grid.
+ * TODO(abdullah): change all uses of KERNEL_CONFIGURE macro to this function.
+ * @param[in] thread_count minimum number of threads required
+ * @param[out] blocks x and y dimensions of the block-threads
+ * @param[in] threads_per_block number of threads per block required
+ * @return generic success or failure
+ */
+inline error_t 
+kernel_configure(int64_t thread_count, dim3 &blocks,
+                 int threads_per_block = DEFAULT_THREADS_PER_BLOCK) {
+  if (threads_per_block > MAX_THREADS_PER_BLOCK) return FAILURE;
+  uint32_t blocks_left = ((thread_count % threads_per_block == 0) ?
+                          thread_count / threads_per_block :
+                          (thread_count / threads_per_block) + 1);
+  uint32_t x_blocks = (blocks_left >= MAX_BLOCK_PER_DIMENSION) ?
+                      MAX_BLOCK_PER_DIMENSION : blocks_left;
+  blocks_left = (((blocks_left) % x_blocks == 0) ?
+                 (blocks_left) / x_blocks :
+                 (blocks_left) / x_blocks + 1);
+  if (blocks_left > MAX_BLOCK_PER_DIMENSION) return FAILURE;
+  dim3 my_blocks(x_blocks, blocks_left);
+  blocks = my_blocks;
+  return SUCCESS;
+}
 
 /**
  * Check if return value of stmt is cudaSuccess, jump to label and print an
