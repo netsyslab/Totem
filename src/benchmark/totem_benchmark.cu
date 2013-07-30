@@ -198,6 +198,7 @@ PRIVATE void benchmark_run() {
     attr.gpu_count = options->gpu_count;
     attr.gpu_graph_mem = options->gpu_graph_mem;
     attr.gpu_par_randomized = options->gpu_par_randomized;
+    attr.sorted = options->sorted;
     attr.push_msg_size = BENCHMARKS[options->benchmark].push_msg_size;
     attr.pull_msg_size = BENCHMARKS[options->benchmark].pull_msg_size;
     attr.alloc_func = BENCHMARKS[options->benchmark].alloc_func;
