@@ -740,10 +740,6 @@ PRIVATE void betweenness_init(partition_t* par) {
                              (void**)&(state->numSPs[pid])));
     }    
     state->numSPs_f[pid] = state->numSPs[pid];
-    /* if (pid != par->id) { */
-    /*   state->numSPs_f[pid] = (uint32_t*)par->outbox[pid].push_values; */
-    /*   state->delta[pid] = (score_t*)par->outbox[pid].pull_values; */
-    /* } */
   }
 
   // Initialize the state's done flag
