@@ -54,6 +54,8 @@ typedef struct totem_attr_s {
   bool                  gpu_par_randomized; /**< whether the placement of 
                                                  vertices across GPUs is random
                                                  or according to par_algo */
+  bool                  sorted;       /**< Indicates whether the vertex ids are
+                                           sorted by edge degree or not */
   float                 cpu_par_share; /**< the percentage of edges assigned
                                             to the CPU partition. Note that this
                                             value is relevant only in hybrid 
@@ -73,7 +75,7 @@ typedef struct totem_attr_s {
 // default attributes: hybrid (one GPU + CPU) platform, random 50-50 
 // partitioning, push message size is word and zero pull message size
 #define TOTEM_DEFAULT_ATTR {PAR_RANDOM, PLATFORM_HYBRID, 1, \
-      GPU_GRAPH_MEM_DEVICE, false, 0.5, MSG_SIZE_WORD, MSG_SIZE_ZERO, \
+      GPU_GRAPH_MEM_DEVICE, false, false, 0.5, MSG_SIZE_WORD, MSG_SIZE_ZERO, \
       NULL, NULL}
 
 /**
