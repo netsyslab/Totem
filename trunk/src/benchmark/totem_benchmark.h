@@ -62,9 +62,11 @@ typedef struct benchmark_options_s {
   gpu_graph_mem_t       gpu_graph_mem; /**< the type of memory used to allocate
                                             the graph data structure of
                                             GPU-based partitions*/
-  bool                  gpu_par_randomized; /**< whether the placement of 
+  bool                  gpu_par_randomized; /**< Indicates if the placement of
                                                  vertices across GPUs is random
                                                  or according to par_algo */
+  bool                  sorted;       /**< Indicates whether the vertex ids are
+                                           sorted by edge degree or not */
 } benchmark_options_t;
 
 /**
