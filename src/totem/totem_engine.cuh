@@ -262,6 +262,11 @@ vid_t engine_vertex_id_in_partition(vid_t);
 partition_algorithm_t engine_partition_algorithm();
 
 /**
+ * Returns true if the vertex ids are sorted by degree
+ */
+bool engine_sorted();
+
+/**
  * Resets the timers that measure the phases of the BSP cycle
  */
 void engine_reset_bsp_timers();

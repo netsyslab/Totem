@@ -294,4 +294,8 @@ inline partition_algorithm_t engine_partition_algorithm() {
   return context.attr.par_algo;
 }
 
+inline bool engine_sorted() {
+  return context.attr.sorted;
+}
+
 #endif  // TOTEM_ENGINE_INTERNAL_CUH
