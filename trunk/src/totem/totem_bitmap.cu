@@ -90,6 +90,31 @@ vid_t bitmap_diff_copy_count_gpu(bitmap_t cur, bitmap_t diff, bitmap_t copy,
   return count;
 }
 
+PRIVATE __global__ void
+bitmap_diff_kernel(bitmap_t cur, bitmap_t diff, size_t len) {
+  int index = THREAD_GLOBAL_INDEX;
+  if (index >= len) return;
+  diff[index] ^= cur[index];
+}
+
+void bitmap_diff_gpu(bitmap_t cur, bitmap_t diff, size_t len, 
+                     cudaStream_t stream) {
+  vid_t words = bitmap_bits_to_words(len);
+  dim3 blocks;
+  kernel_configure(words, blocks);
+  bitmap_diff_kernel<<<blocks, DEFAULT_THREADS_PER_BLOCK, 0, stream>>>
+    (cur, diff, words);
+  CALL_CU_SAFE(cudaGetLastError());
+}
+
+void bitmap_diff_cpu(bitmap_t cur, bitmap_t diff, size_t len) {
+  vid_t words = bitmap_bits_to_words(len);
+  OMP(omp parallel for schedule(static))
+  for (vid_t word = 0; word < words; word++) {
+    diff[word] ^= cur[word];
+  }  
+}
+
 vid_t bitmap_diff_copy_count_cpu(bitmap_t cur, bitmap_t diff, bitmap_t copy,
                                  size_t len) {
   vid_t words = bitmap_bits_to_words(len);

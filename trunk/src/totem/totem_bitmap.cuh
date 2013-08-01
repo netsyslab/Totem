@@ -151,4 +151,17 @@ vid_t bitmap_diff_copy_count_gpu(bitmap_t cur, bitmap_t diff, bitmap_t copy,
 vid_t bitmap_diff_copy_count_cpu(bitmap_t cur, bitmap_t diff, bitmap_t copy,
                                  size_t len);
 
+/**
+ * Diffs the two bitmaps and stores the result back in "diff"
+ * @param[in] cur the current visited state bitmap
+ * @param[in/out] diff at entry, represents the bitmap of last visited round, 
+ *                when the function returns, it will represent the diff 
+ *                between the current and last visited bitmaps.
+ * @param[in] len the length of the bitmaps
+ * @param[in] stream the stream within which this computation will be launched
+*/
+void bitmap_diff_cpu(bitmap_t cur, bitmap_t diff, size_t len);
+void bitmap_diff_gpu(bitmap_t cur, bitmap_t diff, size_t len, 
+                     cudaStream_t stream = 0);
+
 #endif // TOTEM_BITMAP_H

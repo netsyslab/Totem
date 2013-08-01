@@ -151,6 +151,18 @@ void bfs_cpu(partition_t* par) {
                                state->visited_last, subgraph->vertex_count);
   if (frontier_count == 0) return;
 
+  // Copy the current state of the remote vertices bitmap
+  for (int pid = 0; pid < engine_partition_count(); pid++) {
+    if ((pid == par->id) || (par->outbox[pid].count == 0)) continue;
+    vid_t words = bitmap_bits_to_words(par->outbox[pid].count);
+    bitmap_t outbox = (bitmap_t)par->outbox[pid].push_values;
+    bitmap_t local = state->visited[pid];
+    OMP(omp parallel for schedule(static))
+    for (vid_t word = 0; word < words; word++) {
+      outbox[word] = local[word];
+    }
+  }
+
   // If the number of active vertices is lower than a specific threshold, we 
   // consider the frontier sparse
   if (frontier_count <= (subgraph->vertex_count * 
@@ -158,6 +170,14 @@ void bfs_cpu(partition_t* par) {
     bfs_cpu_sparse_frontier(subgraph, state, par->id);
   } else {
     bfs_cpu_dense_frontier(subgraph, state, par->id);
+  }
+
+  // Diff the remote vertices bitmap so that only the ones who got set in this
+  // round are notified
+  for (int pid = 0; pid < engine_partition_count(); pid++) {
+    if ((pid == par->id) || (par->outbox[pid].count == 0)) continue;
+    bitmap_diff_cpu(state->visited[pid], (bitmap_t)par->outbox[pid].push_values,
+                    par->outbox[pid].count);
   }
 }
 
@@ -304,6 +324,7 @@ PRIVATE void bfs_gpu(partition_t* par, bfs_state_t* state) {
                                state->frontier_count, par->streams[1]);
   if (frontier_count == 0) return;
 
+  // Check if it is possible to build a frontier list
   vid_t vertex_count = par->subgraph.vertex_count;
   int use_frontier = (int)(frontier_count <= state->frontier_max_count);
   if (use_frontier) {
@@ -312,8 +333,27 @@ PRIVATE void bfs_gpu(partition_t* par, bfs_state_t* state) {
   }
   state_g.gpu_to_cpu_updates = true;
 
+  // Copy the current state of the remote vertices
+  for (int pid = 0; pid < engine_partition_count(); pid++) {
+    if ((pid == par->id) || (par->outbox[pid].count == 0)) continue;
+    CALL_CU_SAFE(cudaMemcpyAsync(par->outbox[pid].push_values, 
+                                 state->visited[pid],
+                                 bitmap_bits_to_bytes(par->outbox[pid].count),
+                                 cudaMemcpyDefault, par->streams[1]));
+    CALL_CU_SAFE(cudaGetLastError());
+  }
+
+  // Call the BFS kernel
   int par_alg = engine_partition_algorithm();
   BFS_GPU_FUNC[par_alg][use_frontier](par, state, vertex_count);
+
+  // Diff the remote vertices bitmap so that only the ones who got set in this
+  // round are notified
+  for (int pid = 0; pid < engine_partition_count(); pid++) {
+    if ((pid == par->id) || (par->outbox[pid].count == 0)) continue;
+    bitmap_diff_gpu(state->visited[pid], (bitmap_t)par->outbox[pid].push_values,
+                    par->outbox[pid].count, par->streams[1]);
+  }
 }
 
 PRIVATE void bfs(partition_t* par) {
@@ -415,8 +455,9 @@ PRIVATE inline void bfs_init_gpu(partition_t* par) {
   state->visited[par->id] = bitmap_init_gpu(par->subgraph.vertex_count);
   for (int pid = 0; pid < engine_partition_count(); pid++) {
     if (pid != par->id && par->outbox[pid].count != 0) {
-      state->visited[pid] = (bitmap_t)par->outbox[pid].push_values;
-      bitmap_reset_gpu(state->visited[pid], par->outbox[pid].count);
+      state->visited[pid] = bitmap_init_gpu(par->outbox[pid].count);
+      bitmap_reset_gpu((bitmap_t)par->outbox[pid].push_values,
+                       par->outbox[pid].count);
     }
   }
   // set the source vertex as visited
@@ -448,8 +489,9 @@ PRIVATE inline void bfs_init_cpu(partition_t* par) {
   state->visited[par->id] = bitmap_init_cpu(par->subgraph.vertex_count);
   for (int pid = 0; pid < engine_partition_count(); pid++) {
     if (pid != par->id && par->outbox[pid].count != 0) {
-      state->visited[pid] = (bitmap_t)par->outbox[pid].push_values;
-      bitmap_reset_cpu(state->visited[pid], par->outbox[pid].count);
+      state->visited[pid] = bitmap_init_cpu(par->outbox[pid].count);
+      bitmap_reset_cpu((bitmap_t)par->outbox[pid].push_values,
+                       par->outbox[pid].count);
     }
   }
   // set the source vertex as visited
