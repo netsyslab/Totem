@@ -16,10 +16,32 @@
 #include "totem_partition.h"
 
 /**
- * A type for bfs cost. This is useful to allow changes in size.
+ * A type for the cost in traversal-based algorithms.
  */
 typedef uint16_t cost_t;
 const cost_t INF_COST = (cost_t)INFINITE;
+
+/**
+ * For traversal-based algorithms, this constant determines the threshold
+ * (as percentage of the total number of vertices) below which the frontier
+ * is considered sparse. This is used to tune the graph algorithm (for example)
+ * to choose between iterating over all the vertices (when the frontier is 
+ * not sparse), or build a frontier and iterate over only the vertices in the
+ * frontier when it is sparse.
+ */
+const double TRV_FRONTIER_SPARSE_THRESHOLD = .1;
+
+/*
+ * For traversal-based algorithms, this constant determines the threshold
+ * (as percentage of the total number of vertices) that determines the
+ * maximum space to be allocated for the frontier array. Since  the GPU has
+ * limited memory, this threshold is used by GPU-based partitions to limit
+ * the space allocated for the frontier array. Note that if the frontier 
+ * in a specific level was longer, then the algorithm should not build a
+ * frontier array, and should iterate over all the vertices. This value has
+ * been determined experimentally.
+ */
+const double TRV_MAX_FRONTIER_LEN = .5;
 
 /**
  * A type for page rank. This is useful to allow changes in precision.
