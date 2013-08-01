@@ -10,12 +10,10 @@
 #include "totem_engine.cuh"
 
 /**
- * PageRank specific state
+ * In case the vertex ids are sorted by degree, this constant specifies the 
+ * number of groups of vertices of similar degree to be processed together
  */
-typedef struct pagestate_s {
-  rank_t* rank;
-  rank_t* rank_s[MAX_PARTITION_COUNT];
-} page_rank_state_t;
+PRIVATE const int section_count = 6;
 
 /**
  * final result
@@ -34,6 +32,15 @@ PRIVATE rank_t* rank_host = NULL;
  * ((1 - PAGE_RANK_DAMPING_FACTOR) / vertex_count)
  */
 PRIVATE rank_t c1 = 0;
+
+/**
+ * PageRank specific state
+ */
+typedef struct pagestate_s {
+  rank_t* rank;
+  rank_t* rank_s[MAX_PARTITION_COUNT];
+  vid_t   sections[section_count + 1];
+} page_rank_state_t;
 
 /**
  * Checks for input parameters and special cases. This is invoked at the
@@ -82,29 +89,25 @@ sum_neighbors(const vid_t* __restrict nbrs, const vid_t nbr_count,
           vwarp_rank[warp_offset] = sum = sum + vwarp_rank[warp_offset + 512];
         }
         __syncthreads();
-      }
-      
+      }      
       if (VWARP_WIDTH >= 512) {
         if (warp_offset < 256) {
           vwarp_rank[warp_offset] = sum = sum + vwarp_rank[warp_offset + 256];
         }
         __syncthreads();
       }
-      
       if (VWARP_WIDTH >= 256) {
         if (warp_offset < 128) {
           vwarp_rank[warp_offset] = sum = sum + vwarp_rank[warp_offset + 128];
         }
         __syncthreads();
       }
-      
       if (VWARP_WIDTH >= 128) {
         if (warp_offset <  64) {
           vwarp_rank[warp_offset] = sum = sum + vwarp_rank[warp_offset + 64];
         }
         __syncthreads();
       }
-      
       if (VWARP_WIDTH >= 64) {
         smem[warp_offset] = sum = sum + smem[warp_offset + 32];
       }
@@ -130,18 +133,19 @@ sum_neighbors(const vid_t* __restrict nbrs, const vid_t nbr_count,
 /**
  * The PageRank kernel. Based on the algorithm described in [Malewicz2010].
  */
-template<int VWARP_WIDTH, int VWARP_BATCH>
+template<int VWARP_WIDTH, int VWARP_BATCH, int THREADS_PER_BLOCK>
 PRIVATE __global__
 void page_rank_incoming_kernel(partition_t par, page_rank_state_t ps, 
-                               float c1, bool last_round) {
-  vid_t vertex_count = par.subgraph.vertex_count;
+                               const vid_t start, const vid_t vertex_count,
+                               const bool last_round, const float c1) {
   if (THREAD_GLOBAL_INDEX >= 
       vwarp_thread_count(vertex_count, VWARP_WIDTH, VWARP_BATCH)) return;
 
-  const eid_t* __restrict vertices = par.subgraph.vertices;
   const vid_t* __restrict edges = par.subgraph.edges;
+  const vid_t* __restrict vertices = par.subgraph.vertices;
 
-  vid_t start_vertex = vwarp_block_start_vertex(VWARP_WIDTH, VWARP_BATCH) + 
+  vid_t start_vertex = start + 
+    vwarp_block_start_vertex(VWARP_WIDTH, VWARP_BATCH) + 
     vwarp_warp_start_vertex(VWARP_WIDTH, VWARP_BATCH);
   vid_t end_vertex = start_vertex +
     vwarp_warp_batch_size(vertex_count, VWARP_WIDTH, VWARP_BATCH);
@@ -149,7 +153,7 @@ void page_rank_incoming_kernel(partition_t par, page_rank_state_t ps,
 
   // Each thread in every warp has an entry in the following array which will be
   // used to calculate intermediary delta values in shared memory
-  __shared__ rank_t block_rank[MAX_THREADS_PER_BLOCK];
+  __shared__ rank_t block_rank[THREADS_PER_BLOCK];
   int index = THREAD_BLOCK_INDEX / VWARP_WIDTH;
   rank_t* vwarp_rank = &block_rank[index * VWARP_WIDTH];
 
@@ -168,33 +172,70 @@ void page_rank_incoming_kernel(partition_t par, page_rank_state_t ps,
   }
 }
 
-template<int VWARP_WIDTH, int VWARP_BATCH>
-PRIVATE void page_rank_gpu_launch(partition_t* par, page_rank_state_t* ps,
-                                  bool last_round) {
-  dim3 blocks, threads;
-  KERNEL_CONFIGURE(vwarp_thread_count(par->subgraph.vertex_count,
-                                      VWARP_WIDTH, VWARP_BATCH),
+template<int VWARP_WIDTH, int BATCH_SIZE>
+PRIVATE void
+page_rank_gpu_launch(partition_t* par, page_rank_state_t* ps, 
+                     const vid_t start, const vid_t vertex_count,
+                     const bool last, const rank_t c1) {
+  const int threads = MAX_THREADS_PER_BLOCK;
+  dim3 blocks;
+  assert(VWARP_WIDTH <= threads);
+  kernel_configure(vwarp_thread_count(vertex_count, VWARP_WIDTH, BATCH_SIZE),
                    blocks, threads);
-  page_rank_incoming_kernel<VWARP_WIDTH, VWARP_BATCH><<<blocks, threads, 0,
-    par->streams[1]>>>(*par, *ps, c1, last_round);
-  CALL_CU_SAFE(cudaGetLastError());
+  page_rank_incoming_kernel<VWARP_WIDTH, BATCH_SIZE, threads> <<<blocks, 
+    threads, 0, par->streams[1]>>>(*par, *ps, start, vertex_count, last, c1);
 }
 
-typedef void(*page_rank_gpu_func_t)(partition_t*, page_rank_state_t*, bool);
-PRIVATE const page_rank_gpu_func_t PAGE_RANK_GPU_FUNC[] = {
-  // RANDOM algorithm
-  page_rank_gpu_launch<VWARP_MEDIUM_WARP_WIDTH, VWARP_MEDIUM_BATCH_SIZE>,
-  // HIGH partitioning
-  page_rank_gpu_launch<VWARP_SHORT_WARP_WIDTH, VWARP_SMALL_BATCH_SIZE>,
-  // LOW partitioning
-  page_rank_gpu_launch<MAX_THREADS_PER_BLOCK, VWARP_MEDIUM_WARP_WIDTH>
-};
+typedef void(*page_rank_gpu_func_t)(partition_t*, page_rank_state_t*, 
+                                    const vid_t, const vid_t, const bool,
+                                    const rank_t);
+
+PRIVATE void page_rank_incoming_gpu_sorted(partition_t* par, bool last_round) {
+  page_rank_state_t* ps = (page_rank_state_t*)par->algo_state;
+  const page_rank_gpu_func_t section_launch[] = {
+    page_rank_gpu_launch<1,   2>,    // (0) < 2
+    page_rank_gpu_launch<2,   2>,    // (1) > 2    && < 8
+    page_rank_gpu_launch<4,   4>,    // (2) > 8   && < 16
+    page_rank_gpu_launch<8,   8>,    // (3) > 16  && < 64
+    page_rank_gpu_launch<16,  8>,    // (4) > 64   && < 128
+    page_rank_gpu_launch<32,  4>,    // (5) > 1024 && < 4 * 1024
+    page_rank_gpu_launch<256, 2>,    // (6) >= 4 * 1024
+  };
+
+  int64_t end = par->subgraph.vertex_count;
+  for (int i = section_count; i >= 0; i--) {
+    int64_t start = ps->sections[i];
+    int64_t count = end - start;
+    if (count > 0) {
+      stopwatch_t stopwatch;
+      stopwatch_start(&stopwatch);
+      section_launch[i](par, ps, start, count, last_round, c1);
+      CALL_CU_SAFE(cudaGetLastError());
+      end = start;
+    }
+  }
+}
 
 PRIVATE void page_rank_incoming_gpu(partition_t* par, bool last_round) {
-  page_rank_state_t* ps = (page_rank_state_t*)par->algo_state;
+  if (engine_sorted()) {
+    page_rank_incoming_gpu_sorted(par, last_round);
+    return;      
+  }
+
+  PRIVATE const page_rank_gpu_func_t PAGE_RANK_GPU_FUNC[] = {
+    // RANDOM algorithm
+    page_rank_gpu_launch<VWARP_MEDIUM_WARP_WIDTH, VWARP_MEDIUM_BATCH_SIZE>,
+    // HIGH partitioning
+    page_rank_gpu_launch<VWARP_MEDIUM_WARP_WIDTH, VWARP_MEDIUM_BATCH_SIZE>,
+    // LOW partitioning
+    page_rank_gpu_launch<MAX_THREADS_PER_BLOCK, VWARP_MEDIUM_WARP_WIDTH>
+  };
+  page_rank_state_t* ps = (page_rank_state_t*)par->algo_state;  
   int par_alg = engine_partition_algorithm();
-  PAGE_RANK_GPU_FUNC[par_alg](par, ps, last_round);
+  PAGE_RANK_GPU_FUNC[par_alg](par, ps, 0, par->subgraph.vertex_count,
+                              last_round, c1);
 }
+
 
 PRIVATE void page_rank_incoming_cpu(partition_t* par, bool last_round) {
   page_rank_state_t* ps = (page_rank_state_t*)par->algo_state;
@@ -266,6 +307,33 @@ PRIVATE void page_rank_incoming_aggr(partition_t* partition) {
   }
 }
 
+PRIVATE __global__
+void sections_build_kernel(const eid_t* __restrict vertices, 
+                           vid_t vertex_count, vid_t* sections) {
+  const vid_t v = THREAD_GLOBAL_INDEX;
+  if (v >= vertex_count) return;
+  vid_t nbr_count = vertices[v + 1] - vertices[v];
+
+  if (nbr_count > 1 && nbr_count < 8) {
+    atomicMin(&sections[0], v);
+  }
+  if (nbr_count > 7 && nbr_count < 16) {
+    atomicMin(&sections[1], v);
+  }
+  if (nbr_count > 15 && nbr_count < 64) {
+    atomicMin(&sections[2], v);
+  }
+  if (nbr_count > 63 && nbr_count < 128) {
+    atomicMin(&sections[3], v);
+  }
+  if (nbr_count > 127 && nbr_count < (4 * 1024)) {
+    atomicMin(&sections[4], v);
+  }
+  if (nbr_count >= (4 * 1024)) {
+    atomicMin(&sections[5], v);
+  }
+}
+
 PRIVATE void page_rank_incoming_init(partition_t* par) {
   vid_t vcount = par->subgraph.vertex_count;
   if (vcount == 0) return;
@@ -275,6 +343,23 @@ PRIVATE void page_rank_incoming_init(partition_t* par) {
   totem_mem_t type = TOTEM_MEM_HOST;
   if (par->processor.type == PROCESSOR_GPU) {
     type = TOTEM_MEM_DEVICE;
+    if (engine_sorted()) {
+      vid_t* sections = NULL;
+      CALL_SAFE(totem_malloc(section_count * sizeof(vid_t), type, 
+                             (void**)&sections));
+      CALL_SAFE(totem_memset(sections, vcount, section_count, 
+                             TOTEM_MEM_DEVICE, par->streams[1]));
+      dim3 blocks;
+      kernel_configure(vcount, blocks);
+      sections_build_kernel<<<blocks, DEFAULT_THREADS_PER_BLOCK, 0, 
+        par->streams[1]>>>(par->subgraph.vertices, vcount, sections);
+      CALL_CU_SAFE(cudaMemcpyAsync(&ps->sections[1], sections,
+                                   section_count * sizeof(vid_t),
+                                   cudaMemcpyDeviceToHost, par->streams[1]));
+      ps->sections[0] = 0;
+      CALL_CU_SAFE(cudaStreamSynchronize(par->streams[1]));
+      totem_free(sections, type);
+    }
   }
 
   CALL_SAFE(totem_malloc(vcount * sizeof(rank_t), type, 
@@ -282,6 +367,7 @@ PRIVATE void page_rank_incoming_init(partition_t* par) {
   CALL_SAFE(totem_malloc(vcount * sizeof(rank_t), type, (void**)&(ps->rank)));
   rank_t init_value = 1 / (rank_t)engine_vertex_count();
   totem_memset(ps->rank, init_value, vcount, type, par->streams[1]);
+  CALL_CU_SAFE(cudaStreamSynchronize(par->streams[1]));
   par->algo_state = ps;
 }
 
