@@ -28,7 +28,7 @@ all: $(TARGET)
 
 $(TARGET): objects totem alg
 	@printf "\nLinking %s executable ...\n" $(TARGET)
-	$(CC) -o $@ $(CCOBJS) $(CUOBJS) $(ALG_LIB) $(TOTEM_LIB) $(LFLAGS)
+	$(NVCC) -o $@ $(CCOBJS) $(CUOBJS) $(ALG_LIB) $(TOTEM_LIB) $(LFLAGS)
 
 objects: $(OBJDIR) $(CCOBJS) $(CUOBJS)
 
@@ -38,7 +38,7 @@ $(OBJDIR):
 $(CCOBJS): $(OBJDIR)/%.o: %.cc $(DEPS)
 	$(CC) $(CCFLAGS) -c $< -o $@
 
-$(CUOBJS): $(OBJDIR)/%.cu_o: %.cu $(DEPS)
+$(CUOBJS): $(OBJDIR)/%.o: %.cu $(DEPS)
 	$(NVCC) $(NVCCFLAGS) -c $< -o $@
 
 totem:
