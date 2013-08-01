@@ -25,7 +25,7 @@ $(OBJDIR):
 $(CCOBJS): $(OBJDIR)/%.o: %.cc $(CCDEPS)
 	$(CC) $(CCFLAGS) -c $< -o $@
 
-$(CUOBJS): $(OBJDIR)/%.cu_o: %.cu $(CCDEPS) $(CUDEPS)
+$(CUOBJS): $(OBJDIR)/%.o: %.cu $(CCDEPS) $(CUDEPS)
 	$(NVCC) $(NVCCFLAGS) -c $< -o $@
 
 clean:
