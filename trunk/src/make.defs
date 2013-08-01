@@ -63,7 +63,7 @@ SM_TARGETS = $(GEN_SM20) $(GEN_SM35)
 OPTFLAGS   = -O3 -fno-strict-aliasing
 CCFLAGS   += -g $(OPENMP) $(OPTFLAGS) -Wall -Wno-format \
              -I$(CUDA_INSTALL_PATH)/include -D__STDC_LIMIT_MACROS
-LFLAGS     =  -lm $(OPENMP) -lcudart -I. -L. -L$(CUDA_INSTALL_PATH)/lib$(ARCH)
+LFLAGS     =  -lm -Xcompiler "$(OPENMP)" -lcudart -I. -L. -L$(CUDA_INSTALL_PATH)/lib$(ARCH)
 NVCCFLAGS += -g -Xcompiler "$(OPENMP) -fno-strict-aliasing" -O3 -I. \
              -I$(CUDA_INSTALL_PATH)/include $(SM_TARGETS) -D__STDC_LIMIT_MACROS
 
@@ -71,12 +71,12 @@ NVCCFLAGS += -g -Xcompiler "$(OPENMP) -fno-strict-aliasing" -O3 -I. \
 CCSRC   = $(wildcard *.cc)
 CUSRC   = $(wildcard *.cu)
 CCOBJS  = $(CCSRC:%.cc=$(OBJDIR)/%.o)
-CUOBJS  = $(CUSRC:%.cu=$(OBJDIR)/%.cu_o)
+CUOBJS  = $(CUSRC:%.cu=$(OBJDIR)/%.o)
 CCDEPS  = $(wildcard *.h)
 CUDEPS  = $(wildcard *.cuh)
 
 # common commands across make files
 ETAGS_CMD     = rm -f TAGS; find . -name '*.c' -o -name '*.h' -o \
                 -name '*.cu' | xargs etags
-CLEAN_CMD     = rm -f $(OBJDIR)/*.o $(OBJDIR)/*.cu_o *~
+CLEAN_CMD     = rm -f $(OBJDIR)/*.o *~
 CLEAN_ALL_CMD = rm -rf $(TARGET) $(OBJDIR) *~ TAGS

@@ -33,7 +33,7 @@ ifdef TEST
 CCSRC = $(filter-out %.cu, $(TEST_FILE))
 CUSRC = $(filter-out %.cc, $(TEST_FILE))
 CCOBJS = $(CCSRC:%.cc=$(OBJDIR)/%.o)
-CUOBJS = $(CUSRC:%.cu=$(OBJDIR)/%.cu_o)
+CUOBJS = $(CUSRC:%.cu=$(OBJDIR)/%.o)
 endif
 ALL_OBJS = $(CCOBJS) $(CUOBJS)
 
@@ -47,14 +47,14 @@ DEPS = $(CCDEPS) $(CUDEPS) $(TOTEM_DEPS) $(ALG_DEPS)
 all: environment totem alg objects
 ifndef TEST
 	@printf "\nBuilding all unit tests ...\n"
-	$(CC) $(BUILD_LINE) -o all$(EXE_EXT)
+	$(NVCC) $(BUILD_LINE) -o all$(EXE_EXT)
 else
 	@if test ! $(TEST_FILE); then \
 	  printf "\n%s unit test does not exist\n" $(TEST); \
 	  exit 2; \
 	fi
 	@printf "\nBuilding %s unit test ...\n" $(TEST_FILE)
-	$(CC) $(BUILD_LINE) -o $(TEST)$(EXE_EXT)
+	$(NVCC) $(BUILD_LINE) -o $(TEST)$(EXE_EXT)
 endif
 
 environment:
@@ -71,7 +71,7 @@ $(OBJDIR):
 $(CCOBJS): $(OBJDIR)/%.o: %.cc $(DEPS)
 	$(CC) $(CCFLAGS) -c $< -o $@
 
-$(CUOBJS): $(OBJDIR)/%.cu_o: %.cu $(DEPS)
+$(CUOBJS): $(OBJDIR)/%.o: %.cu $(DEPS)
 	$(NVCC) $(NVCCFLAGS) -c $< -o $@
 
 totem:

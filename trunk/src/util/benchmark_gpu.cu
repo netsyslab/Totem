@@ -354,7 +354,7 @@ error_t memory_random_copy_intensive_gpu(double duration) {
                             * sizeof(uint64_t), cudaMemcpyHostToDevice), err);
   do {
     uint64_t index = random_uint64(SMALL_ARRAY_SIZE);
-    intern_memory_copy_intensive_gpu<<<blocks, threads_per_block>>>
+    intern_memory_random_copy_intensive_gpu<<<blocks, threads_per_block>>>
       (array1_d, array2_d, index);
     time(&end);
   } while (difftime(end, start) < duration);

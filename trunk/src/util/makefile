@@ -15,7 +15,7 @@ TOTEM_LIB    = -ltotem -L$(TOTEM_PATH)
 TOTEM_DEPS   = $(wildcard $(TOTEM_PATH)/*.[cuh,h])
 
 CCOBJS = $(CCSRC:%.cc=$(OBJDIR)/%.o)
-CUOBJS = $(CUSRC:%.cu=$(OBJDIR)/%.cu_o)
+CUOBJS = $(CUSRC:%.cu=$(OBJDIR)/%.o)
 
 ALL_OBJS = $(CCOBJS) $(CUOBJS)
 
@@ -28,7 +28,7 @@ DEPS = $(CCDEPS) $(CUDEPS) $(TOTEM_DEPS)
 
 all: totem objects
 	@printf "\nBuilding executable ...\n"
-	$(CC) $(BUILD_LINE) -o benchmark
+	$(NVCC) $(BUILD_LINE) -o benchmark
 
 objects: $(OBJDIR) $(CCOBJS) $(CUOBJS)
 
@@ -38,14 +38,14 @@ $(OBJDIR):
 $(CCOBJS): $(OBJDIR)/%.o: %.cc $(DEPS)
 	$(CC) $(CCFLAGS) -c $< -o $@
 
-$(CUOBJS): $(OBJDIR)/%.cu_o: %.cu $(DEPS)
+$(CUOBJS): $(OBJDIR)/%.o: %.cu $(DEPS)
 	$(NVCC) $(NVCCFLAGS) -c $< -o $@
 
 totem:
 	@$(MAKE) -C $(TOTEM_PATH)
 
 clean:
-	@$(CLEAN_CMD) *$(EXE_EXT)
+	@$(CLEAN_CMD)
 
 clean-all: clean
 	@$(CLEAN_ALL_CMD)
