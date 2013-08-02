@@ -19,10 +19,13 @@
 #include "totem_graph.h"
 
 /**
- * Determines the maximum number of threads per block. This value can be set 
- * to 1024 for GPUs with compute capability higher than 3
+ * Determines the maximum number of threads per block
  */
+#ifdef FEATURE_SM35
+const int MAX_THREADS_PER_BLOCK = 1024;
+#else 
 const int MAX_THREADS_PER_BLOCK = 512;
+#endif /* FEATURE_SM35 */
 
 /**
  * The default number of threads per block
@@ -42,9 +45,9 @@ const int MAX_BLOCK_PER_DIMENSION = 65535;
 /**
  * Determines the maximum number of threads a kernel can be configured with.
  */
-const int64_t MAX_THREAD_COUNT = ((int64_t)MAX_THREADS_PER_BLOCK * 
-                                  pow(MAX_BLOCK_PER_DIMENSION, 
-                                      MAX_BLOCK_DIMENSION));
+const int64_t MAX_THREAD_COUNT = 
+  ((int64_t)MAX_THREADS_PER_BLOCK * pow(MAX_BLOCK_PER_DIMENSION, 
+                                        MAX_BLOCK_DIMENSION));
 
 /**
  * Minimum percentage of device memory reserved for algorithm state
@@ -101,7 +104,7 @@ const double GPU_MIN_ALG_STATE = .05;
  * @param[in] threads_per_block number of threads per block required
  * @return generic success or failure
  */
-inline error_t 
+inline error_t __host__ __device__
 kernel_configure(int64_t thread_count, dim3 &blocks,
                  int threads_per_block = DEFAULT_THREADS_PER_BLOCK) {
   if (threads_per_block > MAX_THREADS_PER_BLOCK) return FAILURE;
