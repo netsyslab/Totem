@@ -51,8 +51,7 @@ ifdef GPU_ARCH
     SM_TARGETS = $(GEN_SM20)
     NVCCFLAGS += -DFEATURE_SM20
     CCFLAGS += -DFEATURE_SM20
-  endif
-  ifeq ($(GPU_ARCH), 35)
+  else ifeq ($(GPU_ARCH), 35)
     SM_TARGETS = $(GEN_SM35)
     NVCCFLAGS += -dc
     LFLAGS    += $(SM_TARGETS) -rdc=true -lcudadevrt 
