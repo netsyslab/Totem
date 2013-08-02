@@ -65,19 +65,33 @@ vid_t vwarp_warp_start_vertex(const int vwarp_width, const int vwarp_batch) {
 #define VWARP_WARPS_PER_BLOCK(_vwarp_width)     \
   (MAX_THREADS_PER_BLOCK / (_vwarp_width))
 
+inline __device__ __host__ int 
+vwarp_warps_per_block(int vwarp_width, 
+                      int threads_per_block = MAX_THREADS_PER_BLOCK) {
+  return (threads_per_block / vwarp_width);
+}
+
 /**
  * The maximum size of work that can be assigned to a thread-block
  */
 #define VWARP_BLOCK_MAX_BATCH_SIZE(_vwarp_width, _vwarp_batch)  \
   (VWARP_WARPS_PER_BLOCK(_vwarp_width) * _vwarp_batch)
 
+inline __device__ __host__ int
+vwarp_block_max_batch_size(int vwarp_width, int vwarp_batch, 
+                           int threads_per_block = MAX_THREADS_PER_BLOCK) {
+  return (vwarp_warps_per_block(vwarp_width, threads_per_block) * vwarp_batch);
+}
+
 /**
  * The id of the first vertex in the batch of vertices to be processed by a
  * thread-block
  */
 inline __device__
-vid_t vwarp_block_start_vertex(const int vwarp_width, const int vwarp_batch) {
-  return BLOCK_GLOBAL_INDEX * VWARP_WARPS_PER_BLOCK(vwarp_width) * vwarp_batch;
+vid_t vwarp_block_start_vertex(const int vwarp_width, const int vwarp_batch, 
+                               int threads_per_block = MAX_THREADS_PER_BLOCK) {
+  return (vwarp_warps_per_block(vwarp_width, threads_per_block) * 
+          BLOCK_GLOBAL_INDEX * vwarp_batch);
 }
 
 /**
@@ -85,12 +99,15 @@ vid_t vwarp_block_start_vertex(const int vwarp_width, const int vwarp_batch) {
  */
 inline __device__
 vid_t vwarp_block_batch_size(const vid_t vertex_count, const int vwarp_width, 
-                             const int vwarp_batch) {
-  vid_t start_vertex = vwarp_block_start_vertex(vwarp_width, vwarp_batch);
+                             const int vwarp_batch, 
+                             int threads_per_block = MAX_THREADS_PER_BLOCK) {
+  vid_t start_vertex = vwarp_block_start_vertex(vwarp_width, vwarp_batch, 
+                                                threads_per_block);
   vid_t last_vertex = start_vertex + 
-    VWARP_BLOCK_MAX_BATCH_SIZE(vwarp_width, vwarp_batch);
+    vwarp_block_max_batch_size(vwarp_width, vwarp_batch, threads_per_block);
   return (last_vertex > vertex_count ? (vertex_count - start_vertex) :
-          VWARP_BLOCK_MAX_BATCH_SIZE(vwarp_width, vwarp_batch));
+          vwarp_block_max_batch_size(vwarp_width, vwarp_batch, 
+                                     threads_per_block));
 }
 
 /*
@@ -98,9 +115,11 @@ vid_t vwarp_block_batch_size(const vid_t vertex_count, const int vwarp_width,
  */
 inline __device__
 vid_t vwarp_warp_batch_size(const vid_t vertex_count, const int vwarp_width,
-                            const int vwarp_batch) {
-  vid_t block_batch_size = vwarp_block_batch_size(vertex_count, vwarp_width, 
-                                                  vwarp_batch);
+                            const int vwarp_batch, 
+                            int threads_per_block = MAX_THREADS_PER_BLOCK) {
+  vid_t block_batch_size = 
+    vwarp_block_batch_size(vertex_count, vwarp_width, vwarp_batch, 
+                           threads_per_block);
   vid_t start_vertex = vwarp_warp_start_vertex(vwarp_width, vwarp_batch); 
   vid_t last_vertex = start_vertex + vwarp_batch;
   return (last_vertex >= block_batch_size ? (block_batch_size - start_vertex) :
