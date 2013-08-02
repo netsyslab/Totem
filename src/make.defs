@@ -3,10 +3,11 @@
 #
 # Features (e.g., make DEBUG="DEVICE"):
 #   
-#   EID=64          // 64-bit edge ids
-#   VERBOSE=NO      // disable verbose timing of Totem execution rounds
-#   DEBUG=DEVICE    // produce device debugging symbols
-#   L1=YES          // enable using GPU L1 cache (default disabled)
+#   EID=64           // 64-bit edge ids
+#   GPU_ARCH=[20|35] // GPU architecture to compile for
+#   VERBOSE=NO       // disable verbose timing of Totem execution rounds
+#   DEBUG=DEVICE     // produce device debugging symbols
+#   L1=YES           // enable using GPU L1 cache (default disabled)
 # Created on: 2011-02-28
 # Author: Abdullah Gharaibeh
 #
@@ -42,6 +43,34 @@ ifeq ($(ARCH), 32)
   ARCH =
 endif
 
+# Compute capability targets
+GEN_SM20 = -gencode=arch=compute_20,code=\"sm_20,compute_20\" 
+GEN_SM35 = -gencode=arch=compute_35,code=\"sm_35,compute_35\" 
+ifdef GPU_ARCH
+  ifeq ($(GPU_ARCH), 20)
+    SM_TARGETS = $(GEN_SM20)
+    NVCCFLAGS += -DFEATURE_SM20
+    CCFLAGS += -DFEATURE_SM20
+  endif
+  ifeq ($(GPU_ARCH), 35)
+    SM_TARGETS = $(GEN_SM35)
+    NVCCFLAGS += -dc
+    LFLAGS    += $(SM_TARGETS) -rdc=true -lcudadevrt 
+    NVCCFLAGS += -DFEATURE_SM35
+    CCFLAGS += -DFEATURE_SM35
+  else
+    $(error unsupported GPU architecture)
+  endif
+else
+  # default is 3.5
+  SM_TARGETS = $(GEN_SM35)
+  NVCCFLAGS += -dc
+  LFLAGS    += $(SM_TARGETS) -rdc=true -lcudadevrt 
+  NVCCFLAGS += -DFEATURE_SM35
+  CCFLAGS += -DFEATURE_SM35
+endif
+
+
 # directory definitions
 CUDA_INSTALL_PATH = /usr/local/cuda
 LIBDIR = $(ROOT_DIR)/lib
@@ -54,18 +83,14 @@ OPENMP    = -fopenmp
 CC   = g++
 NVCC = $(CUDA_INSTALL_PATH)/bin/nvcc
 
-# Compute capability targets
-GEN_SM20 = -gencode=arch=compute_20,code=\"sm_20,compute_20\" 
-GEN_SM35 = -gencode=arch=compute_35,code=\"sm_35,compute_35\" 
-SM_TARGETS = $(GEN_SM20) $(GEN_SM35)
-
 # compilation and linking flags. Note that OPTFLAGS is used only for *.c files
 OPTFLAGS   = -O3 -fno-strict-aliasing
 CCFLAGS   += -g $(OPENMP) $(OPTFLAGS) -Wall -Wno-format \
              -I$(CUDA_INSTALL_PATH)/include -D__STDC_LIMIT_MACROS
-LFLAGS     =  -lm -Xcompiler "$(OPENMP)" -lcudart -I. -L. -L$(CUDA_INSTALL_PATH)/lib$(ARCH)
 NVCCFLAGS += -g -Xcompiler "$(OPENMP) -fno-strict-aliasing" -O3 -I. \
              -I$(CUDA_INSTALL_PATH)/include $(SM_TARGETS) -D__STDC_LIMIT_MACROS
+LFLAGS    +=  -lcudart -I. -L. -L$(CUDA_INSTALL_PATH)/lib$(ARCH) -lm \
+	      -Xcompiler "$(OPENMP)"
 
 # source files and their corresponding objects and dependencies
 CCSRC   = $(wildcard *.cc)
