@@ -12,6 +12,7 @@
 #include "totem_comdef.h"
 #include "totem_comkernel.cuh"
 #include "totem_graph.h"
+#include "totem_mem.h"
 
 /**
  * The bitmap data structure. A flat array of words.
@@ -125,6 +126,65 @@ __host__ __device__ inline bool bitmap_is_set(bitmap_t map, vid_t bit) {
 }
 
 /**
+ * Counts the number of set bits in the bitmap
+ * @param[in] bitmap the bitmap to be counted
+ * @param[in] len the length of the bitmap
+ * @param[in] count_d a reference to a sizeof(vid_t) worth of space
+ *                    on device memory used to compute the number
+ *                    of set bits in the diff bitmap.
+ * @param[in] stream the stream within which this computation will be launched
+ *
+ * @return the number of set bits
+*/
+vid_t bitmap_count_cpu(bitmap_t bitmap, size_t len);
+vid_t bitmap_count_gpu(bitmap_t bitmap, size_t len, vid_t* count_d = NULL, 
+                       cudaStream_t stream = 0);
+
+/**
+ * Diffs the two bitmaps and stores the result back in "diff"
+ * @param[in] cur the current visited state bitmap
+ * @param[in/out] diff at entry, represents the bitmap of last visited round, 
+ *                when the function returns, it will represent the diff 
+ *                between the current and last visited bitmaps.
+ * @param[in] len the length of the bitmaps
+ * @param[in] stream the stream within which this computation will be launched
+*/
+void bitmap_diff_cpu(bitmap_t cur, bitmap_t diff, size_t len);
+void bitmap_diff_gpu(bitmap_t cur, bitmap_t diff, size_t len, 
+                     cudaStream_t stream = 0);
+
+/**
+ * Copy bitmap
+ * @param[in] src the source bitmap
+ * @param[out] dst the destination bitmap
+ * @param[in] len the length of the bitmaps
+ * @param[in] stream the stream within which this computation will be launched
+*/
+void bitmap_copy_cpu(bitmap_t src, bitmap_t dst, size_t len);
+void bitmap_copy_gpu(bitmap_t src, bitmap_t dst, size_t len, 
+                     cudaStream_t stream = 0);
+
+/**
+ * A multi-purpose function that is motivated by traversal-based algorithms
+ * to create the frontier bitmap. This function does two things: first, cur and
+ * diff are xor-ed and the result is stored back in diff (i.e., diffing cur and 
+ * the old value in diff); second, copy cur bitmap to "copy".
+ * @param[in] cur the current visited state bitmap
+ * @param[in/out] diff at entry, represents the bitmap of last visited round, 
+ *                when the function returns, it will represent the diff 
+ *                between the current and last visited bitmaps (i.e., the
+ *                frontier).
+ * @param[out] copy used to backup the cur bitmap
+ * @param[in] len the length of the bitmaps
+ * @param[in] stream the stream within which this computation will be launched
+ *
+*/
+void bitmap_diff_copy_gpu(bitmap_t cur, bitmap_t diff, bitmap_t copy,
+                           size_t len, cudaStream_t stream = 0);
+void bitmap_diff_copy_cpu(bitmap_t cur, bitmap_t diff, bitmap_t copy,
+                           size_t len);
+
+/**
  * A multi-purpose function that is motivated by traversal-based algorithms
  * to create the frontier bitmap and get the number of vertices in the frontier.
  * This function does three things: first, cur and diff are xor-ed and the 
@@ -146,22 +206,10 @@ __host__ __device__ inline bool bitmap_is_set(bitmap_t map, vid_t bit) {
  * @return the number of set bits in diff
 */
 vid_t bitmap_diff_copy_count_gpu(bitmap_t cur, bitmap_t diff, bitmap_t copy,
-                                 size_t len, vid_t* count_d, 
-                                 cudaStream_t stream);
+                                 size_t len, vid_t* count_d = NULL, 
+                                 cudaStream_t stream = 0);
 vid_t bitmap_diff_copy_count_cpu(bitmap_t cur, bitmap_t diff, bitmap_t copy,
                                  size_t len);
 
-/**
- * Diffs the two bitmaps and stores the result back in "diff"
- * @param[in] cur the current visited state bitmap
- * @param[in/out] diff at entry, represents the bitmap of last visited round, 
- *                when the function returns, it will represent the diff 
- *                between the current and last visited bitmaps.
- * @param[in] len the length of the bitmaps
- * @param[in] stream the stream within which this computation will be launched
-*/
-void bitmap_diff_cpu(bitmap_t cur, bitmap_t diff, size_t len);
-void bitmap_diff_gpu(bitmap_t cur, bitmap_t diff, size_t len, 
-                     cudaStream_t stream = 0);
 
 #endif // TOTEM_BITMAP_H
