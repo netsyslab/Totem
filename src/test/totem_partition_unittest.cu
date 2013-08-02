@@ -159,9 +159,9 @@ class GraphPartitionTest : public TestWithParam<PartitionFunction> {
           &partition->outbox[remote_pid];
         if (remote_outbox->count == 0) continue;
         if (partition->processor.type == PROCESSOR_GPU) {
-          printf("remote pid %d\n", remote_pid);
           ASSERT_EQ(SUCCESS, totem_memset((int*)remote_outbox->push_values, 
-                                          (int)(remote_pid + 1), remote_outbox->count,
+                                          (int)(remote_pid + 1), 
+                                          remote_outbox->count,
                                           TOTEM_MEM_DEVICE));
           ASSERT_EQ(cudaSuccess, cudaThreadSynchronize());
         } else {
