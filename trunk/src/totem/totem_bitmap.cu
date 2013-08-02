@@ -62,6 +62,7 @@ vid_t bitmap_count_gpu(bitmap_t bitmap, size_t len, vid_t* count_d,
     allocated_internally = true;
     totem_malloc(sizeof(vid_t), TOTEM_MEM_DEVICE, (void**)&count_d);
   }
+  assert(count_d != NULL);
   cudaMemsetAsync(count_d, 0, sizeof(vid_t), stream);
 
   // We need a number of threads that is equal to half of the number of words as

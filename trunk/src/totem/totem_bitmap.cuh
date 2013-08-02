@@ -117,12 +117,22 @@ __device__ inline bool bitmap_unset_gpu(bitmap_t map, vid_t bit) {
 
 /**
  * Checks if a bit is set
- * @param[in] bitmap the bitmap to be manipulated
+ * @param[in] bitmap the bitmap to be checked
  * @param[in] bit    the bit to be checked
  * @return true if the bit is set, false if not
 */
 __host__ __device__ inline bool bitmap_is_set(bitmap_t map, vid_t bit) {
   return (map[bit / BITMAP_BITS_PER_WORD] & bitmap_bit_mask(bit));
+}
+
+/**
+ * Checks if a bit is set in a word
+ * @param[in] word the word to be checked
+ * @param[in] bit  the bit to be checked
+ * @return true if the bit is set, false if not
+*/
+__host__ __device__ inline bool bitmap_is_set(bitmap_word_t word, vid_t bit) {
+  return (word & (((bitmap_word_t)1) << bit));
 }
 
 /**
