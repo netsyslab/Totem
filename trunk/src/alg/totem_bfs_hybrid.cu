@@ -430,13 +430,18 @@ PRIVATE void bfs_gpu(partition_t* par, bfs_state_t* state) {
   bitmap_t tmp = state->frontier;
   state->frontier = state->visited_last;
   state->visited_last = tmp;
-  stopwatch_t s;
-  stopwatch_start(&s);
   vid_t frontier_count = 
     bitmap_diff_copy_count_gpu(state->visited[par->id], state->frontier, 
                                state->visited_last, par->subgraph.vertex_count,
                                state->frontier_count, par->streams[1]);
-  if (frontier_count == 0) return;
+  if (frontier_count == 0) {
+    for (int pid = 0; pid < engine_partition_count(); pid++) {
+      if ((pid == par->id) || (par->outbox[pid].count == 0)) continue;
+      bitmap_reset_gpu((bitmap_t)par->outbox[pid].push_values,
+                      par->outbox[pid].count, par->streams[1]);
+    }
+    return;
+  }
   state_g.gpu_to_cpu_updates = true;
 
   // Copy the current state of the remote vertices
@@ -590,7 +595,7 @@ PRIVATE inline void bfs_init_gpu(partition_t* par) {
     if (pid != par->id && par->outbox[pid].count != 0) {
       state->visited[pid] = bitmap_init_gpu(par->outbox[pid].count);
       bitmap_reset_gpu((bitmap_t)par->outbox[pid].push_values,
-                       par->outbox[pid].count);
+                       par->outbox[pid].count, par->streams[1]);
     }
   }
   // set the source vertex as visited

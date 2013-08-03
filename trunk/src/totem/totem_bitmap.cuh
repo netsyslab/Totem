@@ -77,8 +77,9 @@ inline void bitmap_reset_cpu(bitmap_t map, size_t len) {
   memset(map, 0, bitmap_bits_to_bytes(len));
 }
 
-inline void bitmap_reset_gpu(bitmap_t map, size_t len) {
-  CALL_CU_SAFE(cudaMemset(map, 0, bitmap_bits_to_bytes(len)));
+inline void bitmap_reset_gpu(bitmap_t map, size_t len, 
+                             cudaStream_t stream = 0) {
+  CALL_CU_SAFE(cudaMemsetAsync(map, 0, bitmap_bits_to_bytes(len), stream));
 }
 
 /**
