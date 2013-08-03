@@ -476,10 +476,9 @@ PRIVATE inline void bfs_scatter_cpu(grooves_box_table_t* inbox,
                                     bfs_state_t* state, bitmap_t visited) {
   if (!state->do_scatter) return;
   bitmap_t remotely_visited = (bitmap_t)inbox->push_values;
-  vid_t word_count = ((inbox->count - 1) / BITMAP_BITS_PER_WORD) + 1;
-
   OMP(omp parallel for schedule(runtime))
-  for (vid_t word_index = 0; word_index < word_count; word_index++) {
+  for (vid_t word_index = 0; word_index < bitmap_bits_to_words(inbox->count); 
+       word_index++) {
     if (remotely_visited[word_index]) {
       vid_t bit_index = word_index * BITMAP_BITS_PER_WORD;
       vid_t bit_last_index = (word_index + 1) * BITMAP_BITS_PER_WORD;
@@ -496,17 +495,33 @@ PRIVATE inline void bfs_scatter_cpu(grooves_box_table_t* inbox,
   }
 }
 
-__global__ void bfs_scatter_kernel(grooves_box_table_t inbox, bfs_state_t state,
-                                   bitmap_t visited) {
-  vid_t index = THREAD_GLOBAL_INDEX;
-  if (index >= inbox.count) return;
-  __syncthreads();
-  bitmap_t rmt_visited = (bitmap_t)inbox.push_values;
-  vid_t vid = inbox.rmt_nbrs[index];
-  if (bitmap_is_set(rmt_visited, index) &&
-      !bitmap_is_set(visited, vid)) {
-    bitmap_set_gpu(visited, vid);
-    state.cost[vid] = state.level;
+template<int VWARP_WIDTH, int BATCH_SIZE, int THREADS_PER_BLOCK>
+__global__ void
+bfs_scatter_kernel(const bitmap_t __restrict rmt_visited,
+                   const vid_t* __restrict rmt_nbrs, vid_t word_count,
+                   bitmap_t visited, cost_t* cost, cost_t level) {
+  if (THREAD_GLOBAL_INDEX >= 
+      vwarp_thread_count(word_count, VWARP_WIDTH, BATCH_SIZE)) return;
+  vid_t start_word = vwarp_warp_start_vertex(VWARP_WIDTH, BATCH_SIZE) +
+    vwarp_block_start_vertex(VWARP_WIDTH, BATCH_SIZE, THREADS_PER_BLOCK);
+  vid_t end_word = start_word +
+    vwarp_warp_batch_size(word_count, VWARP_WIDTH, BATCH_SIZE, 
+                          THREADS_PER_BLOCK);
+  int warp_offset = vwarp_thread_index(VWARP_WIDTH);
+  for(vid_t k = start_word; k < end_word; k++) {
+    bitmap_word_t word = rmt_visited[k];
+    if (word == 0) continue;
+    vid_t start_vertex = k * BITMAP_BITS_PER_WORD;
+    for(vid_t i = warp_offset; i < BITMAP_BITS_PER_WORD;
+        i += VWARP_WIDTH) {
+      if (bitmap_is_set(word, i)) {
+        vid_t vid = rmt_nbrs[start_vertex + i];
+        if (!bitmap_is_set(visited, vid)) {
+          bitmap_set_gpu(visited, vid);
+          cost[vid] = level;
+        }
+      }
+    }
   }
 }
 
@@ -519,10 +534,17 @@ PRIVATE void bfs_scatter(partition_t* par) {
     if (par->processor.type == PROCESSOR_CPU) {
       bfs_scatter_cpu(inbox, state, state->visited[par->id]);
     } else if (par->processor.type == PROCESSOR_GPU) {
+      vid_t word_count = bitmap_bits_to_words(inbox->count);
       dim3 blocks;
-      kernel_configure(inbox->count, blocks);
-      bfs_scatter_kernel<<<blocks, DEFAULT_THREADS_PER_BLOCK, 0,
-        par->streams[1]>>>(*inbox, *state, state->visited[par->id]);
+      const int batch_size = 8;
+      const int warp_size = 16;
+      const int threads = DEFAULT_THREADS_PER_BLOCK;
+      kernel_configure(vwarp_thread_count(word_count, warp_size, batch_size),
+                       blocks, threads);
+      bfs_scatter_kernel<warp_size, batch_size, threads>
+        <<<blocks, threads, 0, par->streams[1]>>>
+        ((bitmap_t)inbox->push_values, inbox->rmt_nbrs, word_count,
+         state->visited[par->id], state->cost, state->level);
       CALL_CU_SAFE(cudaGetLastError());
     } else {
       assert(false);
