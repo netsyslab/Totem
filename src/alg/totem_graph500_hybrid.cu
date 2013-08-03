@@ -338,10 +338,12 @@ __global__ void graph500_init_kernel(bitmap_t visited, vid_t src) {
 
 PRIVATE inline void graph500_init_gpu(partition_t* par) {
   graph500_state_t* state = (graph500_state_t*)par->algo_state;
-  bitmap_reset_gpu(state->visited[par->id], par->subgraph.vertex_count);
+  bitmap_reset_gpu(state->visited[par->id], par->subgraph.vertex_count, 
+                   par->streams[1]);
   for (int pid = 0; pid < engine_partition_count(); pid++) {
     if (pid != par->id && par->outbox[pid].count != 0) {
-      bitmap_reset_gpu(state->visited[pid], par->outbox[pid].count);
+      bitmap_reset_gpu(state->visited[pid], par->outbox[pid].count, 
+                       par->streams[1]);
     }
   }
   // set the source vertex as visited
