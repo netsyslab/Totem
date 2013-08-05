@@ -13,29 +13,16 @@
  * per-partition specific state
  */
 typedef struct bfs_state_s {
-  cost_t*   cost;        // one slot per vertex in the partition
+  cost_t*   cost;              // one slot per vertex in the partition
   bitmap_t  visited[MAX_PARTITION_COUNT]; // a list of bitmaps one for each 
                                           // remote partition
-  bool*     finished;    // points to Totem's finish flag
-  cost_t    level;       // current level being processed by the partition
-  vid_t* frontier_list;  // maintains the list of vertices that belong to the
-                         // current frontier being processed (GPU-based 
-                         // partitions only)
-  vid_t frontier_max_count; // maximum number of vertices that the frontier 
-                            // buffer can hold (GPU-based partitions only)
-  vid_t* frontier_count; // number of vertices in the frontier (GPU-based
-                         // partitions only)
-  bitmap_t frontier;     // current frontier bitmap
-  bitmap_t visited_last; // a bitmap of the visited vertices before the start of
-                         // the previous round. This is used to quickly compute
-                         // the frontier bitmap of the current round by xor-ing 
-                         // this bitmap with the visited bitmap (a bitmap of the
-                         // visited untill after the end of the previous round
-  bool   do_scatter;     // a flag used in the cpu-based partition that 
-                         // idicates whether or not to execute the scatter
-                         // function. this is set by the CPU kernel as a 
-                         // signal to the CPU scatter callback.
-  vid_t* sections;
+  bool*     finished;          // points to Totem's finish flag
+  cost_t    level;             // current level being processed by the partition
+  frontier_state_t frontier;   // frontier management state
+  bool             do_scatter; // a flag used in the cpu-based partition that 
+                               // idicates whether or not to execute the scatter
+                               // function. this is set by the CPU kernel as a 
+                               // signal to the CPU scatter callback.
 } bfs_state_t;
 
 /**
@@ -104,15 +91,16 @@ bfs_cpu_sparse_frontier(graph_t* subgraph, bfs_state_t* state, int pid) {
   // The "runtime" scheduling clause defer the choice of thread scheduling
   // algorithm to the choice of the client, either via OS environment variable
   // or omp_set_schedule interface.
+  bitmap_t frontier = state->frontier.current;
   bool finished = true;
   OMP(omp parallel for schedule(runtime) reduction(& : finished))
   for (vid_t word_index = 0; word_index < words; word_index++) {
-    if (!state->frontier[word_index]) continue;
+    if (!frontier[word_index]) continue;
     vid_t v = word_index * BITMAP_BITS_PER_WORD;
     vid_t last_v = (word_index + 1) * BITMAP_BITS_PER_WORD;
     if (last_v > subgraph->vertex_count) last_v = subgraph->vertex_count;
     for (; v < last_v; v++) {
-      if (!bitmap_is_set(state->frontier, v)) continue;
+      if (!bitmap_is_set(frontier, v)) continue;
       bfs_cpu_process_vertex(subgraph, state, v, pid, finished);
     }
   }
@@ -143,22 +131,7 @@ void bfs_cpu(partition_t* par) {
   }
   state_g.gpu_to_cpu_updates = false;
 
-  // Build the frontier bitmap
-  bitmap_t tmp = state->frontier;
-  state->frontier = state->visited_last;
-  state->visited_last = tmp;
-  vid_t frontier_count = 0;
-  if (engine_partition_algorithm() == PAR_SORTED_ASC) {
-    frontier_count = 
-      bitmap_diff_copy_count_cpu(state->visited[par->id], state->frontier, 
-                                 state->visited_last, subgraph->vertex_count);
-    if (frontier_count == 0) return;
-  } else {
-    // LOW-degree vertices on the CPU. Since there are many of them,
-    // we avoid computing the frontier length to avoid extra overhead
-    bitmap_diff_copy_cpu(state->visited[par->id], state->frontier, 
-                         state->visited_last, subgraph->vertex_count);
-  }
+  frontier_update_bitmap_cpu(&state->frontier, state->visited[par->id]);
 
   // Copy the current state of the remote vertices bitmap
   for (int pid = 0; pid < engine_partition_count(); pid++) {
@@ -169,19 +142,22 @@ void bfs_cpu(partition_t* par) {
   }
 
   // Visit the vertices in the frontier
-  if (engine_partition_algorithm() == PAR_SORTED_ASC) {
-    // LOW-degree vertices on the CPU, the frontier will always be sparse
-    bfs_cpu_sparse_frontier(subgraph, state, par->id);
-  } else {
+  if (engine_partition_algorithm() == PAR_SORTED_ASC) {     
     // High-degree vertices on the CPU: test the frontier count to determine
     // whether the frontier is sparse or dense. If the number of active vertices
     // is lower than a specific threshold, we consider the frontier sparse
-    if (frontier_count <= (subgraph->vertex_count *
-                           TRV_FRONTIER_SPARSE_THRESHOLD)) {
-      bfs_cpu_sparse_frontier(subgraph, state, par->id);
-    } else {
-      bfs_cpu_dense_frontier(subgraph, state, par->id);
+    vid_t frontier_count = frontier_count_cpu(&state->frontier);
+    if (frontier_count > 0) {
+      if (frontier_count <= (subgraph->vertex_count *
+                             TRV_FRONTIER_SPARSE_THRESHOLD)) {
+        bfs_cpu_sparse_frontier(subgraph, state, par->id);
+      } else {
+        bfs_cpu_dense_frontier(subgraph, state, par->id);
+      }
     }
+  } else {
+    // LOW-degree vertices on the CPU, the frontier will always be sparse
+    bfs_cpu_sparse_frontier(subgraph, state, par->id);
   }
 
   // Diff the remote vertices bitmaps so that only the vertices who got set
@@ -191,90 +167,6 @@ void bfs_cpu(partition_t* par) {
     bitmap_diff_cpu(state->visited[pid], (bitmap_t)par->outbox[pid].push_values,
                     par->outbox[pid].count);
   }
-}
-
-PRIVATE __global__ void
-frontier_build_kernel(const vid_t vertex_count, const cost_t level,
-                      const cost_t* __restrict cost,
-                      vid_t* frontier_list, vid_t* frontier_count) {
-  const vid_t v = THREAD_GLOBAL_INDEX;
-  if (v >= vertex_count) return;
-
-  __shared__ vid_t queue_l[MAX_THREADS_PER_BLOCK];
-  __shared__ vid_t count_l;
-  count_l = 0;
-  __syncthreads();
-
-  if (cost[v] == level) {
-    int index = atomicAdd(&count_l, 1);
-    queue_l[index] = v;
-  }
-  __syncthreads();
-  if (THREAD_BLOCK_INDEX >= count_l) return;
-
-  __shared__ int index;
-  if (THREAD_BLOCK_INDEX == 0) {
-    index = atomicAdd(frontier_count, count_l);
-  }
-  __syncthreads();
-  frontier_list[index + THREAD_BLOCK_INDEX] = queue_l[THREAD_BLOCK_INDEX];
-}
-
-#ifdef FEATURE_SM35
-PRIVATE const int SECTION_COUNT = 6;
-PRIVATE __global__
-void sections_build_kernel(const eid_t* __restrict vertices, 
-                           const vid_t* __restrict frontier,
-                           vid_t frontier_count, vid_t* sections) {
-  const vid_t index = THREAD_GLOBAL_INDEX;
-  if (index >= frontier_count) return;
-
-  vid_t v = frontier[index];
-  vid_t nbr_count = vertices[v + 1] - vertices[v];
-
-  if (nbr_count > 7 && nbr_count < 32) {
-    atomicMin(&sections[0], index);
-  }
-  if (nbr_count > 31 && nbr_count < 128) {
-    atomicMin(&sections[1], index);
-  }
-  if (nbr_count > 127 && nbr_count < 256) {
-    atomicMin(&sections[2], index);
-  }
-  if (nbr_count > 255 && nbr_count < 1024) {
-    atomicMin(&sections[3], index);
-  }
-  if (nbr_count > 1023 && nbr_count < (2 * 1024)) {
-    atomicMin(&sections[4], index);
-  }
-  if (nbr_count >= (2 * 1024)) {
-    atomicMin(&sections[5], index);
-  }
-}
-#endif /* FEATURE_SM35  */
-
-PRIVATE inline void frontier_build_gpu(partition_t* par, bfs_state_t* state, 
-                                       vid_t frontier_count) {
-  cudaMemsetAsync(state->frontier_count, 0, sizeof(vid_t), par->streams[1]);
-  dim3 blocks;
-  kernel_configure(par->subgraph.vertex_count, blocks);
-  frontier_build_kernel<<<blocks, DEFAULT_THREADS_PER_BLOCK, 0, 
-    par->streams[1]>>>(par->subgraph.vertex_count, state->level, state->cost, 
-                       state->frontier_list, state->frontier_count);
-  CALL_CU_SAFE(cudaGetLastError());
-
-#ifdef FEATURE_SM35
-  if (engine_sorted()) {
-    // If the vertices are sorted by degree, build the sections array
-    // to optimize thread allocation when launching the BFS kernel
-    CALL_SAFE(totem_memset(&state->sections[1], frontier_count, SECTION_COUNT, 
-                           TOTEM_MEM_DEVICE, par->streams[1]));
-    kernel_configure(frontier_count, blocks);
-    sections_build_kernel<<<blocks, DEFAULT_THREADS_PER_BLOCK, 0, 
-      par->streams[1]>>>(par->subgraph.vertices, state->frontier_list,
-                         frontier_count, &state->sections[1]);
-  }
-#endif /* FEATURE_SM35 */
 }
 
 /**
@@ -343,7 +235,7 @@ PRIVATE __host__ __device__
 #else
 PRIVATE __host__
 #endif /* FEATURE_SM35  */
-void bfs_gpu_launch(partition_t* par, bfs_state_t* state, vid_t* frontier, 
+void bfs_launch_gpu(partition_t* par, bfs_state_t* state, vid_t* frontier, 
                     vid_t vertex_count, cudaStream_t stream) {
   const int threads = MAX_THREADS_PER_BLOCK;
   dim3 blocks;
@@ -358,90 +250,89 @@ typedef void(*bfs_gpu_func_t)(partition_t*, bfs_state_t*, vid_t*,
 
 #ifdef FEATURE_SM35
 PRIVATE __global__
-void bfs_launch_sections_kernel(partition_t par, bfs_state_t state) {
+void bfs_launch_at_boundary_kernel(partition_t par, bfs_state_t state) {
+  if (THREAD_GLOBAL_INDEX > 0 || (*state.frontier.count == 0)) {
+    return;
+  }
   const bfs_gpu_func_t BFS_GPU_FUNC[] = {
-    bfs_gpu_launch<1,   2,  true>,   // (0) < 8
-    bfs_gpu_launch<8,   8,  true>,   // (1) > 8    && < 32
-    bfs_gpu_launch<32,  32, true>,   // (2) > 32   && < 128
-    bfs_gpu_launch<128, 32, true>,   // (3) > 128  && < 256
-    bfs_gpu_launch<256, 32, true>,   // (4) > 256  && < 1K
-    bfs_gpu_launch<512, 32, true>,   // (5) > 1K   && < 2K
-    bfs_gpu_launch<MAX_THREADS_PER_BLOCK, 8, true>,  // (6) > 2k
+    bfs_launch_gpu<1,   2,  true>,   // (0) < 8
+    bfs_launch_gpu<8,   8,  true>,   // (1) > 8    && < 32
+    bfs_launch_gpu<32,  32, true>,   // (2) > 32   && < 128
+    bfs_launch_gpu<128, 32, true>,   // (3) > 128  && < 256
+    bfs_launch_gpu<256, 32, true>,   // (4) > 256  && < 1K
+    bfs_launch_gpu<512, 32, true>,   // (5) > 1K   && < 2K
+    bfs_launch_gpu<MAX_THREADS_PER_BLOCK, 8, true>,  // (6) > 2k
   };
 
-  int64_t end = *(state.frontier_count);
-  for (int i = SECTION_COUNT; i >= 0; i--) {
-    int64_t start = state.sections[i];
+  int64_t end = *(state.frontier.count);
+  for (int i = FRONTIER_BOUNDARY_COUNT; i >= 0; i--) {
+    int64_t start = state.frontier.boundaries[i];
     int64_t count = end - start;
     if (count > 0) {
       cudaStream_t s;
       cudaStreamCreateWithFlags(&s, cudaStreamNonBlocking);
-      BFS_GPU_FUNC[i](&par, &state, state.frontier_list + start, count, s);
+      BFS_GPU_FUNC[i](&par, &state, state.frontier.list + start, count, s);
       end = start;
     }
   }
 }
 #endif /* FEATURE_SM35  */
 
-PRIVATE void bfs_call_tuned_kernel(partition_t* par, bfs_state_t* state, 
-                                   vid_t frontier_count) {
+PRIVATE void bfs_tuned_launch_gpu(partition_t* par, bfs_state_t* state) {
 
   // Check if it is possible to build a frontier list
-  vid_t vertex_count = par->subgraph.vertex_count;
-  int use_frontier = (int)(frontier_count <= state->frontier_max_count);
+  vid_t vertex_count = par->subgraph.vertex_count;;
+  int use_frontier = true;
+  if (engine_partition_algorithm() == PAR_SORTED_ASC) {
+    vertex_count = frontier_count_gpu(&state->frontier, par->streams[1]);
+    use_frontier = (int)(vertex_count <= state->frontier.list_len);
+  }
+
   if (use_frontier) {
-    frontier_build_gpu(par, state, frontier_count);
-    vertex_count = frontier_count;
+    frontier_update_list_gpu(&state->frontier, par->streams[1]);
   }
 
   // If the vertices are sorted by degree, call a kernel that takes 
   // advantage of that
 #ifdef FEATURE_SM35
   if (engine_sorted() && use_frontier) {
-    bfs_launch_sections_kernel<<<1, 1, 0, par->streams[1]>>>(*par, *state);
+    frontier_update_boundaries_gpu(&state->frontier, &par->subgraph, 
+                                   par->streams[1]);
+    bfs_launch_at_boundary_kernel<<<1, 1, 0, par->streams[1]>>>(*par, *state);
     CALL_CU_SAFE(cudaGetLastError());
     return;
   }
 #endif /* FEATURE_SM35 */
+  
+  if (engine_partition_algorithm() != PAR_SORTED_ASC) {
+    vertex_count = frontier_count_gpu(&state->frontier, par->streams[1]);
+  }
+  if (vertex_count == 0) return;
 
   // Call the BFS kernel
   const bfs_gpu_func_t BFS_GPU_FUNC[][2] = {{
       // RANDOM algorithm
-      bfs_gpu_launch<VWARP_MEDIUM_WARP_WIDTH, VWARP_MEDIUM_BATCH_SIZE, false>,
-      bfs_gpu_launch<VWARP_MEDIUM_WARP_WIDTH, VWARP_MEDIUM_BATCH_SIZE, true>
+      bfs_launch_gpu<VWARP_MEDIUM_WARP_WIDTH, VWARP_MEDIUM_BATCH_SIZE, false>,
+      bfs_launch_gpu<VWARP_MEDIUM_WARP_WIDTH, VWARP_MEDIUM_BATCH_SIZE, true>
     }, {
       // HIGH partitioning
-      bfs_gpu_launch<VWARP_MEDIUM_WARP_WIDTH, VWARP_LARGE_BATCH_SIZE, false>,
-      bfs_gpu_launch<VWARP_MEDIUM_WARP_WIDTH, VWARP_LARGE_BATCH_SIZE, true>
+      bfs_launch_gpu<VWARP_MEDIUM_WARP_WIDTH, VWARP_LARGE_BATCH_SIZE, false>,
+      bfs_launch_gpu<VWARP_MEDIUM_WARP_WIDTH, VWARP_LARGE_BATCH_SIZE, true>
     }, {
       // LOW partitioning
-      bfs_gpu_launch<MAX_THREADS_PER_BLOCK, VWARP_MEDIUM_BATCH_SIZE, false>,
-      bfs_gpu_launch<MAX_THREADS_PER_BLOCK, VWARP_MEDIUM_BATCH_SIZE, true>
+      bfs_launch_gpu<MAX_THREADS_PER_BLOCK, VWARP_MEDIUM_BATCH_SIZE, false>,
+      bfs_launch_gpu<MAX_THREADS_PER_BLOCK, VWARP_MEDIUM_BATCH_SIZE, true>
     }
   };
   int par_alg = engine_partition_algorithm();
   BFS_GPU_FUNC[par_alg][use_frontier]
-    (par, state, state->frontier_list, vertex_count, par->streams[1]);
+    (par, state, state->frontier.list, vertex_count, par->streams[1]);
   CALL_CU_SAFE(cudaGetLastError());
 }
 
 PRIVATE void bfs_gpu(partition_t* par, bfs_state_t* state) {
-  // Build the frontier's bitmap (this is a blocking, but fast computation)
-  bitmap_t tmp = state->frontier;
-  state->frontier = state->visited_last;
-  state->visited_last = tmp;
-  vid_t frontier_count = 
-    bitmap_diff_copy_count_gpu(state->visited[par->id], state->frontier, 
-                               state->visited_last, par->subgraph.vertex_count,
-                               state->frontier_count, par->streams[1]);
-  if (frontier_count == 0) {
-    for (int pid = 0; pid < engine_partition_count(); pid++) {
-      if ((pid == par->id) || (par->outbox[pid].count == 0)) continue;
-      bitmap_reset_gpu((bitmap_t)par->outbox[pid].push_values,
-                      par->outbox[pid].count, par->streams[1]);
-    }
-    return;
-  }
+  frontier_update_bitmap_gpu(&state->frontier, state->visited[par->id], 
+                             par->streams[1]);
   state_g.gpu_to_cpu_updates = true;
 
   // Copy the current state of the remote vertices
@@ -453,7 +344,7 @@ PRIVATE void bfs_gpu(partition_t* par, bfs_state_t* state) {
   }
 
   // Call the bfs kernel
-  bfs_call_tuned_kernel(par, state, frontier_count);
+  bfs_tuned_launch_gpu(par, state);
 
   // Diff the remote vertices bitmap so that only the ones who got set in this
   // round are notified
@@ -541,8 +432,7 @@ PRIVATE void bfs_scatter(partition_t* par) {
     } else if (par->processor.type == PROCESSOR_GPU) {
       vid_t word_count = bitmap_bits_to_words(inbox->count);
       dim3 blocks;
-      const int batch_size = 8;
-      const int warp_size = 16;
+      const int batch_size = 8; const int warp_size = 16;
       const int threads = DEFAULT_THREADS_PER_BLOCK;
       kernel_configure(vwarp_thread_count(word_count, warp_size, batch_size),
                        blocks, threads);
@@ -588,8 +478,6 @@ __global__ void bfs_init_kernel(bitmap_t visited, vid_t src) {
 
 PRIVATE inline void bfs_init_gpu(partition_t* par) {
   bfs_state_t* state = (bfs_state_t*)par->algo_state;
-  state->frontier = bitmap_init_gpu(par->subgraph.vertex_count);
-  state->visited_last = bitmap_init_gpu(par->subgraph.vertex_count);
   state->visited[par->id] = bitmap_init_gpu(par->subgraph.vertex_count);
   for (int pid = 0; pid < engine_partition_count(); pid++) {
     if (pid != par->id && par->outbox[pid].count != 0) {
@@ -604,32 +492,11 @@ PRIVATE inline void bfs_init_gpu(partition_t* par) {
       (state->visited[par->id], GET_VERTEX_ID(state_g.src));
     CALL_CU_SAFE(cudaGetLastError());
   }
-  CALL_SAFE(totem_calloc(sizeof(vid_t), TOTEM_MEM_DEVICE, 
-                         (void **)&state->frontier_count));
-  state->frontier_max_count = par->subgraph.vertex_count;
-  if (engine_partition_algorithm() == PAR_SORTED_ASC) {
-    // LOW-degree vertices were placed on the GPU. Since there is typically
-    // many of them, and the GPU has limited memory, we restrict the frontier
-    // array size. If the frontier in a specific level was longer, then the 
-    // algorithm will not build a frontier array, and will iterate over all
-    // the vertices.
-    state->frontier_max_count = 
-      par->subgraph.vertex_count * TRV_MAX_FRONTIER_LEN;
-  }
-  CALL_SAFE(totem_calloc(state->frontier_max_count * sizeof(vid_t), 
-                         TOTEM_MEM_DEVICE, (void **)&state->frontier_list));
-#ifdef FEATURE_SM35
-  if (engine_sorted()) {
-    CALL_SAFE(totem_calloc((SECTION_COUNT + 1) * sizeof(vid_t), 
-                           TOTEM_MEM_DEVICE, (void**)&state->sections));
-  }
-#endif /* FEATURE_SM35 */
+  frontier_init_gpu(&state->frontier, par->subgraph.vertex_count);
 }
 
 PRIVATE inline void bfs_init_cpu(partition_t* par) {
   bfs_state_t* state = (bfs_state_t*)par->algo_state;
-  state->frontier = bitmap_init_cpu(par->subgraph.vertex_count);
-  state->visited_last = bitmap_init_cpu(par->subgraph.vertex_count);
   state->visited[par->id] = bitmap_init_cpu(par->subgraph.vertex_count);
   for (int pid = 0; pid < engine_partition_count(); pid++) {
     if (pid != par->id && par->outbox[pid].count != 0) {
@@ -642,6 +509,7 @@ PRIVATE inline void bfs_init_cpu(partition_t* par) {
   if (GET_PARTITION_ID(state_g.src) == par->id) {
     bitmap_set_cpu(state->visited[par->id], GET_VERTEX_ID(state_g.src));
   }
+  frontier_init_cpu(&state->frontier, par->subgraph.vertex_count);
 }
 
 PRIVATE void bfs_init(partition_t* par) {
@@ -677,18 +545,11 @@ PRIVATE void bfs_finalize(partition_t* par) {
   totem_mem_t type = TOTEM_MEM_HOST;
   if (par->processor.type == PROCESSOR_CPU) {
     bitmap_finalize_cpu(state->visited[par->id]);
-    bitmap_finalize_cpu(state->visited_last);
-    bitmap_finalize_cpu(state->frontier);
+    frontier_finalize_cpu(&state->frontier);
   } else if (par->processor.type == PROCESSOR_GPU) {
     bitmap_finalize_gpu(state->visited[par->id]);
-    bitmap_finalize_gpu(state->visited_last);
-    bitmap_finalize_gpu(state->frontier);
     type = TOTEM_MEM_DEVICE;
-    totem_free(state->frontier_count, type);
-    totem_free(state->frontier_list, type);
-#ifdef FEATURE_SM35
-    if (engine_sorted()) totem_free(state->sections, type);
-#endif /* FEATURE_SM35  */
+    frontier_finalize_gpu(&state->frontier);
   } else {
     assert(false);
   }
