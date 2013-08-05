@@ -305,4 +305,86 @@ error_t stress_unweighted_cpu(const graph_t* graph,
 error_t stress_unweighted_gpu(const graph_t* graph,
                               weight_t** centrality_score);
 
+
+typedef struct frontier_state_s {
+  bitmap_t current;         // current frontier bitmap
+  bitmap_t visited_last;    // a bitmap of the visited vertices before the 
+                            // start of the previous round. This is used to
+                            // compute the frontier bitmap of the current
+                            // round by diffing this bitmap with the visited
+                            // bitmap (a bitmap of the visited untill after the
+                            // end of the previous round
+  vid_t len;                // frontier bitmaps length
+  vid_t* list;              // maintains the list of vertices that belong to the
+                            // current frontier being processed (GPU only)
+  vid_t  list_len;          // maximum number of vertices that the frontier 
+                            // list can hold (GPU only)
+  vid_t* count;             // used to calculate the current number of vertices
+                            // in the frontier (GPU only)
+  vid_t* boundaries;        // thread scheduling boundaries (GPU only)
+} frontier_state_t;
+
+#ifdef FEATURE_SM35
+PRIVATE const int FRONTIER_BOUNDARY_COUNT = 6;
+#endif /* FEATURE_SM35 */
+
+/**
+ * Initializes a frontier data structure internal state
+ * @param[in] frontier reference to the frontier data structure
+ */
+
+void frontier_init_gpu(frontier_state_t* state, vid_t vertex_count);
+void frontier_init_cpu(frontier_state_t* state, vid_t vertex_count);
+
+/**
+ * Frees space allocated for a frontier data structure
+ * @param[in] frontier reference to the frontier data structure
+ */
+void frontier_finalize_gpu(frontier_state_t* state);
+void frontier_finalize_cpu(frontier_state_t* state);
+
+/**
+ * Updates the frontier bitmap 
+ * @param[in] frontier reference to the frontier data structure
+ * @param[in] visited a bitmap representing  all the vertices that has been
+ * visited untill now
+ */
+vid_t frontier_update_bitmap_cpu(frontier_state_t* state, 
+                                 const bitmap_t visited);
+vid_t frontier_update_bitmap_gpu(frontier_state_t* state, 
+                                 const bitmap_t visited,
+                                 cudaStream_t stream);
+
+/**
+ * Updates the frontier list with the vertex ids of the vertices in the 
+ * frontier. It also defines the scheduling boundaries in the case
+ * the vertices are sorted by degree
+ * @param[in] frontier reference to the frontier data structure
+ */
+void frontier_update_list_gpu(frontier_state_t* state, 
+                              const cudaStream_t stream);
+
+#ifdef FEATURE_SM35
+/**
+ * Updates the scheduling boundaries if the vertices are sorted by degree
+ * @param[in] frontier reference to the frontier data structure
+ * @param[in] graph a reference to the graph to be processed
+ */
+void frontier_update_boundaries_gpu(frontier_state_t* state, 
+                                    const graph_t* graph,
+                                    const cudaStream_t stream);
+#endif /* FEATURE_SM35 */
+
+/**
+ * Returns the number of vertices in the frontier
+ * @param[in] frontier the frontier 
+ * @return number of vertices in the frontier
+ */
+inline vid_t frontier_count_cpu(frontier_state_t* state) {
+  return bitmap_count_cpu(state->current, state->len);
+}
+inline vid_t frontier_count_gpu(frontier_state_t* state, cudaStream_t stream) {
+  return bitmap_count_gpu(state->current, state->len, state->count, stream);
+}
+
 #endif  // TOTEM_ALG_H
