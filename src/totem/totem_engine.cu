@@ -8,6 +8,7 @@
 #include "totem_engine.cuh"
 #include "totem_util.h"
 
+
 engine_context_t context = ENGINE_DEFAULT_CONTEXT;
 
 inline PRIVATE void set_processor(partition_t* par) {
@@ -39,6 +40,45 @@ inline PRIVATE double superstep_compute_synchronize() {
   return max_gpu_time;
 }
 
+PRIVATE void superstep_launch_gpu(partition_t* par) {
+  // The kernel for GPU partitions is supposed not to block. The client is
+  // supposedly invoking the GPU kernel asynchronously, and using the compute
+  // "stream" available for each partition
+  set_processor(par);
+  CALL_CU_SAFE(cudaEventRecord(par->event_start, par->streams[1]));
+  context.config.par_kernel_func(par);
+  CALL_CU_SAFE(cudaEventRecord(par->event_end, par->streams[1]));
+}
+
+PRIVATE void superstep_launch_cpu(partition_t* par, double& cpu_time, 
+                                  double& cpu_scatter_time) {
+  stopwatch_t stopwatch;
+  stopwatch_start(&stopwatch);
+  if ((context.config.direction == GROOVES_PUSH) &&
+      (context.config.par_scatter_func != NULL) &&
+      ((context.superstep > 1))) {
+    context.config.par_scatter_func(par);
+  }
+  cpu_scatter_time = stopwatch_elapsed(&stopwatch);
+  
+  // Make sure that data sent/received from a GPU partition to
+  // the CPU partition is available
+  for (int rmt_pid = 0; rmt_pid < context.pset->partition_count; 
+       rmt_pid++) {
+    if (rmt_pid == par->id) continue;
+    partition_t* rmt_par = &context.pset->partitions[rmt_pid];
+    CALL_CU_SAFE(cudaStreamSynchronize(rmt_par->streams[0]));
+  }
+
+  stopwatch_start(&stopwatch);
+  context.config.par_kernel_func(par);
+  cpu_time = stopwatch_elapsed(&stopwatch);
+  context.timing.alg_cpu_comp += cpu_time;
+#ifdef FEATURE_VERBOSE_TIMING
+  printf("#\tCPU: %0.2f", cpu_time);
+#endif
+}
+
 /**
  * Launches the compute kernel on each partition
  */
@@ -55,13 +95,13 @@ inline PRIVATE void superstep_execute() {
   stopwatch_start(&scatter);
   if ((context.superstep > 1)) {
     for (int pid = 0; pid < engine_partition_count(); pid++) {
-      if ((context.config.direction == GROOVES_PUSH) &&
-          (context.config.par_scatter_func != NULL)) {
-        partition_t* par = &context.pset->partitions[pid];
-        if (par->processor.type == PROCESSOR_GPU) {
+      partition_t* par = &context.pset->partitions[pid];
+      if (context.config.direction == GROOVES_PUSH) {
+        if ((context.config.par_scatter_func != NULL) &&
+            (par->processor.type == PROCESSOR_GPU)) {
           set_processor(par);
+          context.config.par_scatter_func(par);
         }
-        context.config.par_scatter_func(par);
       } else if (context.config.direction == GROOVES_PULL) {
         grooves_launch_communications(context.pset, pid, GROOVES_PULL);
       } else {
@@ -71,55 +111,30 @@ inline PRIVATE void superstep_execute() {
       }
     }
   }
-  double cpu_scatter_time = stopwatch_elapsed(&scatter);
 
   double cpu_time = 0;
   double cpu_gather_time = 0;
+  double cpu_scatter_time = 0;
   for (int pid = 0; pid < context.pset->partition_count; pid++) {
     partition_t* par = &context.pset->partitions[pid];
-
-    // The kernel for GPU partitions is supposed not to block. The client is
-    // supposedly invoking the GPU kernel asynchronously, and using the compute
-    // "stream" available for each partition
-    stopwatch_t stopwatch_cpu;
     if (par->processor.type == PROCESSOR_GPU) {
-      set_processor(par);
-      CALL_CU_SAFE(cudaEventRecord(par->event_start, par->streams[1]));
+      superstep_launch_gpu(par);
+    } else if (par->processor.type == PROCESSOR_CPU) {
+      superstep_launch_cpu(par, cpu_time, cpu_scatter_time);
     } else {
-      // This is to make sure that data pulled from a GPU partition to the
-      // CPU partition is available
-      for (int rmt_pid = 0; rmt_pid < context.pset->partition_count; 
-           rmt_pid++) {
-        if (rmt_pid == pid) continue;
-        partition_t* rmt_par = &context.pset->partitions[rmt_pid];
-        CALL_CU_SAFE(cudaStreamSynchronize(rmt_par->streams[0]));
-      }
-      stopwatch_start(&stopwatch_cpu);
+      fprintf(stderr, "Unsupported processor type %d\n", 
+              context.config.direction); fflush(stderr);
+      assert(false);
     }
-    context.config.par_kernel_func(par);
-    if (par->processor.type == PROCESSOR_GPU) {
-      CALL_CU_SAFE(cudaEventRecord(par->event_end, par->streams[1]));
-    } else {
-      cpu_time = stopwatch_elapsed(&stopwatch_cpu);
-      context.timing.alg_cpu_comp += cpu_time;
-#ifdef FEATURE_VERBOSE_TIMING
-      printf("#\tCPU: %0.2f", cpu_time);
-#endif
-    }
-
     // If push-based, launch communication; if pull-based, launch gather kernels
     if (context.config.direction == GROOVES_PUSH) {
       // communication will be launched in the context of the source stream it
       // will start only after the kernel in the source partition finished
       // execution
-      grooves_launch_communications(context.pset, pid, GROOVES_PUSH);
+      grooves_launch_communications(context.pset, par->id, GROOVES_PUSH);
     } else if ((context.config.direction == GROOVES_PULL) &&
                (context.config.par_gather_func != NULL)) {
-      stopwatch_t gather;
-      stopwatch_start(&gather);
-      set_processor(par);
       context.config.par_gather_func(par);
-      cpu_gather_time += stopwatch_elapsed(&gather);
     } else {
       assert(false);
       fprintf(stderr, "Unsupported communication type %d\n", 
