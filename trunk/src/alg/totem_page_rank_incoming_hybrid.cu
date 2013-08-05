@@ -259,6 +259,7 @@ PRIVATE void page_rank_incoming_cpu(partition_t* par, bool last_round) {
 }
 
 PRIVATE void page_rank_incoming(partition_t* par) {
+  if (!par->subgraph.vertex_count) return;
   if (engine_superstep() > 1) {
     page_rank_state_t* ps = (page_rank_state_t*)par->algo_state;
     for (int pid = 0; pid < engine_partition_count(); pid++) {
@@ -283,6 +284,7 @@ PRIVATE void page_rank_incoming(partition_t* par) {
 }
 
 PRIVATE void page_rank_incoming_gather(partition_t* partition) {
+  if (!partition->subgraph.vertex_count) return;
   page_rank_state_t* ps = (page_rank_state_t*)partition->algo_state;
   engine_gather_inbox(partition->id, ps->rank);
 }
@@ -372,6 +374,7 @@ PRIVATE void page_rank_incoming_init(partition_t* par) {
 }
 
 PRIVATE void page_rank_incoming_finalize(partition_t* partition) {
+  if (!partition->subgraph.vertex_count) return;
   assert(partition->algo_state);
   page_rank_state_t* ps = (page_rank_state_t*)partition->algo_state;
   totem_mem_t type = TOTEM_MEM_HOST;

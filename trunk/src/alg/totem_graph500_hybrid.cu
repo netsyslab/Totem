@@ -13,15 +13,15 @@
  * per-partition specific state
  */
 typedef struct graph500_state_s {
-  cost_t*   cost;             // maintains the distance from the source of each 
-                              // vertex in the partition
-  vid_t*    tree[MAX_PARTITION_COUNT];    // a list of trees one for each
-                                          // remote partition
-  bitmap_t  visited[MAX_PARTITION_COUNT]; // a list of bitmaps one for each 
-                                          // remote partition
-  bool*     finished;         // points to Totem's finish flag
-  vid_t*    est_active_count; // estimated number of active vertices
-  cost_t    level;            // current level being processed in the partition
+  cost_t*  cost;                         // the distance from the source to each
+                                         // vertex in the partition
+  vid_t*   tree[MAX_PARTITION_COUNT];    // a list of trees one for each
+                                         // remote partition
+  bitmap_t visited[MAX_PARTITION_COUNT]; // a list of bitmaps one for each 
+                                         // remote partition
+  bool*    finished;                     // points to Totem's finish flag
+  cost_t   level;                        // current distance from source
+  frontier_state_t frontier;
 } graph500_state_t;
 
 /**
@@ -60,34 +60,51 @@ PRIVATE error_t check_special_cases(vid_t src, vid_t* tree, bool* finished) {
   return SUCCESS;
 }
 
-void graph500_cpu(partition_t* par) {
-  graph500_state_t* state = (graph500_state_t*)par->algo_state;
-  graph_t* subgraph = &par->subgraph;
-  bool finished = true;
-
-  // The "runtime" scheduling clause defer the choice of thread scheduling
-  // algorithm to the choice of the client, either via OS environment variable
-  // or omp_set_schedule interface.
-  OMP(omp parallel for schedule(runtime) reduction(& : finished))
-  for (vid_t v = 0; v < subgraph->vertex_count; v++) {
-    if (state->cost[v] != state->level) continue;  
-    for (eid_t i = subgraph->vertices[v]; i < subgraph->vertices[v + 1]; i++) {
-      int nbr_pid = GET_PARTITION_ID(subgraph->edges[i]);
-      vid_t nbr = GET_VERTEX_ID(subgraph->edges[i]);
-      bitmap_t visited = state->visited[nbr_pid];
-      vid_t* tree = state->tree[nbr_pid];
-      if (!bitmap_is_set(visited, nbr)) {
-        if (bitmap_set_cpu(visited, nbr)) {
-          if (nbr_pid == par->id) {
-            state->cost[nbr] = state->level + 1;            
-          }
-          tree[nbr] = SET_PARTITION_ID(v, par->id);
-          finished = false;
+PRIVATE __attribute__((always_inline)) void 
+graph500_cpu_process_vertex(graph_t* subgraph, graph500_state_t* state, 
+                            vid_t v, int pid, bool& finished) {
+  for (eid_t i = subgraph->vertices[v]; i < subgraph->vertices[v + 1]; i++) {
+    int nbr_pid = GET_PARTITION_ID(subgraph->edges[i]);
+    vid_t nbr = GET_VERTEX_ID(subgraph->edges[i]);
+    bitmap_t visited = state->visited[nbr_pid];
+    vid_t* tree = state->tree[nbr_pid];
+    if (!bitmap_is_set(visited, nbr)) {
+      if (bitmap_set_cpu(visited, nbr)) {
+        if (nbr_pid == pid) {
+          state->cost[nbr] = state->level + 1;            
         }
+        tree[nbr] = SET_PARTITION_ID(v, pid);
+        finished = false;
       }
     }
   }
+}
+
+PRIVATE void 
+bfs_cpu_sparse_frontier(graph_t* subgraph, graph500_state_t* state, int pid) {
+  vid_t words = bitmap_bits_to_words(subgraph->vertex_count);
+  // The "runtime" scheduling clause defer the choice of thread scheduling
+  // algorithm to the choice of the client, either via OS environment variable
+  // or omp_set_schedule interface.
+  bool finished = true;
+  OMP(omp parallel for schedule(runtime) reduction(& : finished))
+  for (vid_t word_index = 0; word_index < words; word_index++) {
+    if (!state->frontier.current[word_index]) continue;
+    vid_t v = word_index * BITMAP_BITS_PER_WORD;
+    vid_t last_v = (word_index + 1) * BITMAP_BITS_PER_WORD;
+    if (last_v > subgraph->vertex_count) last_v = subgraph->vertex_count;
+    for (; v < last_v; v++) {
+      if (!bitmap_is_set(state->frontier.current, v)) continue;
+      graph500_cpu_process_vertex(subgraph, state, v, pid, finished);
+    }
+  }
   if (!finished) *(state->finished) = false;
+}
+
+void graph500_cpu(partition_t* par, graph500_state_t* state) {
+  // Update the frontier bitmap
+  frontier_update_bitmap_cpu(&state->frontier, state->visited[par->id]);
+  bfs_cpu_sparse_frontier(&par->subgraph, state, par->id);
 }
 
 /**
@@ -97,25 +114,13 @@ void graph500_cpu(partition_t* par) {
  */
 template<int VWARP_WIDTH, int VWARP_BATCH>
 __global__
-void graph500_kernel(partition_t par, graph500_state_t state) {
-  vid_t vertex_count = par.subgraph.vertex_count;
-  if (vwarp_block_start_vertex(VWARP_WIDTH, VWARP_BATCH) >= vertex_count) {
-    return;
-  }
+void graph500_kernel(partition_t par, graph500_state_t state,
+                     const vid_t* __restrict frontier, vid_t count) {
+  if (THREAD_GLOBAL_INDEX >= 
+      vwarp_thread_count(count, VWARP_WIDTH, VWARP_BATCH)) return;
 
-  // Copy the work of a thread-block to local space
-  const int block_max_batch_size = 
-    VWARP_BLOCK_MAX_BATCH_SIZE(VWARP_WIDTH, VWARP_BATCH);
-  __shared__ eid_t  vertices_s[block_max_batch_size + 1];
-  __shared__ cost_t cost_s[block_max_batch_size];
-  const vid_t block_start_vertex = 
-    vwarp_block_start_vertex(VWARP_WIDTH, VWARP_BATCH);
-  const vid_t block_batch_size = 
-    vwarp_block_batch_size(vertex_count, VWARP_WIDTH, VWARP_BATCH);
-  vwarp_memcpy(vertices_s, &(par.subgraph.vertices[block_start_vertex]),
-               block_batch_size + 1, THREAD_BLOCK_INDEX, blockDim.x);
-  vwarp_memcpy(cost_s, &state.cost[block_start_vertex], 
-               block_batch_size, THREAD_BLOCK_INDEX, blockDim.x);
+  const eid_t* __restrict vertices = par.subgraph.vertices;
+  const vid_t* __restrict edges = par.subgraph.edges;
 
   // This flag is used to report the finish state of a block of threads. This
   // is useful to avoid having many threads writing to the global finished
@@ -123,118 +128,129 @@ void graph500_kernel(partition_t par, graph500_state_t state) {
   // on the host, and each write will cause a transfer over the PCI-E bus)
   __shared__ bool finished_block;
   finished_block = true;
-  __shared__ vid_t est_active_count;
-  est_active_count = 0;
   __syncthreads();
-  if (THREAD_GLOBAL_INDEX >= 
-      vwarp_thread_count(vertex_count, VWARP_WIDTH, VWARP_BATCH)) return;
 
-  // Each virtual warp in a thread-block will process its share 
-  // of the thread-block batch of work
-  vid_t vwarp_start_vertex = vwarp_warp_start_vertex(VWARP_WIDTH, VWARP_BATCH);
-  eid_t* vwarp_vertices = &vertices_s[vwarp_start_vertex];
-  cost_t* vwarp_cost = &cost_s[vwarp_start_vertex];
-  vid_t vwarp_batch_size = vwarp_warp_batch_size(vertex_count, VWARP_WIDTH, 
-                                                 VWARP_BATCH);
-  vid_t local_est_active_count = 0;
-  for(vid_t v = 0; v < vwarp_batch_size; v++) {
-    if (vwarp_cost[v] == state.level) {
-      eid_t nbr_count = vwarp_vertices[v + 1] - vwarp_vertices[v];
-      vid_t* nbrs = &(par.subgraph.edges[vwarp_vertices[v]]);
-      for(vid_t i = vwarp_thread_index(VWARP_WIDTH); i < nbr_count; 
-          i += VWARP_WIDTH) {
-        int nbr_pid = GET_PARTITION_ID(nbrs[i]);
-        vid_t nbr = GET_VERTEX_ID(nbrs[i]);
-        bitmap_t visited = state.visited[nbr_pid];
-        vid_t* tree = state.tree[nbr_pid];
-        if (!bitmap_is_set(visited, nbr)) {
-          if (bitmap_set_gpu(visited, nbr)) {
-            if (nbr_pid == par.id) {
-              if (state.cost[nbr] == INF_COST) { 
-                state.cost[nbr] = state.level + 1;
-                local_est_active_count++;
-              }
-            }
-            vid_t parent = block_start_vertex + 
-              vwarp_start_vertex + v;
-            tree[nbr] = SET_PARTITION_ID(parent, par.id);
-            finished_block = false;
+  vid_t start_vertex = vwarp_block_start_vertex(VWARP_WIDTH, VWARP_BATCH) + 
+    vwarp_warp_start_vertex(VWARP_WIDTH, VWARP_BATCH);
+  vid_t end_vertex = start_vertex +
+    vwarp_warp_batch_size(count, VWARP_WIDTH, VWARP_BATCH);
+  int warp_offset = vwarp_thread_index(VWARP_WIDTH);
+
+  for(vid_t i = start_vertex; i < end_vertex; i++) {
+    vid_t v = frontier[i];
+    const eid_t nbr_count = vertices[v + 1] - vertices[v];
+    const vid_t* __restrict nbrs = &(edges[vertices[v]]);
+    for(vid_t i = warp_offset; i < nbr_count; i += VWARP_WIDTH) {
+      int nbr_pid = GET_PARTITION_ID(nbrs[i]);
+      vid_t nbr = GET_VERTEX_ID(nbrs[i]);
+      bitmap_t visited = state.visited[nbr_pid];
+      vid_t* tree = state.tree[nbr_pid];
+      if (!bitmap_is_set(visited, nbr)) {
+        if (bitmap_set_gpu(visited, nbr)) {
+          if ((nbr_pid == par.id) && (state.cost[nbr] == INF_COST)) { 
+            state.cost[nbr] = state.level + 1;
           }
+          tree[nbr] = SET_PARTITION_ID(v, par.id);
+          finished_block = false;
         }
       }
     }
   }
-
-  // If we want to get an exact count, the addition here should be atomic,
-  // however to avoid the overhead of atomic operation, and since an estimate
-  // count is good enough, we do not use atomic add.
-  if (local_est_active_count) est_active_count += local_est_active_count;
   __syncthreads();
-
-  // Similar to the comment above, we accumulate here without using atomic 
-  // add to reduce the overhead
-  if (est_active_count && THREAD_BLOCK_INDEX == 0) {
-    *state.est_active_count += est_active_count;
-  }
   if (!finished_block && THREAD_BLOCK_INDEX == 0) *state.finished = false;
 }
 
-PRIVATE
-void graph500_gpu_long_small(partition_t* par, graph500_state_t* state) {
-  dim3 blocks, threads;
-  KERNEL_CONFIGURE(vwarp_thread_count(par->subgraph.vertex_count,
-                                      VWARP_LONG_WARP_WIDTH,
-                                      VWARP_SMALL_BATCH_SIZE),
-                   blocks, threads);
-  graph500_kernel<VWARP_LONG_WARP_WIDTH, VWARP_SMALL_BATCH_SIZE>
-    <<<blocks, threads, 0, par->streams[1]>>>(*par, *state);
+template<int VWARP_WIDTH, int VWARP_BATCH>
+#ifdef FEATURE_SM35
+PRIVATE __host__ __device__ 
+#else
+PRIVATE __host__
+#endif /* FEATURE_SM35  */
+void graph500_launch_gpu(partition_t* par, graph500_state_t* state,
+                         vid_t* frontier, vid_t count, cudaStream_t stream) {
+  const int threads = MAX_THREADS_PER_BLOCK;
+  dim3 blocks;
+  kernel_configure(vwarp_thread_count(count, VWARP_WIDTH, VWARP_BATCH), blocks,
+                   threads);
+  graph500_kernel<VWARP_WIDTH, VWARP_BATCH>
+    <<<blocks, threads, 0, stream>>>(*par, *state, frontier, count);
 }
 
-PRIVATE
-void graph500_gpu_short_small(partition_t* par, graph500_state_t* state) {
-  dim3 blocks, threads;
-  KERNEL_CONFIGURE(vwarp_thread_count(par->subgraph.vertex_count,
-                                      VWARP_SHORT_WARP_WIDTH,
-                                      VWARP_SMALL_BATCH_SIZE),
-                   blocks, threads);
-  graph500_kernel<VWARP_SHORT_WARP_WIDTH, VWARP_SMALL_BATCH_SIZE>
-    <<<blocks, threads, 0, par->streams[1]>>>(*par, *state);
-}
+typedef void(*graph500_gpu_func_t)(partition_t*, graph500_state_t*, vid_t*, 
+                                   vid_t, cudaStream_t);
+#ifdef FEATURE_SM35
+PRIVATE __global__
+void graph500_launch_at_boundary_kernel(partition_t par, 
+                                        graph500_state_t state) {
+  if (THREAD_GLOBAL_INDEX > 0 || (*state.frontier.count == 0)) {
+    return;
+  }
+  const graph500_gpu_func_t GRAPH500_GPU_FUNC[] = {
+    graph500_launch_gpu<1,   2>,   // (0) < 8
+    graph500_launch_gpu<8,   8>,   // (1) > 8    && < 32
+    graph500_launch_gpu<32,  32>,   // (2) > 32   && < 128
+    graph500_launch_gpu<128, 32>,   // (3) > 128  && < 256
+    graph500_launch_gpu<256, 32>,   // (4) > 256  && < 1K
+    graph500_launch_gpu<512, 32>,   // (5) > 1K   && < 2K
+    graph500_launch_gpu<MAX_THREADS_PER_BLOCK, 8>,  // (6) > 2k
+  };
 
-PRIVATE 
-void graph500_gpu_medium_large(partition_t* par, graph500_state_t* state) {
-  dim3 blocks, threads;
-  KERNEL_CONFIGURE(vwarp_thread_count(par->subgraph.vertex_count,
-                                      VWARP_MEDIUM_WARP_WIDTH,
-                                      VWARP_LARGE_BATCH_SIZE),
-                   blocks, threads);
-  graph500_kernel<VWARP_MEDIUM_WARP_WIDTH, VWARP_LARGE_BATCH_SIZE>
-    <<<blocks, threads, 0, par->streams[1]>>>(*par, *state);
+  int64_t end = *(state.frontier.count);
+  for (int i = FRONTIER_BOUNDARY_COUNT; i >= 0; i--) {
+    int64_t start = state.frontier.boundaries[i];
+    int64_t count = end - start;
+    if (count > 0) {
+      cudaStream_t s;
+      cudaStreamCreateWithFlags(&s, cudaStreamNonBlocking);
+      GRAPH500_GPU_FUNC[i](&par, &state, state.frontier.list + start, count, s);
+      end = start;
+    }
+  }
 }
+#endif /* FEATURE_SM35  */
 
-typedef void(*graph500_gpu_func_t)(partition_t*, graph500_state_t*);
-PRIVATE const graph500_gpu_func_t GRAPH500_GPU_FUNC[][2] = {
-  {graph500_gpu_medium_large, graph500_gpu_medium_large}, // RANDOM partitioning
-  {graph500_gpu_short_small, graph500_gpu_medium_large},  // HIGH partitioning
-  {graph500_gpu_long_small, graph500_gpu_long_small}      // LOW partitioning
+PRIVATE const graph500_gpu_func_t GRAPH500_GPU_FUNC[] = {
+  // RANDOM partitioning
+  graph500_launch_gpu<VWARP_MEDIUM_WARP_WIDTH, VWARP_LARGE_BATCH_SIZE>,
+  // HIGH partitioning
+  graph500_launch_gpu<VWARP_MEDIUM_WARP_WIDTH, VWARP_LARGE_BATCH_SIZE>,
+  // LOW partitioning
+  graph500_launch_gpu<VWARP_LONG_WARP_WIDTH, VWARP_SMALL_BATCH_SIZE>
 };
 
+void graph500_gpu(partition_t* par, graph500_state_t* state) {
+  // Build the frontier's bitmap (this is a blocking, but fast computation)
+  frontier_update_bitmap_gpu(&state->frontier, state->visited[par->id],
+                             par->streams[1]);
+  frontier_update_list_gpu(&state->frontier, par->streams[1]);
+  // If the vertices are sorted by degree, call a kernel that takes 
+  // advantage of that
+#ifdef FEATURE_SM35
+  if (engine_sorted()) {
+    frontier_update_boundaries_gpu(&state->frontier, &par->subgraph, 
+                                   par->streams[1]);
+    graph500_launch_at_boundary_kernel<<<1, 1, 0, par->streams[1]>>>
+      (*par, *state);
+    CALL_CU_SAFE(cudaGetLastError());
+    return;
+  }
+#endif /* FEATURE_SM35 */  
+
+  vid_t count = frontier_count_gpu(&state->frontier, par->streams[1]);
+  if (count == 0) return;
+  int par_alg = engine_partition_algorithm();
+  GRAPH500_GPU_FUNC[par_alg](par, state, state->frontier.list, count, 
+                             par->streams[1]);
+  CALL_CU_SAFE(cudaGetLastError());
+}
+
 PRIVATE void graph500(partition_t* par) {
+  if (!par->subgraph.vertex_count) return;
   graph500_state_t* state = (graph500_state_t*)par->algo_state;
   if (par->processor.type == PROCESSOR_CPU) {
-    graph500_cpu(par);
+    graph500_cpu(par, state);
   } else if (par->processor.type == PROCESSOR_GPU) {
-    vid_t est_active_count = 0;
-    CALL_CU_SAFE(cudaMemcpyAsync(&est_active_count, state->est_active_count,
-                                 sizeof(vid_t), cudaMemcpyDefault,
-                                 par->streams[1]));
-    cudaMemsetAsync(state->est_active_count, 0, sizeof(vid_t), 
-                    par->streams[1]);
-    int par_alg = engine_partition_algorithm();
-    int coarse_fine = (int)(est_active_count > 
-                            VWARP_ACTIVE_VERTICES_THRESHOLD);
-    GRAPH500_GPU_FUNC[par_alg][coarse_fine](par, state);
-    CALL_CU_SAFE(cudaGetLastError());
+    graph500_gpu(par, state);
   } else {
     fprintf(stderr, "Unsupported processor type\n");
     assert(false);
@@ -248,10 +264,10 @@ PRIVATE inline void graph500_scatter_cpu(grooves_box_table_t* inbox,
   vid_t* rmt_tree = (vid_t*)inbox->push_values;
   OMP(omp parallel for schedule(runtime))
   for (vid_t index = 0; index < inbox->count; index++) {
+    vid_t parent = rmt_tree[index];
+    if (parent != VERTEX_ID_MAX) {
     vid_t vid = inbox->rmt_nbrs[index];
     if (!bitmap_is_set(visited, vid)) {
-      vid_t parent = rmt_tree[index];
-      if (parent != VERTEX_ID_MAX) {
         bitmap_set_cpu(visited, vid);
         state->cost[vid] = state->level;
         tree[vid] = parent;
@@ -265,9 +281,6 @@ void graph500_scatter_kernel(grooves_box_table_t inbox, graph500_state_t state,
                              bitmap_t visited, vid_t* tree) {
   vid_t index = THREAD_GLOBAL_INDEX;
   if (index >= inbox.count) return;
-  __shared__ vid_t est_active_count;
-  est_active_count = 0;
-  __syncthreads();
   vid_t* rmt_tree = (vid_t*)inbox.push_values;
   vid_t vid = inbox.rmt_nbrs[index];
   if (!bitmap_is_set(visited, vid)) {
@@ -276,15 +289,12 @@ void graph500_scatter_kernel(grooves_box_table_t inbox, graph500_state_t state,
       bitmap_set_gpu(visited, vid);
       state.cost[vid] = state.level;
       tree[vid] = parent;
-      est_active_count += 1;
     }
-  }
-  if (est_active_count && THREAD_BLOCK_INDEX == 0) {
-    *state.est_active_count += est_active_count;
   }
 }
 
 PRIVATE void graph500_scatter(partition_t* par) {
+  if (!par->subgraph.vertex_count) return;
   graph500_state_t* state = (graph500_state_t*)par->algo_state;
   for (int rmt_pid = 0; rmt_pid < engine_partition_count(); rmt_pid++) {
     if (rmt_pid == par->id) continue;
@@ -354,8 +364,6 @@ PRIVATE inline void graph500_init_gpu(partition_t* par) {
       (state->visited[par->id], GET_VERTEX_ID(state_g.src));
     CALL_CU_SAFE(cudaGetLastError());
   }
-  totem_memset(state->est_active_count, (vid_t)0, 1, TOTEM_MEM_DEVICE, 
-               par->streams[1]);
 }
 
 PRIVATE inline void graph500_init_cpu(partition_t* par) {
@@ -405,9 +413,10 @@ void graph500_free(partition_t* par) {
   totem_mem_t type = TOTEM_MEM_HOST;
   if (par->processor.type == PROCESSOR_CPU) {
     bitmap_finalize_cpu(state->visited[par->id]);
+    frontier_finalize_cpu(&state->frontier);
   } else if (par->processor.type == PROCESSOR_GPU) {
     bitmap_finalize_gpu(state->visited[par->id]);
-    totem_free(state->est_active_count, TOTEM_MEM_DEVICE);
+    frontier_finalize_gpu(&state->frontier);
     type = TOTEM_MEM_DEVICE;
   } else {
     assert(false);
@@ -445,10 +454,10 @@ void graph500_alloc(partition_t* par) {
   totem_mem_t type = TOTEM_MEM_HOST;
   if (par->processor.type == PROCESSOR_CPU) {
     state->visited[par->id] = bitmap_init_cpu(par->subgraph.vertex_count);
+  frontier_init_cpu(&state->frontier, par->subgraph.vertex_count);
   } else if (par->processor.type == PROCESSOR_GPU) {
     state->visited[par->id] = bitmap_init_gpu(par->subgraph.vertex_count);
-    CALL_SAFE(totem_malloc(sizeof(vid_t), TOTEM_MEM_DEVICE, 
-                           (void **)&state->est_active_count));
+    frontier_init_gpu(&state->frontier, par->subgraph.vertex_count);
     type = TOTEM_MEM_DEVICE;
   } else {
     assert(false);
