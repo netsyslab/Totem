@@ -11,6 +11,7 @@
 #include "totem_alg.h"
 #include "totem_centrality.h"
 #include "totem_engine.cuh"
+#include <thrust/sort.h>
 
 /**
  * Per-partition specific state
@@ -27,11 +28,7 @@ typedef struct betweenness_state_s {
   cost_t    level;       // current level being processed by the partition
   score_t*  betweenness; // betweenness score
 
-  vid_t* frontier_list;  // maintains the list of vertices the belong to the
-                         // current frontier being processed (GPU-based 
-                         // partitions only)
-  vid_t* frontier_count; // number of vertices in the frontier (GPU-based
-                         // partitions only)
+  frontier_state_t frontier;
 } betweenness_state_t;
 
 /**
@@ -63,7 +60,7 @@ forward_process_neighbors(int warp_offset, const vid_t* __restrict nbrs,
                           betweenness_state_t* state, bool& done_d) {
   // Iterate through the portion of work
   for(vid_t i = warp_offset; i < nbr_count; i += VWARP_WIDTH) {
-    vid_t nbr = GET_VERTEX_ID(nbrs[i]);
+    vid_t nbr   = GET_VERTEX_ID(nbrs[i]);
     int nbr_pid = GET_PARTITION_ID(nbrs[i]);
     cost_t* nbr_distance = state->distance[nbr_pid];
     if (nbr_distance[nbr] == INF_COST) {
@@ -79,12 +76,11 @@ forward_process_neighbors(int warp_offset, const vid_t* __restrict nbrs,
 
 template<int VWARP_WIDTH, int VWARP_BATCH>
 __global__ void
-betweenness_gpu_forward_kernel(partition_t par, betweenness_state_t state) {
-  vid_t frontier_count = *state.frontier_count;
+forward_kernel(partition_t par, betweenness_state_t state, 
+               const vid_t* __restrict frontier, vid_t count) {
   if (THREAD_GLOBAL_INDEX >= 
-      vwarp_thread_count(frontier_count, VWARP_WIDTH, VWARP_BATCH)) return;
+      vwarp_thread_count(count, VWARP_WIDTH, VWARP_BATCH)) return;
 
-  const vid_t* __restrict frontier = state.frontier_list;
   const eid_t* __restrict vertices = par.subgraph.vertices;
   const vid_t* __restrict edges = par.subgraph.edges;
   const uint32_t* __restrict numSPs = state.numSPs[par.id];
@@ -100,7 +96,7 @@ betweenness_gpu_forward_kernel(partition_t par, betweenness_state_t state) {
   vid_t start_vertex = vwarp_block_start_vertex(VWARP_WIDTH, VWARP_BATCH) + 
     vwarp_warp_start_vertex(VWARP_WIDTH, VWARP_BATCH);
   vid_t end_vertex = start_vertex +
-    vwarp_warp_batch_size(frontier_count, VWARP_WIDTH, VWARP_BATCH);
+    vwarp_warp_batch_size(count, VWARP_WIDTH, VWARP_BATCH);
   int warp_offset = vwarp_thread_index(VWARP_WIDTH);
   
   // Iterate over my work
@@ -120,76 +116,63 @@ betweenness_gpu_forward_kernel(partition_t par, betweenness_state_t state) {
   if (!finished_block && THREAD_BLOCK_INDEX == 0) *(state.done) = false;
 }
 
-__global__ void
-build_frontier_kernel(const vid_t vertex_count, const cost_t level,
-                      const cost_t* __restrict distance,
-                      vid_t* frontier_list, vid_t* frontier_count) {
-  const vid_t v = THREAD_GLOBAL_INDEX;
-  if (v >= vertex_count) return;
-
-  __shared__ vid_t queue_l[MAX_THREADS_PER_BLOCK];
-  __shared__ vid_t count_l;
-  count_l = 0;
-  __syncthreads();
-
-  if (distance[v] == level) {
-    int index = atomicAdd(&count_l, 1);
-    queue_l[index] = v;
-  }
-  __syncthreads();
-
-  if (THREAD_BLOCK_INDEX >= count_l) return;
-
-  __shared__ int index;
-  if (THREAD_BLOCK_INDEX == 0) {
-    index = atomicAdd(frontier_count, count_l);
-  }
-  __syncthreads();
-
-  frontier_list[index + THREAD_BLOCK_INDEX] = queue_l[THREAD_BLOCK_INDEX];  
-}
-
-PRIVATE inline 
-void build_frontier(partition_t* par, betweenness_state_t* state,
-                    cost_t level) {
-  cudaMemsetAsync(state->frontier_count, 0, sizeof(vid_t), par->streams[1]);
-  dim3 blocks, threads;
-  KERNEL_CONFIGURE(par->subgraph.vertex_count, blocks, threads);
-  build_frontier_kernel<<<blocks, threads, 0, par->streams[1]>>>
-    (par->subgraph.vertex_count, level, state->distance[par->id], 
-     state->frontier_list, state->frontier_count);
-  CALL_CU_SAFE(cudaGetLastError());
-}
-
-PRIVATE inline 
-vid_t get_frontier_count(partition_t* par, betweenness_state_t* state) {
-  vid_t frontier_count;
-  CALL_CU_SAFE(cudaMemcpyAsync(&frontier_count, state->frontier_count,
-                               sizeof(vid_t), cudaMemcpyDefault,
-                               par->streams[1]));
-  return frontier_count;
-}
-
+typedef void(*bc_gpu_func_t)(partition_t*, betweenness_state_t*, vid_t*, vid_t, 
+                             cudaStream_t);
 template<int VWARP_WIDTH, int VWARP_BATCH>
-PRIVATE void forward_gpu(partition_t* par, betweenness_state_t* state, 
-                         vid_t frontier_count) {
-  dim3 blocks, threads;
-  KERNEL_CONFIGURE(vwarp_thread_count(frontier_count,
-                                      VWARP_WIDTH, VWARP_BATCH),
+#ifdef FEATURE_SM35
+PRIVATE __host__ __device__ 
+#else
+PRIVATE __host__
+#endif /* FEATURE_SM35  */
+void forward_launch_gpu(partition_t* par, betweenness_state_t* state,
+                        vid_t* frontier, vid_t count, cudaStream_t stream) {
+  if (count == 0) return;
+  dim3 blocks; 
+  const int threads = MAX_THREADS_PER_BLOCK;
+  kernel_configure(vwarp_thread_count(count, VWARP_WIDTH, VWARP_BATCH),
                    blocks, threads);
-  betweenness_gpu_forward_kernel<VWARP_WIDTH, VWARP_BATCH>
-    <<<blocks, threads, 0, par->streams[1]>>>(*par, *state);
-  CALL_CU_SAFE(cudaGetLastError());
+  forward_kernel<VWARP_WIDTH, VWARP_BATCH><<<blocks, threads, 0, stream>>>
+    (*par, *state, frontier, count);
 }
 
-typedef void(*bc_gpu_func_t)(partition_t*, betweenness_state_t*, vid_t);
+#ifdef FEATURE_SM35
+PRIVATE __global__
+void forward_launch_at_boundary_kernel(partition_t par, 
+                                       betweenness_state_t state) {
+  if (THREAD_GLOBAL_INDEX > 0 || (*state.frontier.count == 0)) {
+    return;
+  }
+  const bc_gpu_func_t FORWARD_GPU_FUNC[] = {
+    forward_launch_gpu<1,   2>,   // (0) < 8
+    forward_launch_gpu<8,   8>,   // (1) > 8    && < 32
+    forward_launch_gpu<32,  32>,   // (2) > 32   && < 128
+    forward_launch_gpu<128, 32>,   // (3) > 128  && < 256
+    forward_launch_gpu<256, 32>,   // (4) > 256  && < 1K
+    forward_launch_gpu<512, 32>,   // (5) > 1K   && < 2K
+    forward_launch_gpu<MAX_THREADS_PER_BLOCK, 8>  // (6) > 2k
+  };
+
+  int64_t end = *(state.frontier.count);
+  for (int i = FRONTIER_BOUNDARY_COUNT; i >= 0; i--) {
+    int64_t start = state.frontier.boundaries[i];
+    int64_t count = end - start;
+    if (count > 0) {
+      cudaStream_t s;
+      cudaStreamCreateWithFlags(&s, cudaStreamNonBlocking);
+      FORWARD_GPU_FUNC[i](&par, &state, state.frontier.list + start, count, s);
+      end = start;
+    }
+  }
+}
+#endif /* FEATURE_SM35  */
+
 PRIVATE const bc_gpu_func_t FORWARD_GPU_FUNC[] = {
   // RANDOM partitioning
-  forward_gpu<VWARP_MEDIUM_WARP_WIDTH,  VWARP_MEDIUM_BATCH_SIZE>,
+  forward_launch_gpu<VWARP_MEDIUM_WARP_WIDTH,  VWARP_MEDIUM_BATCH_SIZE>,
   // HIGH partitioning
-  forward_gpu<VWARP_MEDIUM_WARP_WIDTH,  VWARP_MEDIUM_BATCH_SIZE>,
+  forward_launch_gpu<VWARP_MEDIUM_WARP_WIDTH,  VWARP_MEDIUM_BATCH_SIZE>,
   // LOW partitioning
-  forward_gpu<MAX_THREADS_PER_BLOCK,  VWARP_MEDIUM_BATCH_SIZE>
+  forward_launch_gpu<MAX_THREADS_PER_BLOCK,  VWARP_MEDIUM_BATCH_SIZE>
 };
 
 /**
@@ -198,14 +181,32 @@ PRIVATE const bc_gpu_func_t FORWARD_GPU_FUNC[] = {
 PRIVATE inline void betweenness_forward_gpu(partition_t* par) {
   // Get the current state of the algorithm
   betweenness_state_t* state = (betweenness_state_t*)par->algo_state;
-  engine_set_outbox(par->id, (int)0); 
-  build_frontier(par, state, state->level);
-  vid_t frontier_count = get_frontier_count(par, state);
-  if (frontier_count == 0) return;
+  frontier_update_list_gpu(&state->frontier, state->level, 
+                           state->distance[par->id], par->streams[1]);
+
+  // If the vertices are sorted by degree, call a kernel that takes 
+  // advantage of that
+#ifdef FEATURE_SM35
+  if (engine_sorted()) {
+    frontier_update_boundaries_gpu(&state->frontier, &par->subgraph,
+                                   par->streams[1]);
+    forward_launch_at_boundary_kernel<<<1, 1, 0, par->streams[1]>>>
+      (*par, *state);
+    CALL_CU_SAFE(cudaGetLastError());
+    return;
+  }
+#endif /* FEATURE_SM35 */
+
   // Call the corresponding cuda kernel to perform forward propagation
   // given the current state of the algorithm
+  vid_t count;
+  CALL_CU_SAFE(cudaMemcpyAsync(&count, state->frontier.count, 
+                               sizeof(vid_t), cudaMemcpyDefault, 
+                               par->streams[1]));
+  CALL_CU_SAFE(cudaStreamSynchronize(par->streams[1]));
   int par_alg = engine_partition_algorithm();
-  FORWARD_GPU_FUNC[par_alg](par, state, frontier_count);
+  FORWARD_GPU_FUNC[par_alg](par, state, state->frontier.list, count, 
+                            par->streams[1]);
 }
 
 /**
@@ -286,14 +287,13 @@ backward_process_neighbors(partition_t* par, betweenness_state_t* state,
   for(vid_t i = warp_offset; i < nbr_count; i += VWARP_WIDTH) {
     vid_t nbr = GET_VERTEX_ID(nbrs[i]);
     int nbr_pid = GET_PARTITION_ID(nbrs[i]);
-    cost_t* nbr_distance = state->distance[nbr_pid];  
+    cost_t* nbr_distance = state->distance[nbr_pid];
     if (nbr_distance[nbr] == state->level + 1) {
-      // Check whether the neighbour is local or remote and update accordingly
       // Compute an intermediary delta value in shared memory
       score_t* nbr_delta = state->delta[nbr_pid];
       uint32_t* nbr_numSPs = state->numSPs[nbr_pid];
-      vwarp_delta_s[warp_offset] += 
-        ((((score_t)v_numSPs) / ((score_t)nbr_numSPs[nbr])) * 
+      vwarp_delta_s[warp_offset] +=
+        ((((score_t)v_numSPs) / ((score_t)nbr_numSPs[nbr])) *
          (nbr_delta[nbr] + 1));
     }
   }
@@ -317,10 +317,10 @@ backward_process_neighbors(partition_t* par, betweenness_state_t* state,
  */
 template<int VWARP_WIDTH, int VWARP_BATCH>
 __global__ void
-betweenness_gpu_backward_kernel(partition_t par, betweenness_state_t state) {
-  vid_t frontier_count = *state.frontier_count;
+betweenness_backward_kernel(partition_t par, betweenness_state_t state,
+                            const vid_t* __restrict frontier, vid_t count) {
   if (THREAD_GLOBAL_INDEX >= 
-      vwarp_thread_count(frontier_count, VWARP_WIDTH, VWARP_BATCH)) return;
+      vwarp_thread_count(count, VWARP_WIDTH, VWARP_BATCH)) return;
 
   const eid_t* __restrict vertices = par.subgraph.vertices;
   const vid_t* __restrict edges = par.subgraph.edges;
@@ -335,12 +335,12 @@ betweenness_gpu_backward_kernel(partition_t par, betweenness_state_t state) {
   vid_t start_vertex = vwarp_block_start_vertex(VWARP_WIDTH, VWARP_BATCH) + 
     vwarp_warp_start_vertex(VWARP_WIDTH, VWARP_BATCH);
   vid_t end_vertex = start_vertex +
-    vwarp_warp_batch_size(frontier_count, VWARP_WIDTH, VWARP_BATCH);
+    vwarp_warp_batch_size(count, VWARP_WIDTH, VWARP_BATCH);
   int warp_offset = vwarp_thread_index(VWARP_WIDTH);
   
   // Iterate over my work
   for(vid_t i = start_vertex; i < end_vertex; i++) {
-    vid_t v = state.frontier_list[i];
+    vid_t v = frontier[i];
     // If the vertex is at the current level, determine its contribution
     // to the source vertex's delta value
     const eid_t nbr_count = vertices[v + 1] - vertices[v];
@@ -351,24 +351,59 @@ betweenness_gpu_backward_kernel(partition_t par, betweenness_state_t state) {
 }
 
 template<int VWARP_WIDTH, int VWARP_BATCH>
-PRIVATE void backward_gpu(partition_t* par, betweenness_state_t* state,
-                          vid_t frontier_count) {
-  dim3 blocks, threads;
-  KERNEL_CONFIGURE(vwarp_thread_count(frontier_count,
-                                      VWARP_WIDTH, VWARP_BATCH), 
+#ifdef FEATURE_SM35
+PRIVATE __host__ __device__ 
+#else
+PRIVATE __host__
+#endif /* FEATURE_SM35  */
+void backward_launch_gpu(partition_t* par, betweenness_state_t* state,
+                         vid_t* frontier, vid_t count, cudaStream_t stream) {
+  if (count == 0) return;
+  dim3 blocks; const int threads = MAX_THREADS_PER_BLOCK;
+  kernel_configure(vwarp_thread_count(count, VWARP_WIDTH, VWARP_BATCH), 
                    blocks, threads);
-  betweenness_gpu_backward_kernel<VWARP_WIDTH, VWARP_BATCH>
-    <<<blocks, threads, 0, par->streams[1]>>>(*par, *state);
-  CALL_CU_SAFE(cudaGetLastError());
+  betweenness_backward_kernel<VWARP_WIDTH, VWARP_BATCH>
+    <<<blocks, threads, 0, stream>>>(*par, *state, frontier, count);
 }
+
+#ifdef FEATURE_SM35
+PRIVATE __global__
+void backward_launch_at_boundary_kernel(partition_t par, 
+                                        betweenness_state_t state) {
+  if (THREAD_GLOBAL_INDEX > 0 || (*state.frontier.count == 0)) {
+    return;
+  }
+  const bc_gpu_func_t BACKWARD_GPU_FUNC[] = {
+    backward_launch_gpu<1,   2>,   // (0) < 8
+    backward_launch_gpu<8,   8>,   // (1) > 8    && < 32
+    backward_launch_gpu<32,  32>,   // (2) > 32   && < 128
+    backward_launch_gpu<128, 32>,   // (3) > 128  && < 256
+    backward_launch_gpu<256, 32>,   // (4) > 256  && < 1K
+    backward_launch_gpu<512, 32>,   // (5) > 1K   && < 2K
+    backward_launch_gpu<MAX_THREADS_PER_BLOCK, 8>  // (6) > 2k
+  };
+
+  int64_t end = *(state.frontier.count);
+  for (int i = FRONTIER_BOUNDARY_COUNT; i >= 0; i--) {
+    int64_t start = state.frontier.boundaries[i];
+    int64_t count = end - start;
+    if (count > 0) {
+      cudaStream_t s;
+      cudaStreamCreateWithFlags(&s, cudaStreamNonBlocking);
+      BACKWARD_GPU_FUNC[i](&par, &state, state.frontier.list + start, count, s);
+      end = start;
+    }
+  }
+}
+#endif /* FEATURE_SM35  */
 
 PRIVATE const bc_gpu_func_t BACKWARD_GPU_FUNC[] = {
   // RANDOM algorithm
-  backward_gpu<VWARP_MEDIUM_WARP_WIDTH, VWARP_MEDIUM_BATCH_SIZE>,
+  backward_launch_gpu<VWARP_MEDIUM_WARP_WIDTH, VWARP_MEDIUM_BATCH_SIZE>,
   // HIGH partitioning
-  backward_gpu<VWARP_MEDIUM_WARP_WIDTH, VWARP_MEDIUM_BATCH_SIZE>,
+  backward_launch_gpu<VWARP_MEDIUM_WARP_WIDTH, VWARP_MEDIUM_BATCH_SIZE>,
   // LOW partitioning
-  backward_gpu<MAX_THREADS_PER_BLOCK,  VWARP_MEDIUM_BATCH_SIZE>
+  backward_launch_gpu<MAX_THREADS_PER_BLOCK,  VWARP_MEDIUM_BATCH_SIZE>
 };
 
 /**
@@ -377,13 +412,30 @@ PRIVATE const bc_gpu_func_t BACKWARD_GPU_FUNC[] = {
 PRIVATE inline void betweenness_backward_gpu(partition_t* par) {
   // Get the current state of the algorithm
   betweenness_state_t* state = (betweenness_state_t*)par->algo_state;
-  // Given this state, invoke the CUDA kernel which performs
-  // backward propagation
-  build_frontier(par, state, state->level);
-  vid_t frontier_count = get_frontier_count(par, state);
-  if (frontier_count == 0) return;
+  frontier_update_list_gpu(&state->frontier, state->level, 
+                           state->distance[par->id], par->streams[1]);
+
+  // If the vertices are sorted by degree, call a kernel that takes 
+  // advantage of that
+#ifdef FEATURE_SM35
+  if (engine_sorted()) {
+    frontier_update_boundaries_gpu(&state->frontier, &par->subgraph,
+                                   par->streams[1]);
+    backward_launch_at_boundary_kernel<<<1, 1, 0, par->streams[1]>>>
+      (*par, *state);
+    CALL_CU_SAFE(cudaGetLastError());
+    return;
+  }
+#endif /* FEATURE_SM35 */
+
+  vid_t count;
+  CALL_CU_SAFE(cudaMemcpyAsync(&count, state->frontier.count, 
+                               sizeof(vid_t), cudaMemcpyDefault, 
+                               par->streams[1]));
+  CALL_CU_SAFE(cudaStreamSynchronize(par->streams[1]));
   int par_alg = engine_partition_algorithm();
-  BACKWARD_GPU_FUNC[par_alg](par, state, frontier_count);
+  BACKWARD_GPU_FUNC[par_alg](par, state, state->frontier.list, 
+                             count, par->streams[1]);
 }
 
 /**
@@ -718,10 +770,7 @@ PRIVATE void betweenness_init(partition_t* par) {
   totem_mem_t type = TOTEM_MEM_HOST; 
   if (par->processor.type == PROCESSOR_GPU) { 
     type = TOTEM_MEM_DEVICE;
-    CALL_SAFE(totem_calloc(vcount * sizeof(vid_t), type, 
-                           (void **)&state->frontier_list));
-    CALL_SAFE(totem_calloc(sizeof(vid_t), type, 
-                           (void **)&state->frontier_count));
+    frontier_init_gpu(&state->frontier, par->subgraph.vertex_count);
   }
   
   CALL_SAFE(totem_calloc(vcount * sizeof(score_t), type,
@@ -763,8 +812,7 @@ PRIVATE void betweenness_finalize(partition_t* par) {
   totem_mem_t type = TOTEM_MEM_HOST; 
   if (par->processor.type == PROCESSOR_GPU) { 
     type = TOTEM_MEM_DEVICE; 
-    totem_free(state->frontier_list, type);
-    totem_free(state->frontier_count, type);
+    frontier_finalize_gpu(&state->frontier);
   }
 
   // Free the memory allocated for the algorithm
