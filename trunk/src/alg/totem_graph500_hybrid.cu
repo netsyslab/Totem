@@ -219,10 +219,9 @@ PRIVATE const graph500_gpu_func_t GRAPH500_GPU_FUNC[] = {
 };
 
 void graph500_gpu(partition_t* par, graph500_state_t* state) {
-  // Build the frontier's bitmap (this is a blocking, but fast computation)
-  frontier_update_bitmap_gpu(&state->frontier, state->visited[par->id],
-                             par->streams[1]);
-  frontier_update_list_gpu(&state->frontier, par->streams[1]);
+  // Build the frontier's list
+  frontier_update_list_gpu(&state->frontier, state->level, state->cost, 
+                           par->streams[1]);
   // If the vertices are sorted by degree, call a kernel that takes 
   // advantage of that
 #ifdef FEATURE_SM35
