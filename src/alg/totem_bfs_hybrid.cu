@@ -19,10 +19,6 @@ typedef struct bfs_state_s {
   bool*     finished;          // points to Totem's finish flag
   cost_t    level;             // current level being processed by the partition
   frontier_state_t frontier;   // frontier management state
-  bool             do_scatter; // a flag used in the cpu-based partition that 
-                               // idicates whether or not to execute the scatter
-                               // function. this is set by the CPU kernel as a 
-                               // signal to the CPU scatter callback.
 } bfs_state_t;
 
 /**
@@ -35,15 +31,8 @@ typedef struct bfs_global_state_s {
                     // copied again to the final output buffer
                     // TODO(abdullah): push this buffer to be managed by Totem
   vid_t     src;    // source vertex id (the id after partitioning)  
-  bool      gpu_to_cpu_updates; // a flag set by the gpu-based partitions
-                                // are read by the cpu-based one. The flag
-                                // is set to true when any gpu-based partition
-                                // has potentially sent updates to the cpu-based
-                                // one. This is a way to reduce communication 
-                                // overhead by avoiding to call the cpu-side 
-                                // scatter function
 } bfs_global_state_t;
-PRIVATE bfs_global_state_t state_g = {NULL, NULL, 0, false};
+PRIVATE bfs_global_state_t state_g = {NULL, NULL, 0};
 
 /**
  * Checks for input parameters and special cases. This is invoked at the
@@ -121,15 +110,6 @@ bfs_cpu_dense_frontier(graph_t* subgraph, bfs_state_t* state, int pid) {
 void bfs_cpu(partition_t* par) {
   bfs_state_t* state = (bfs_state_t*)par->algo_state;
   graph_t* subgraph = &par->subgraph;
-
-  // Indicate whether the scatter function should be executed or not in the next
-  // round. The gpu_to_cpu_updates flag is set to false if no vertices in this 
-  // partition were set remotely by any of the GPU partitions
-  state->do_scatter = true;
-  if (!state_g.gpu_to_cpu_updates) {
-    state->do_scatter = false;
-  }
-  state_g.gpu_to_cpu_updates = false;
 
   frontier_update_bitmap_cpu(&state->frontier, state->visited[par->id]);
 
@@ -289,7 +269,8 @@ PRIVATE void bfs_tuned_launch_gpu(partition_t* par, bfs_state_t* state) {
   }
 
   if (use_frontier) {
-    frontier_update_list_gpu(&state->frontier, par->streams[1]);
+    frontier_update_list_gpu(&state->frontier, state->level, state->cost, 
+                             par->streams[1]);
   }
 
   // If the vertices are sorted by degree, call a kernel that takes 
@@ -331,10 +312,6 @@ PRIVATE void bfs_tuned_launch_gpu(partition_t* par, bfs_state_t* state) {
 }
 
 PRIVATE void bfs_gpu(partition_t* par, bfs_state_t* state) {
-  frontier_update_bitmap_gpu(&state->frontier, state->visited[par->id], 
-                             par->streams[1]);
-  state_g.gpu_to_cpu_updates = true;
-
   // Copy the current state of the remote vertices
   for (int pid = 0; pid < engine_partition_count(); pid++) {
     if ((pid == par->id) || (par->outbox[pid].count == 0)) continue;
@@ -370,7 +347,6 @@ PRIVATE void bfs(partition_t* par) {
 
 PRIVATE inline void bfs_scatter_cpu(grooves_box_table_t* inbox, 
                                     bfs_state_t* state, bitmap_t visited) {
-  if (!state->do_scatter) return;
   bitmap_t remotely_visited = (bitmap_t)inbox->push_values;
   OMP(omp parallel for schedule(runtime))
   for (vid_t word_index = 0; word_index < bitmap_bits_to_words(inbox->count); 

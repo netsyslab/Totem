@@ -10,56 +10,33 @@
 #include "totem_alg.h"
 #include "totem_engine.cuh"
 
-template<bool exclusive>
-inline __device__ int scan_warp(volatile vid_t* ptr, const uint32_t idx) {
-  const unsigned int lane = idx & 31; // index of thread in warp (0..31)
-  if (lane >= 1) ptr[idx] = ptr[idx - 1] + ptr[idx];
-  if (lane >= 2) ptr[idx] = ptr[idx - 2] + ptr[idx];
-  if (lane >= 4) ptr[idx] = ptr[idx - 4] + ptr[idx];
-  if (lane >= 8) ptr[idx] = ptr[idx - 8] + ptr[idx];
-  if (lane >= 16) ptr[idx] = ptr[idx - 16] + ptr[idx];
-  if (exclusive) return (lane > 0) ? ptr[idx -1] : 0;
-  else return ptr[idx];
-}
-
 template<int THREADS_PER_BLOCK>
 PRIVATE __global__ void
-frontier_build_kernel(frontier_state_t state) {
-  const int WARP_WIDTH = 32;
-  assert(BITMAP_BITS_PER_WORD == WARP_WIDTH);
-
+frontier_build_kernel(frontier_state_t state, const cost_t level,
+                      const cost_t* __restrict cost) {
   const vid_t v = THREAD_GLOBAL_INDEX;
-  const vid_t widx = v >> 5;
-  if (widx >= bitmap_bits_to_words(state.len)) return;
-  bitmap_word_t word = state.current[widx];
+  if (v >= state.len) return;
 
   __shared__ vid_t queue_l[THREADS_PER_BLOCK];
-  __shared__ vid_t count_b[THREADS_PER_BLOCK];
-  __shared__ vid_t count_w[THREADS_PER_BLOCK / WARP_WIDTH];
-  __shared__ int count_l;
+  __shared__ vid_t count_l;
   count_l = 0;
   __syncthreads();
 
-  const int idx = THREAD_BLOCK_INDEX;
-  const int warpid = idx >> 5; 
-  const int lane = idx & (WARP_WIDTH - 1);
-  if (word) {
-    bool append = bitmap_is_set(word, lane);
-    count_b[idx] = (int)append;
-    int index = scan_warp<true>(count_b, idx);
-    if (lane == 0) count_w[warpid] = atomicAdd(&count_l, __popc(word));
-    if (append) queue_l[count_w[warpid] + index] = v;
+  if (cost[v] == level) {
+    int index = atomicAdd(&count_l, 1);
+    queue_l[index] = v;
   }
   __syncthreads();
 
-  if (idx >= count_l) return;
+  if (THREAD_BLOCK_INDEX >= count_l) return;
 
   __shared__ int index;
-  if (idx == 0) {
+  if (THREAD_BLOCK_INDEX == 0) {
     index = atomicAdd(state.count, count_l);
   }
   __syncthreads();
-  state.list[index + idx] = queue_l[idx];
+
+  state.list[index + THREAD_BLOCK_INDEX] = queue_l[THREAD_BLOCK_INDEX];  
 }
 
 #ifdef FEATURE_SM35
@@ -117,12 +94,13 @@ frontier_init_boundaries_kernel(frontier_state_t state) {
 #endif /* FEATURE_SM35  */
 
 void frontier_update_list_gpu(frontier_state_t* state,
+                              vid_t level, const cost_t* cost, 
                               const cudaStream_t stream) {
   cudaMemsetAsync(state->count, 0, sizeof(vid_t), stream);
   dim3 blocks;
   kernel_configure(state->len, blocks);
   frontier_build_kernel<DEFAULT_THREADS_PER_BLOCK>
-    <<<blocks, DEFAULT_THREADS_PER_BLOCK, 0, stream>>>(*state);
+    <<<blocks, DEFAULT_THREADS_PER_BLOCK, 0, stream>>>(*state, level, cost);
   CALL_CU_SAFE(cudaGetLastError());
 }
 
@@ -164,13 +142,6 @@ vid_t frontier_update_bitmap_cpu(frontier_state_t* state, bitmap_t visited) {
                        state->len);
   return 0;
 }
-
-/* vid_t frontier_get_count_cpu(frontier_state_t* state, cudaStream_t stream) { */
-/*   return bitmap_count_gpu(state->current, state->len, stream); */
-/* } */
-/* vid_t frontier_get_count_cpu(frontier_state_t* state) { */
-/*   return bitmap_count_cpu(state->current, state->len); */
-/* } */
 
 void frontier_init_gpu(frontier_state_t* state, vid_t vertex_count) {
   assert(state);

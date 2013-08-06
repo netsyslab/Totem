@@ -361,7 +361,8 @@ vid_t frontier_update_bitmap_gpu(frontier_state_t* state,
  * the vertices are sorted by degree
  * @param[in] frontier reference to the frontier data structure
  */
-void frontier_update_list_gpu(frontier_state_t* state, 
+void frontier_update_list_gpu(frontier_state_t* state,
+                              vid_t level, const cost_t* cost, 
                               const cudaStream_t stream);
 
 #ifdef FEATURE_SM35
