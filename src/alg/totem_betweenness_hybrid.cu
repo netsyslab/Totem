@@ -875,9 +875,11 @@ PRIVATE void betweenness_aggr(partition_t* par) {
  * BSP cycle that synchronizes the distance of remote vertices
  */
 PRIVATE void betweenness_gather_distance(partition_t* par) {
-  betweenness_state_t* state = (betweenness_state_t*)par->algo_state;
-  assert(state);
-  engine_gather_inbox(par->id, state->distance[par->id]);
+  if (engine_superstep() == 1) {
+    betweenness_state_t* state = (betweenness_state_t*)par->algo_state;
+    assert(state);
+    engine_gather_inbox(par->id, state->distance[par->id]);
+  }
 }
 PRIVATE void betweenness_synch_distance(partition_t* par) {
   betweenness_state_t* state = (betweenness_state_t*)par->algo_state;
@@ -887,10 +889,20 @@ PRIVATE void betweenness_synch_distance(partition_t* par) {
   } else {
     for (int rmt_pid = 0; rmt_pid < engine_partition_count(); rmt_pid++) {
       if (par->id == rmt_pid) continue;
-      CALL_CU_SAFE(cudaMemcpyAsync(state->distance[rmt_pid], 
-                                   par->outbox[rmt_pid].pull_values,
-                                   par->outbox[rmt_pid].count * sizeof(cost_t),
-                                   cudaMemcpyDefault, par->streams[1]));
+      if (par->processor.type == PROCESSOR_GPU) {
+        CALL_CU_SAFE(cudaMemcpyAsync(state->distance[rmt_pid], 
+                                     par->outbox[rmt_pid].pull_values,
+                                     par->outbox[rmt_pid].count * 
+                                     sizeof(cost_t),
+                                     cudaMemcpyDefault, par->streams[1]));
+      } else {
+        cost_t* src = (cost_t*)par->outbox[rmt_pid].pull_values;
+        cost_t* dst = state->distance[rmt_pid];
+        OMP(omp parallel for schedule(static))
+        for (int i = 0; i < par->outbox[rmt_pid].count; i++) {
+          dst[i] = src[i];
+        }
+      }
     }
   }
 }
@@ -900,9 +912,11 @@ PRIVATE void betweenness_synch_distance(partition_t* par) {
  * BSP cycle that synchronizes the numSPs of remote vertices
  */
 PRIVATE void betweenness_gather_numSPs(partition_t* par) {
-  betweenness_state_t* state = (betweenness_state_t*)par->algo_state;
-  assert(state);
-  engine_gather_inbox(par->id, state->numSPs[par->id]);
+  if (engine_superstep() == 1) {
+    betweenness_state_t* state = (betweenness_state_t*)par->algo_state;
+    assert(state);
+    engine_gather_inbox(par->id, state->numSPs[par->id]);
+  }
 }
 PRIVATE void betweenness_synch_numSPs(partition_t* par) {
   betweenness_state_t* state = (betweenness_state_t*)par->algo_state;
@@ -912,11 +926,20 @@ PRIVATE void betweenness_synch_numSPs(partition_t* par) {
   } else {
     for (int rmt_pid = 0; rmt_pid < engine_partition_count(); rmt_pid++) {
       if (par->id == rmt_pid) continue;
-      CALL_CU_SAFE(cudaMemcpyAsync(state->numSPs[rmt_pid], 
-                                   par->outbox[rmt_pid].pull_values,
-                                   par->outbox[rmt_pid].count * 
-                                   sizeof(uint32_t),
-                                   cudaMemcpyDefault, par->streams[1]));
+      if (par->processor.type == PROCESSOR_GPU) {
+        CALL_CU_SAFE(cudaMemcpyAsync(state->numSPs[rmt_pid], 
+                                     par->outbox[rmt_pid].pull_values,
+                                     par->outbox[rmt_pid].count * 
+                                     sizeof(uint32_t),
+                                     cudaMemcpyDefault, par->streams[1]));
+      } else {
+        uint32_t* src = (uint32_t*)par->outbox[rmt_pid].pull_values;
+        uint32_t* dst = state->numSPs[rmt_pid];
+        OMP(omp parallel for schedule(static))
+        for (int i = 0; i < par->outbox[rmt_pid].count; i++) {
+          dst[i] = src[i];
+        }
+      }
     }
   }
 }
