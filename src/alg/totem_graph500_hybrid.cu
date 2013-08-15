@@ -112,7 +112,7 @@ void graph500_cpu(partition_t* par, graph500_state_t* state) {
  * description of the warp technique for details. Also, please refer to
  * graph500_kernel for details on the algorithm implementation.
  */
-template<int VWARP_WIDTH, int VWARP_BATCH>
+template<int VWARP_WIDTH, int VWARP_BATCH, bool USE_FRONTIER>
 __global__
 void graph500_kernel(partition_t par, graph500_state_t state,
                      const vid_t* __restrict frontier, vid_t count) {
@@ -137,7 +137,8 @@ void graph500_kernel(partition_t par, graph500_state_t state,
   int warp_offset = vwarp_thread_index(VWARP_WIDTH);
 
   for(vid_t i = start_vertex; i < end_vertex; i++) {
-    vid_t v = frontier[i];
+    vid_t v = i;
+    if (USE_FRONTIER) v = frontier[i];
     const eid_t nbr_count = vertices[v + 1] - vertices[v];
     const vid_t* __restrict nbrs = &(edges[vertices[v]]);
     for(vid_t i = warp_offset; i < nbr_count; i += VWARP_WIDTH) {
@@ -160,7 +161,7 @@ void graph500_kernel(partition_t par, graph500_state_t state,
   if (!finished_block && THREAD_BLOCK_INDEX == 0) *state.finished = false;
 }
 
-template<int VWARP_WIDTH, int VWARP_BATCH>
+template<int VWARP_WIDTH, int VWARP_BATCH, bool USE_FRONTIER>
 #ifdef FEATURE_SM35
 PRIVATE __host__ __device__ 
 #else
@@ -172,7 +173,7 @@ void graph500_launch_gpu(partition_t* par, graph500_state_t* state,
   dim3 blocks;
   kernel_configure(vwarp_thread_count(count, VWARP_WIDTH, VWARP_BATCH), blocks,
                    threads);
-  graph500_kernel<VWARP_WIDTH, VWARP_BATCH>
+  graph500_kernel<VWARP_WIDTH, VWARP_BATCH, USE_FRONTIER>
     <<<blocks, threads, 0, stream>>>(*par, *state, frontier, count);
 }
 
@@ -186,13 +187,13 @@ void graph500_launch_at_boundary_kernel(partition_t par,
     return;
   }
   const graph500_gpu_func_t GRAPH500_GPU_FUNC[] = {
-    graph500_launch_gpu<1,   2>,   // (0) < 8
-    graph500_launch_gpu<8,   8>,   // (1) > 8    && < 32
-    graph500_launch_gpu<32,  32>,   // (2) > 32   && < 128
-    graph500_launch_gpu<128, 32>,   // (3) > 128  && < 256
-    graph500_launch_gpu<256, 32>,   // (4) > 256  && < 1K
-    graph500_launch_gpu<512, 32>,   // (5) > 1K   && < 2K
-    graph500_launch_gpu<MAX_THREADS_PER_BLOCK, 8>,  // (6) > 2k
+    graph500_launch_gpu<1,   2,  true>,   // (0) < 8
+    graph500_launch_gpu<8,   8,  true>,   // (1) > 8    && < 32
+    graph500_launch_gpu<32,  32, true>,   // (2) > 32   && < 128
+    graph500_launch_gpu<128, 32, true>,   // (3) > 128  && < 256
+    graph500_launch_gpu<256, 32, true>,   // (4) > 256  && < 1K
+    graph500_launch_gpu<512, 32, true>,   // (5) > 1K   && < 2K
+    graph500_launch_gpu<MAX_THREADS_PER_BLOCK, 8, true>,  // (6) > 2k
   };
 
   int64_t end = *(state.frontier.count);
@@ -209,23 +210,28 @@ void graph500_launch_at_boundary_kernel(partition_t par,
 }
 #endif /* FEATURE_SM35  */
 
-PRIVATE const graph500_gpu_func_t GRAPH500_GPU_FUNC[] = {
-  // RANDOM partitioning
-  graph500_launch_gpu<VWARP_MEDIUM_WARP_WIDTH, VWARP_LARGE_BATCH_SIZE>,
-  // HIGH partitioning
-  graph500_launch_gpu<VWARP_MEDIUM_WARP_WIDTH, VWARP_LARGE_BATCH_SIZE>,
-  // LOW partitioning
-  graph500_launch_gpu<VWARP_LONG_WARP_WIDTH, VWARP_SMALL_BATCH_SIZE>
-};
-
 void graph500_gpu(partition_t* par, graph500_state_t* state) {
-  // Build the frontier's list
-  frontier_update_list_gpu(&state->frontier, state->level, state->cost, 
-                           par->streams[1]);
+  // Check if it is possible to build a frontier list
+  vid_t vertex_count = par->subgraph.vertex_count;
+  int use_frontier = true;
+  if (engine_partition_algorithm() == PAR_SORTED_ASC) {
+    // placing the many low degree nodes on the GPU means the frontier list
+    // length is limited, hence we check here if the frontier can fit in the
+    // pre-allocated space
+    frontier_update_bitmap_gpu(&state->frontier, state->visited[par->id],
+                               par->streams[1]);
+    vertex_count = frontier_count_gpu(&state->frontier, par->streams[1]);
+    use_frontier = (int)(vertex_count <= state->frontier.list_len);
+  }
+
   // If the vertices are sorted by degree, call a kernel that takes 
   // advantage of that
 #ifdef FEATURE_SM35
-  if (engine_sorted()) {
+  if (engine_sorted() && use_frontier) {
+    // If the vertices are sorted by degree, call a kernel that takes 
+    // advantage of that
+    frontier_update_list_gpu(&state->frontier, state->level, state->cost, 
+                             par->streams[1]);
     frontier_update_boundaries_gpu(&state->frontier, &par->subgraph, 
                                    par->streams[1]);
     graph500_launch_at_boundary_kernel<<<1, 1, 0, par->streams[1]>>>
@@ -235,11 +241,40 @@ void graph500_gpu(partition_t* par, graph500_state_t* state) {
   }
 #endif /* FEATURE_SM35 */  
 
-  vid_t count = frontier_count_gpu(&state->frontier, par->streams[1]);
-  if (count == 0) return;
-  int par_alg = engine_partition_algorithm();
-  GRAPH500_GPU_FUNC[par_alg](par, state, state->frontier.list, count, 
+  if (engine_partition_algorithm() != PAR_SORTED_ASC) {
+    frontier_update_bitmap_gpu(&state->frontier, state->visited[par->id],
+                               par->streams[1]);
+    vertex_count = frontier_count_gpu(&state->frontier, par->streams[1]);
+  }
+  if (vertex_count == 0) return;
+
+  if (use_frontier) {
+    frontier_update_list_gpu(&state->frontier, state->level, state->cost, 
                              par->streams[1]);
+  }
+
+  // Call the GRAPH500 kernel
+  const graph500_gpu_func_t GRAPH500_GPU_FUNC[][2] = {{
+    // RANDOM algorithm
+      graph500_launch_gpu<VWARP_MEDIUM_WARP_WIDTH, 
+                          VWARP_MEDIUM_BATCH_SIZE, false>,
+      graph500_launch_gpu<VWARP_MEDIUM_WARP_WIDTH, 
+                          VWARP_MEDIUM_BATCH_SIZE, true>
+    }, {
+      // HIGH partitioning
+      graph500_launch_gpu<VWARP_MEDIUM_WARP_WIDTH, 
+                          VWARP_LARGE_BATCH_SIZE, false>,
+      graph500_launch_gpu<VWARP_MEDIUM_WARP_WIDTH, VWARP_LARGE_BATCH_SIZE, true>
+    }, {
+      // LOW partitioning
+      graph500_launch_gpu<MAX_THREADS_PER_BLOCK, 
+                          VWARP_MEDIUM_BATCH_SIZE, false>,
+      graph500_launch_gpu<MAX_THREADS_PER_BLOCK, VWARP_MEDIUM_BATCH_SIZE, true>
+    }
+  };
+  int par_alg = engine_partition_algorithm();
+  GRAPH500_GPU_FUNC[par_alg][use_frontier]
+    (par, state, state->frontier.list, vertex_count, par->streams[1]);
   CALL_CU_SAFE(cudaGetLastError());
 }
 
@@ -363,6 +398,7 @@ PRIVATE inline void graph500_init_gpu(partition_t* par) {
       (state->visited[par->id], GET_VERTEX_ID(state_g.src));
     CALL_CU_SAFE(cudaGetLastError());
   }
+  frontier_reset_gpu(&state->frontier);
 }
 
 PRIVATE inline void graph500_init_cpu(partition_t* par) {
@@ -377,6 +413,7 @@ PRIVATE inline void graph500_init_cpu(partition_t* par) {
   if (GET_PARTITION_ID(state_g.src) == par->id) {
     bitmap_set_cpu(state->visited[par->id], GET_VERTEX_ID(state_g.src));
   }
+  frontier_reset_cpu(&state->frontier);
 }
 
 PRIVATE void graph500_init(partition_t* par) {
