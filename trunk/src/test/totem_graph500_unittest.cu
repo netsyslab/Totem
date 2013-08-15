@@ -237,7 +237,23 @@ graph500_param_t graph500_params[] = {
   {&totem_attrs[4], NULL},
   {&totem_attrs[5], NULL},
   {&totem_attrs[6], NULL},
-  {&totem_attrs[7], NULL}
+  {&totem_attrs[7], NULL},
+  {&totem_attrs[8], NULL},
+  {&totem_attrs[9], NULL},
+  {&totem_attrs[10], NULL},
+  {&totem_attrs[11], NULL},
+  {&totem_attrs[12], NULL},
+  {&totem_attrs[13], NULL},
+  {&totem_attrs[14], NULL},
+  {&totem_attrs[15], NULL},
+  {&totem_attrs[16], NULL},
+  {&totem_attrs[17], NULL},
+  {&totem_attrs[18], NULL},
+  {&totem_attrs[19], NULL},
+  {&totem_attrs[20], NULL},
+  {&totem_attrs[21], NULL},
+  {&totem_attrs[22], NULL},
+  {&totem_attrs[23], NULL}
 };
 
 // From Google documentation:
@@ -255,8 +271,23 @@ INSTANTIATE_TEST_CASE_P(Graph500GPUAndCPUTest, Graph500Test,
                                &graph500_params[5],
                                &graph500_params[6],
                                &graph500_params[7],
-                               &graph500_params[8]
-                               ));
+                               &graph500_params[8],
+                               &graph500_params[9],
+                               &graph500_params[10],
+                               &graph500_params[11],
+                               &graph500_params[12],
+                               &graph500_params[13],
+                               &graph500_params[14],
+                               &graph500_params[15],
+                               &graph500_params[16],
+                               &graph500_params[17],
+                               &graph500_params[18],
+                               &graph500_params[19],
+                               &graph500_params[20],
+                               &graph500_params[21],
+                               &graph500_params[22],
+                               &graph500_params[23],
+                               &graph500_params[24]));
 
 #else
 

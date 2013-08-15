@@ -33,7 +33,7 @@ const double TRV_FRONTIER_SPARSE_THRESHOLD = .1;
 
 /*
  * For traversal-based algorithms, this constant determines the threshold
- * (as percentage of the total number of vertices) that determines the
+ * (as a fraction of the total number of vertices) that determines the
  * maximum space to be allocated for the frontier array. Since  the GPU has
  * limited memory, this threshold is used by GPU-based partitions to limit
  * the space allocated for the frontier array. Note that if the frontier 
@@ -41,7 +41,7 @@ const double TRV_FRONTIER_SPARSE_THRESHOLD = .1;
  * frontier array, and should iterate over all the vertices. This value has
  * been determined experimentally.
  */
-const double TRV_MAX_FRONTIER_LEN = .5;
+const double TRV_MAX_FRONTIER_LEN = .2;
 
 /**
  * A type for page rank. This is useful to allow changes in precision.
@@ -342,6 +342,13 @@ void frontier_init_cpu(frontier_state_t* state, vid_t vertex_count);
  */
 void frontier_finalize_gpu(frontier_state_t* state);
 void frontier_finalize_cpu(frontier_state_t* state);
+
+/**
+ * Resets the state of the frontier
+ * @param[in] frontier reference to the frontier data structure
+ */
+void frontier_reset_gpu(frontier_state_t* state);
+void frontier_reset_cpu(frontier_state_t* state);
 
 /**
  * Updates the frontier bitmap 

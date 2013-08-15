@@ -240,7 +240,23 @@ bfs_param_t bfs_params[] = {
   {&totem_attrs[4], NULL},
   {&totem_attrs[5], NULL},
   {&totem_attrs[6], NULL},
-  {&totem_attrs[7], NULL}
+  {&totem_attrs[7], NULL},
+  {&totem_attrs[8], NULL},
+  {&totem_attrs[9], NULL},
+  {&totem_attrs[10], NULL},
+  {&totem_attrs[11], NULL},
+  {&totem_attrs[12], NULL},
+  {&totem_attrs[13], NULL},
+  {&totem_attrs[14], NULL},
+  {&totem_attrs[15], NULL},
+  {&totem_attrs[16], NULL},
+  {&totem_attrs[17], NULL},
+  {&totem_attrs[18], NULL},
+  {&totem_attrs[19], NULL},
+  {&totem_attrs[20], NULL},
+  {&totem_attrs[21], NULL},
+  {&totem_attrs[22], NULL},
+  {&totem_attrs[23], NULL}
 };
 
 // From Google documentation:
@@ -260,7 +276,22 @@ INSTANTIATE_TEST_CASE_P(BFSGPUAndCPUTest, BFSTest, Values(&bfs_params[0],
                                                           &bfs_params[8],
                                                           &bfs_params[9],
                                                           &bfs_params[10],
-                                                          &bfs_params[11]));
+                                                          &bfs_params[11],
+                                                          &bfs_params[12],
+                                                          &bfs_params[13],
+                                                          &bfs_params[14],
+                                                          &bfs_params[15],
+                                                          &bfs_params[16],
+                                                          &bfs_params[17],
+                                                          &bfs_params[18],
+                                                          &bfs_params[19],
+                                                          &bfs_params[20],
+                                                          &bfs_params[21],
+                                                          &bfs_params[22],
+                                                          &bfs_params[23],
+                                                          &bfs_params[24],
+                                                          &bfs_params[25],
+                                                          &bfs_params[26]));
 
 #else
 

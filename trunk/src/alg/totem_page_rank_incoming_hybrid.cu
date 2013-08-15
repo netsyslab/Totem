@@ -75,39 +75,40 @@ sum_neighbors(const vid_t* __restrict nbrs, const vid_t nbr_count,
   if (VWARP_WIDTH > 32) __syncthreads();
 
   // completely unrolled parallel reduction
-  if (warp_offset < VWARP_WIDTH / 2) {
+  if (warp_offset < VWARP_WIDTH / 2) {      
+    // do reduction in shared mem
+    if (VWARP_WIDTH > 1024) assert(false);
+    if (VWARP_WIDTH == 1024) {
+      if (warp_offset < 512) {
+        vwarp_rank[warp_offset] = sum = sum + vwarp_rank[warp_offset + 512];
+      }
+      __syncthreads();
+    }      
+    if (VWARP_WIDTH >= 512) {
+      if (warp_offset < 256) {
+        vwarp_rank[warp_offset] = sum = sum + vwarp_rank[warp_offset + 256];
+      }
+      __syncthreads();
+    }
+    if (VWARP_WIDTH >= 256) {
+      if (warp_offset < 128) {
+        vwarp_rank[warp_offset] = sum = sum + vwarp_rank[warp_offset + 128];
+      }
+      __syncthreads();
+    }
+    if (VWARP_WIDTH >= 128) {
+      if (warp_offset <  64) {
+        vwarp_rank[warp_offset] = sum = sum + vwarp_rank[warp_offset + 64];
+      }
+      __syncthreads();
+    }
+    
     if (warp_offset < 32) {
       // now that we are using warp-synchronous programming (below)
       // we need to declare our shared memory volatile so that the compiler
       // doesn't reorder stores to it and induce incorrect behavior.
       volatile rank_t *smem = vwarp_rank;
       
-      // do reduction in shared mem
-      if (VWARP_WIDTH > 1024) assert(false);
-      if (VWARP_WIDTH == 1024) {
-        if (warp_offset < 512) {
-          vwarp_rank[warp_offset] = sum = sum + vwarp_rank[warp_offset + 512];
-        }
-        __syncthreads();
-      }      
-      if (VWARP_WIDTH >= 512) {
-        if (warp_offset < 256) {
-          vwarp_rank[warp_offset] = sum = sum + vwarp_rank[warp_offset + 256];
-        }
-        __syncthreads();
-      }
-      if (VWARP_WIDTH >= 256) {
-        if (warp_offset < 128) {
-          vwarp_rank[warp_offset] = sum = sum + vwarp_rank[warp_offset + 128];
-        }
-        __syncthreads();
-      }
-      if (VWARP_WIDTH >= 128) {
-        if (warp_offset <  64) {
-          vwarp_rank[warp_offset] = sum = sum + vwarp_rank[warp_offset + 64];
-        }
-        __syncthreads();
-      }
       if (VWARP_WIDTH >= 64) {
         smem[warp_offset] = sum = sum + smem[warp_offset + 32];
       }

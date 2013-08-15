@@ -107,22 +107,19 @@ bfs_cpu_dense_frontier(graph_t* subgraph, bfs_state_t* state, int pid) {
   if (!finished) *(state->finished) = false;
 }
 
-void bfs_cpu(partition_t* par) {
-  bfs_state_t* state = (bfs_state_t*)par->algo_state;
-  graph_t* subgraph = &par->subgraph;
-
-  frontier_update_bitmap_cpu(&state->frontier, state->visited[par->id]);
+void bfs_cpu(partition_t* par, bfs_state_t* state) {
 
   // Copy the current state of the remote vertices bitmap
   for (int pid = 0; pid < engine_partition_count(); pid++) {
     if ((pid == par->id) || (par->outbox[pid].count == 0)) continue;
-    bitmap_copy_cpu(state->visited[pid], 
-                    (bitmap_t)par->outbox[pid].push_values,
+    bitmap_copy_cpu(state->visited[pid], (bitmap_t)par->outbox[pid].push_values,
                     par->outbox[pid].count);
   }
 
   // Visit the vertices in the frontier
-  if (engine_partition_algorithm() == PAR_SORTED_ASC) {     
+  frontier_update_bitmap_cpu(&state->frontier, state->visited[par->id]);
+  graph_t* subgraph = &par->subgraph;
+  if (engine_partition_algorithm() == PAR_SORTED_ASC) {
     // High-degree vertices on the CPU: test the frontier count to determine
     // whether the frontier is sparse or dense. If the number of active vertices
     // is lower than a specific threshold, we consider the frontier sparse
@@ -259,24 +256,25 @@ void bfs_launch_at_boundary_kernel(partition_t par, bfs_state_t state) {
 #endif /* FEATURE_SM35  */
 
 PRIVATE void bfs_tuned_launch_gpu(partition_t* par, bfs_state_t* state) {
-
   // Check if it is possible to build a frontier list
-  vid_t vertex_count = par->subgraph.vertex_count;;
+  vid_t vertex_count = par->subgraph.vertex_count;
   int use_frontier = true;
   if (engine_partition_algorithm() == PAR_SORTED_ASC) {
+    // placing the many low degree nodes on the GPU means the frontier list
+    // length is limited, hence we check here if the frontier can fit in the
+    // pre-allocated space
+    frontier_update_bitmap_gpu(&state->frontier, state->visited[par->id],
+                               par->streams[1]);
     vertex_count = frontier_count_gpu(&state->frontier, par->streams[1]);
     use_frontier = (int)(vertex_count <= state->frontier.list_len);
   }
 
-  if (use_frontier) {
-    frontier_update_list_gpu(&state->frontier, state->level, state->cost, 
-                             par->streams[1]);
-  }
-
-  // If the vertices are sorted by degree, call a kernel that takes 
-  // advantage of that
 #ifdef FEATURE_SM35
   if (engine_sorted() && use_frontier) {
+    // If the vertices are sorted by degree, call a kernel that takes 
+    // advantage of that
+    frontier_update_list_gpu(&state->frontier, state->level, state->cost, 
+                             par->streams[1]);
     frontier_update_boundaries_gpu(&state->frontier, &par->subgraph, 
                                    par->streams[1]);
     bfs_launch_at_boundary_kernel<<<1, 1, 0, par->streams[1]>>>(*par, *state);
@@ -286,9 +284,16 @@ PRIVATE void bfs_tuned_launch_gpu(partition_t* par, bfs_state_t* state) {
 #endif /* FEATURE_SM35 */
   
   if (engine_partition_algorithm() != PAR_SORTED_ASC) {
+    frontier_update_bitmap_gpu(&state->frontier, state->visited[par->id],
+                               par->streams[1]);
     vertex_count = frontier_count_gpu(&state->frontier, par->streams[1]);
   }
   if (vertex_count == 0) return;
+
+  if (use_frontier) {
+    frontier_update_list_gpu(&state->frontier, state->level, state->cost, 
+                             par->streams[1]);
+  }
 
   // Call the BFS kernel
   const bfs_gpu_func_t BFS_GPU_FUNC[][2] = {{
@@ -336,7 +341,7 @@ PRIVATE void bfs(partition_t* par) {
   if (par->subgraph.vertex_count == 0) return;
   bfs_state_t* state = (bfs_state_t*)par->algo_state;
   if (par->processor.type == PROCESSOR_CPU) {
-    bfs_cpu(par);
+    bfs_cpu(par, state);
   } else if (par->processor.type == PROCESSOR_GPU) {  
     bfs_gpu(par, state);
   } else {

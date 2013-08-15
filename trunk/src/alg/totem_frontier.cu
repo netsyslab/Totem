@@ -143,6 +143,16 @@ vid_t frontier_update_bitmap_cpu(frontier_state_t* state, bitmap_t visited) {
   return 0;
 }
 
+void frontier_reset_gpu(frontier_state_t* state) {
+  bitmap_reset_gpu(state->current, state->len);
+  bitmap_reset_gpu(state->visited_last, state->len);
+  totem_memset(state->count, (vid_t)0, 1, TOTEM_MEM_DEVICE);  
+}
+void frontier_reset_cpu(frontier_state_t* state) {
+  bitmap_reset_cpu(state->current, state->len);
+  bitmap_reset_cpu(state->visited_last, state->len);
+}
+
 void frontier_init_gpu(frontier_state_t* state, vid_t vertex_count) {
   assert(state);
   state->len = vertex_count;
