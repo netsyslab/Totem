@@ -16,8 +16,8 @@ PRIVATE benchmark_options_t options = {
   PLATFORM_CPU,          // platform
   1,                     // number of GPUs
   omp_get_max_threads(), // number of CPU threads
-  omp_sched_static,      // static scheduling
-  5,                     // repeat
+  omp_sched_guided,      // static scheduling
+  1,                     // repeat
   50,                    // alpha
   PAR_RANDOM,            // partitioning algorithm
   GPU_GRAPH_MEM_DEVICE,  // allocate gpu-based partitions on the device
