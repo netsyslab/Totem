@@ -58,9 +58,10 @@
 BFS=0
 PAGERANK=1
 SSSP=2
-BETWEENNESS=3
-BENCHMARK_STR=("BFS" "PAGERANK" "SSSP" "BETWEENNESS")
-BENCHMARK_REPEAT=(64 10 64 10)
+BC=3
+GRAPH500=4
+BENCHMARK_STR=("BFS" "PAGERANK" "SSSP" "BC" "GRAPH500")
+BENCHMARK_REPEAT=(64 10 64 20 64)
 
 # Platforms
 CPU=0
@@ -72,7 +73,7 @@ PLATFORM_STR=("CPU" "GPU" "HYBRID")
 PAR_RAN="0"
 PAR_HIGH="1"
 PAR_LOW="2"
-PAR_STR=("RAN" "HIGH" "LOW")
+PAR_STR=("RAND" "HIGH" "LOW")
 
 # OpenMP thread scheduling algorithms
 OMP_SCHED_STATIC="1"
@@ -97,9 +98,10 @@ RESULT_BASE="../../results"
 TOTEM_EXE="../../benchmark/benchmark"
 MAX_GPU_COUNT=1
 REPEAT_COUNT=
-OMP_SCHED=${OMP_SCHED_STATIC}
+OMP_SCHED=${OMP_SCHED_GUIDED}
 MAPPED=
 GPU_PAR_RAND=
+SORTED=
 
 ###########################################
 # Display usage message and exit the script
@@ -113,7 +115,7 @@ function usage() {
   echo "                      in the CPU partition) to use for experiments on"
   echo "                      hybrid platforms (default ${MIN_ALPHA}%)"
   echo "  -b  <benchmark> BFS=${BFS}, PageRank=${PAGERANK}" \
-       "SSSP=${SSSP}, Betweenness=${BETWEENNESS}" \
+       "SSSP=${SSSP}, BC=${BC}, GRAPH500=${GRAPH500}" \
        "(default ${BENCHMARK_STR[${BENCHMARK}]})"
   echo "  -d  <results base directory> (default ${RESULT_BASE})"
   echo "  -e  <totem executable> (default ${TOTEM_EXE})"
@@ -123,6 +125,7 @@ function usage() {
   echo "     memory mapped buffer on the host (default FALSE)"
   echo "  -o Enables random placement of vertices across GPU partitions in case"
   echo "     of multi-GPU setups (default FALSE)"
+  echo "  -q Indicates that the graph is sorted by degree (default FALSE)"
   echo "  -r  <repeat count> number of times an experiment is repeated"
   echo "                     (default BFS:${BENCHMARK_REPEAT[$BFS]}," \
       "PageRank:${BENCHMARK_REPEAT[$PAGERANK]})"
@@ -141,7 +144,7 @@ function usage() {
 ###############################
 # Process command line options
 ###############################
-while getopts 'a:b:d:e:g:hmnr:s:x:' options; do
+while getopts 'a:b:d:e:g:hmoqr:s:x:' options; do
   case $options in
     a)MIN_ALPHA="$OPTARG"
       ;;
@@ -157,7 +160,9 @@ while getopts 'a:b:d:e:g:hmnr:s:x:' options; do
       ;;
     m)MAPPED="-m"
       ;;
-    n)GPU_PAR_RAND="-n"
+    o)GPU_PAR_RAND="-o"
+      ;;
+    q)SORTED="-q"
       ;;
     r)REPEAT_COUNT="$OPTARG"
       ;;
@@ -231,8 +236,9 @@ function run() {
     DATE=`date`
     printf "${DATE}: ${OUTPUT} b${BENCHMARK} a${ALPHA} p${PLATFORM} " >> ${LOG};
     printf "i${PAR} g${GPU_COUNT} t${THREAD_COUNT} r${REPEAT_COUNT} " >> ${LOG};
-    printf "s${OMP_SCHED} ${MAPPED} ${GPU_PAR_RAND} ${WORKLOAD}\n" >> ${LOG};
-    ${TOTEM_EXE} -b${BENCHMARK} -a${ALPHA} -p${PLATFORM} -i${PAR} \
+    printf "s${OMP_SCHED} ${MAPPED} ${GPU_PAR_RAND} ${SORTED} "       >> ${LOG};
+    printf "${WORKLOAD}\n" >> ${LOG};
+    ${TOTEM_EXE} -b${BENCHMARK} -a${ALPHA} -p${PLATFORM} -i${PAR} ${SORTED} \
         -g${GPU_COUNT} -t${THREAD_COUNT} -r${REPEAT_COUNT} -s${OMP_SCHED} \
         ${MAPPED} ${GPU_PAR_RAND} ${WORKLOAD} &>> ${RESULT_DIR}/${OUTPUT}
 
@@ -257,7 +263,7 @@ done
 ## Hybrid, iterate over all possible number of GPUs, CPUs and values of alpha
 for gpu_count in $(seq 1 ${MAX_GPU_COUNT}); do
     for socket_count in $(seq 1 ${MAX_SOCKET_COUNT}); do
-        for par_algo in ${PAR_LOW} ${PAR_HIGH} ${PAR_RAN}; do
+        for par_algo in ${PAR_LOW} ${PAR_HIGH} ${PAR_RAND}; do
             for alpha in $(seq ${MIN_ALPHA} 5 ${MAX_ALPHA}); do
                 run ${HYBRID} ${socket_count} ${gpu_count} ${par_algo} $alpha
             done
