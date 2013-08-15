@@ -46,34 +46,40 @@ PRIVATE void superstep_launch_gpu(partition_t* par) {
   // "stream" available for each partition
   set_processor(par);
   CALL_CU_SAFE(cudaEventRecord(par->event_start, par->streams[1]));
-  context.config.par_kernel_func(par);
+  if (par->subgraph.vertex_count != 0) {
+    context.config.par_kernel_func(par);
+  }
   CALL_CU_SAFE(cudaEventRecord(par->event_end, par->streams[1]));
 }
 
 PRIVATE void superstep_launch_cpu(partition_t* par, double& cpu_time, 
                                   double& cpu_scatter_time) {
-  stopwatch_t stopwatch;
-  stopwatch_start(&stopwatch);
-  if ((context.config.direction == GROOVES_PUSH) &&
-      (context.config.par_scatter_func != NULL) &&
-      ((context.superstep > 1))) {
-    context.config.par_scatter_func(par);
-  }
-  cpu_scatter_time = stopwatch_elapsed(&stopwatch);
+  cpu_time = 0;
+  cpu_scatter_time = 0;
+  if (par->subgraph.vertex_count != 0) {
+    stopwatch_t stopwatch;
+    stopwatch_start(&stopwatch);
+    if ((context.config.direction == GROOVES_PUSH) &&
+        (context.config.par_scatter_func != NULL) &&
+        ((context.superstep > 1))) {
+      context.config.par_scatter_func(par);
+    }
+    cpu_scatter_time = stopwatch_elapsed(&stopwatch);
   
-  // Make sure that data sent/received from a GPU partition to
-  // the CPU partition is available
-  for (int rmt_pid = 0; rmt_pid < context.pset->partition_count; 
-       rmt_pid++) {
-    if (rmt_pid == par->id) continue;
-    partition_t* rmt_par = &context.pset->partitions[rmt_pid];
-    CALL_CU_SAFE(cudaStreamSynchronize(rmt_par->streams[0]));
+    // Make sure that data sent/received from a GPU partition to
+    // the CPU partition is available
+    for (int rmt_pid = 0; rmt_pid < context.pset->partition_count; 
+         rmt_pid++) {
+      if (rmt_pid == par->id) continue;
+      partition_t* rmt_par = &context.pset->partitions[rmt_pid];
+      CALL_CU_SAFE(cudaStreamSynchronize(rmt_par->streams[0]));
+    }
+    
+    stopwatch_start(&stopwatch);
+    context.config.par_kernel_func(par);
+    cpu_time = stopwatch_elapsed(&stopwatch);
+    context.timing.alg_cpu_comp += cpu_time;
   }
-
-  stopwatch_start(&stopwatch);
-  context.config.par_kernel_func(par);
-  cpu_time = stopwatch_elapsed(&stopwatch);
-  context.timing.alg_cpu_comp += cpu_time;
 #ifdef FEATURE_VERBOSE_TIMING
   printf("#\tCPU: %0.2f", cpu_time);
 #endif
@@ -96,6 +102,7 @@ inline PRIVATE void superstep_execute() {
   if ((context.superstep > 1)) {
     for (int pid = 0; pid < engine_partition_count(); pid++) {
       partition_t* par = &context.pset->partitions[pid];
+      if (par->subgraph.vertex_count == 0) continue;
       if (context.config.direction == GROOVES_PUSH) {
         if ((context.config.par_scatter_func != NULL) &&
             (par->processor.type == PROCESSOR_GPU)) {
@@ -126,6 +133,7 @@ inline PRIVATE void superstep_execute() {
               context.config.direction); fflush(stderr);
       assert(false);
     }
+    if (par->subgraph.vertex_count == 0) continue;
     // If push-based, launch communication; if pull-based, launch gather kernels
     if (context.config.direction == GROOVES_PUSH) {
       // communication will be launched in the context of the source stream it
