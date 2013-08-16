@@ -262,6 +262,17 @@ vid_t engine_vertex_id_in_partition(vid_t);
 partition_algorithm_t engine_partition_algorithm();
 
 /**
+ * Updates the communication message size for a specific direction
+ */
+error_t engine_update_msg_size(grooves_direction_t dir, size_t msg_size);
+
+/**
+ * Resets the communication message size to the original value set at 
+ * initialization
+ */
+void engine_reset_msg_size(grooves_direction_t dir);
+
+/**
  * Returns true if the vertex ids are sorted by degree
  */
 bool engine_sorted();

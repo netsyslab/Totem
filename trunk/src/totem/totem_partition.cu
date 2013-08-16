@@ -475,3 +475,11 @@ error_t partition_set_finalize(partition_set_t* pset) {
   free(pset);
   return SUCCESS;
 }
+
+void partition_set_update_msg_size(partition_set_t* pset, 
+                                   grooves_direction_t dir, size_t msg_size) {
+  assert(pset);
+  if (dir == GROOVES_PUSH) pset->push_msg_size = msg_size;
+  if (dir == GROOVES_PULL) pset->pull_msg_size = msg_size;
+}
+

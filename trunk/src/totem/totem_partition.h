@@ -212,6 +212,15 @@ PRIVATE const partition_func_t PARTITION_FUNC[] = {
 };
 
 /**
+ * Updates the push/pull message size
+ * @param[in] pset a reference to partition set type to be updated
+ * @param[in] dir the comm. direction for which the message size is updated
+ * @param[in] msg_size the new message size
+ */
+void partition_set_update_msg_size(partition_set_t* pset, 
+                                   grooves_direction_t dir, size_t msg_size);
+
+/**
  * Creates the a partition set based on the vertex to partition assignment
  * specified in the lables array
  *
