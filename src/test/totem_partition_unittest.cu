@@ -64,7 +64,7 @@ class GraphPartitionTest : public TestWithParam<PartitionFunction> {
     partitions_ = NULL;
     partition_set_ = NULL;
     partition_count_ = gpu_count + 1;
-    partition_processor_ =
+    partition_processor_ = 
       (processor_t*)calloc(partition_count_, sizeof(processor_t));
     partition_processor_[0].type = PROCESSOR_CPU;
     for (int gpu = 0; gpu < gpu_count; gpu++) {
@@ -148,20 +148,20 @@ class GraphPartitionTest : public TestWithParam<PartitionFunction> {
   }
 
   void InitOutboxValues() {
-    for (uint32_t pid = 0; pid < partition_set_->partition_count; pid++) {
+    uint32_t pcount = partition_set_->partition_count;
+    for (uint32_t pid = 0; pid < pcount; pid++) {
       partition_t* partition = &partition_set_->partitions[pid];
-      if (!partition->subgraph.vertex_count) return;
+      if (!partition->subgraph.vertex_count) continue;
       EXPECT_EQ(pid, partition->id);
-      uint32_t pcount = partition_set_->partition_count;
-      for (uint32_t remote_pid = (pid + 1) % pcount; remote_pid != pid;
-           remote_pid = (remote_pid + 1) % pcount) {
-        grooves_box_table_t* remote_outbox =
-          &partition->outbox[remote_pid];
+      for (uint32_t remote_pid = 0; remote_pid < pcount; remote_pid++) {
+        if (remote_pid == pid) continue;
+        grooves_box_table_t* remote_outbox = &partition->outbox[remote_pid];
         if (remote_outbox->count == 0) continue;
         if (partition->processor.type == PROCESSOR_GPU) {
+          ASSERT_EQ(cudaSuccess, cudaSetDevice(partition->processor.id));
           ASSERT_EQ(SUCCESS, totem_memset((int*)remote_outbox->push_values, 
                                           (int)(remote_pid + 1), 
-                                          remote_outbox->count,
+                                          remote_outbox->count, 
                                           TOTEM_MEM_DEVICE));
           ASSERT_EQ(cudaSuccess, cudaThreadSynchronize());
         } else {
@@ -185,6 +185,7 @@ class GraphPartitionTest : public TestWithParam<PartitionFunction> {
         if (inbox[bindex].count == 0 || bindex == pid) continue;
         int* values = (int*)inbox[bindex].push_values;
         if (partition->processor.type == PROCESSOR_GPU) {
+          ASSERT_EQ(cudaSuccess, cudaSetDevice(partition->processor.id));
           dim3 blocks, threads_per_block;
           KERNEL_CONFIGURE(inbox[bindex].count, blocks, threads_per_block);
           CheckInboxValuesGPUKernel<<<blocks, threads_per_block>>>
@@ -229,7 +230,7 @@ class GraphPartitionTest : public TestWithParam<PartitionFunction> {
  protected:
   PartitionFunction  partition_func_;
   graph_t*           graph_;
-  vid_t*              partitions_;
+  vid_t*             partitions_;
   uint32_t           partition_count_;
   processor_t*       partition_processor_;
   partition_set_t*   partition_set_;
