@@ -38,7 +38,8 @@ class Graph500Test : public TestWithParam<graph500_param_t*> {
 
   error_t TestGraph(vid_t src) {
     if (_graph500_param->attr) {
-      _graph500_param->attr->push_msg_size = sizeof(vid_t) * BITS_PER_BYTE;
+      _graph500_param->attr->push_msg_size = 
+        (sizeof(vid_t) * BITS_PER_BYTE) + 1;
       _graph500_param->attr->alloc_func = graph500_alloc;
       _graph500_param->attr->free_func = graph500_free;
       if (totem_init(_graph, _graph500_param->attr) == FAILURE) {
