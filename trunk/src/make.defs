@@ -5,9 +5,12 @@
 #   
 #   EID=64           // 64-bit edge ids
 #   GPU_ARCH=[20|35] // GPU architecture to compile for
-#   VERBOSE=NO       // disable verbose timing of Totem execution rounds
+#   VERBOSE=YES      // enable verbose timing of Totem execution rounds
+#   PBIT=[NUM]       // number of bits designated for the partition id embedded
+#                    // in the vertex id
 #   DEBUG=DEVICE     // produce device debugging symbols
 #   L1=YES           // enable using GPU L1 cache (default disabled)
+#
 # Created on: 2011-02-28
 # Author: Abdullah Gharaibeh
 #
@@ -22,11 +25,19 @@ ifeq ($(EID), 64)
   CCFLAGS += -DFEATURE_64BIT_EDGE_ID
 endif
 
+ifdef PBIT
+  NVCCFLAGS += -DMAX_LOG_PARTITION_COUNT=$(PBIT)
+  CCFLAGS += -DMAX_LOG_PARTITION_COUNT=$(PBIT)
+endif
+
 # enable verbose output
-ifneq ($(VERBOSE), NO)
+ifdef VERBOSE
+ifeq ($(VERBOSE), YES)
   NVCCFLAGS += -DFEATURE_VERBOSE_TIMING
   CCFLAGS += -DFEATURE_VERBOSE_TIMING
 endif
+endif
+
 # set debugging options
 ifeq ($(DEBUG), DEVICE)
   NVCCFLAGS  += -G

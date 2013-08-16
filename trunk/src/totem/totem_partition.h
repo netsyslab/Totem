@@ -17,7 +17,9 @@
  * vertex identifier in a partition's edges array
  * TODO(abdullah): change the macros to constant variables and inline functions
  */
-#define MAX_LOG_PARTITION_COUNT  2
+#ifndef MAX_LOG_PARTITION_COUNT
+#define MAX_LOG_PARTITION_COUNT  3
+#endif
 
 /**
  * Maximum number of partitions supported per graph
