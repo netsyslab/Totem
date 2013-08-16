@@ -214,6 +214,7 @@ PRIVATE __host__
 #endif /* FEATURE_SM35  */
 void bfs_launch_gpu(partition_t* par, bfs_state_t* state, vid_t* frontier, 
                     vid_t vertex_count, cudaStream_t stream) {
+  if (!USE_FRONTIER) vertex_count = par->subgraph.vertex_count;
   const int threads = MAX_THREADS_PER_BLOCK;
   dim3 blocks;
   kernel_configure(vwarp_thread_count(vertex_count, VWARP_WIDTH, VWARP_BATCH),

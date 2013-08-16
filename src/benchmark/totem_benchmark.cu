@@ -61,7 +61,7 @@ const benchmark_attr_t BENCHMARKS[] = {
     "GRAPH500",
     sizeof(vid_t),
     true,
-    sizeof(vid_t) * BITS_PER_BYTE,
+    (sizeof(vid_t) * BITS_PER_BYTE) + 1,
     MSG_SIZE_ZERO,
     graph500_alloc,
     graph500_free
