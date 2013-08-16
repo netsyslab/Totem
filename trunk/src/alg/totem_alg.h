@@ -371,6 +371,8 @@ vid_t frontier_update_bitmap_gpu(frontier_state_t* state,
 void frontier_update_list_gpu(frontier_state_t* state,
                               vid_t level, const cost_t* cost, 
                               const cudaStream_t stream);
+void frontier_update_list_gpu(frontier_state_t* state, 
+                              const cudaStream_t stream);
 
 #ifdef FEATURE_SM35
 /**

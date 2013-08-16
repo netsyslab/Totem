@@ -10,35 +10,6 @@
 #include "totem_alg.h"
 #include "totem_engine.cuh"
 
-template<int THREADS_PER_BLOCK>
-PRIVATE __global__ void
-frontier_build_kernel(frontier_state_t state, const cost_t level,
-                      const cost_t* __restrict cost) {
-  const vid_t v = THREAD_GLOBAL_INDEX;
-  if (v >= state.len) return;
-
-  __shared__ vid_t queue_l[THREADS_PER_BLOCK];
-  __shared__ vid_t count_l;
-  count_l = 0;
-  __syncthreads();
-
-  if (cost[v] == level) {
-    int index = atomicAdd(&count_l, 1);
-    queue_l[index] = v;
-  }
-  __syncthreads();
-
-  if (THREAD_BLOCK_INDEX >= count_l) return;
-
-  __shared__ int index;
-  if (THREAD_BLOCK_INDEX == 0) {
-    index = atomicAdd(state.count, count_l);
-  }
-  __syncthreads();
-
-  state.list[index + THREAD_BLOCK_INDEX] = queue_l[THREAD_BLOCK_INDEX];  
-}
-
 #ifdef FEATURE_SM35
 PRIVATE __global__ void
 frontier_update_boundaries_kernel(frontier_state_t state,
@@ -93,14 +64,81 @@ frontier_init_boundaries_kernel(frontier_state_t state) {
 
 #endif /* FEATURE_SM35  */
 
+template<int THREADS_PER_BLOCK>
+PRIVATE __global__ void
+frontier_update_list_kernel(frontier_state_t state, const cost_t level,
+                            const cost_t* __restrict cost) {
+  const vid_t v = THREAD_GLOBAL_INDEX;
+  if (v >= state.len) return;
+
+  __shared__ vid_t queue_l[THREADS_PER_BLOCK];
+  __shared__ vid_t count_l;
+  count_l = 0;
+  __syncthreads();
+
+  if (cost[v] == level) {
+    int index = atomicAdd(&count_l, 1);
+    queue_l[index] = v;
+  }
+  __syncthreads();
+
+  if (THREAD_BLOCK_INDEX >= count_l) return;
+
+  __shared__ int index;
+  if (THREAD_BLOCK_INDEX == 0) {
+    index = atomicAdd(state.count, count_l);
+  }
+  __syncthreads();
+
+  state.list[index + THREAD_BLOCK_INDEX] = queue_l[THREAD_BLOCK_INDEX];  
+}
+
 void frontier_update_list_gpu(frontier_state_t* state,
                               vid_t level, const cost_t* cost, 
                               const cudaStream_t stream) {
   cudaMemsetAsync(state->count, 0, sizeof(vid_t), stream);
   dim3 blocks;
   kernel_configure(state->len, blocks);
-  frontier_build_kernel<DEFAULT_THREADS_PER_BLOCK>
+  frontier_update_list_kernel<DEFAULT_THREADS_PER_BLOCK>
     <<<blocks, DEFAULT_THREADS_PER_BLOCK, 0, stream>>>(*state, level, cost);
+  CALL_CU_SAFE(cudaGetLastError());
+}
+
+template<int THREADS_PER_BLOCK>
+PRIVATE __global__ void
+frontier_update_list_kernel(frontier_state_t state) {
+  const vid_t v = THREAD_GLOBAL_INDEX;
+  if (v >= state.len) return;
+
+  __shared__ vid_t queue_l[THREADS_PER_BLOCK];
+  __shared__ vid_t count_l;
+  count_l = 0;
+  __syncthreads();
+
+  if (bitmap_is_set(state.current, v)) {
+    int index = atomicAdd(&count_l, 1);
+    queue_l[index] = v;
+  }
+  __syncthreads();
+
+  if (THREAD_BLOCK_INDEX >= count_l) return;
+
+  __shared__ int index;
+  if (THREAD_BLOCK_INDEX == 0) {
+    index = atomicAdd(state.count, count_l);
+  }
+  __syncthreads();
+
+  state.list[index + THREAD_BLOCK_INDEX] = queue_l[THREAD_BLOCK_INDEX];  
+}
+
+void frontier_update_list_gpu(frontier_state_t* state,
+                              const cudaStream_t stream) {
+  cudaMemsetAsync(state->count, 0, sizeof(vid_t), stream);
+  dim3 blocks;
+  kernel_configure(state->len, blocks);
+  frontier_update_list_kernel<DEFAULT_THREADS_PER_BLOCK>
+    <<<blocks, DEFAULT_THREADS_PER_BLOCK, 0, stream>>>(*state);
   CALL_CU_SAFE(cudaGetLastError());
 }
 
