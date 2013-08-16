@@ -257,7 +257,13 @@ PRIVATE void init_gpu_enable_peer_access(uint32_t pid, partition_set_t* pset) {
     partition_t* remote_par = &pset->partitions[remote_pid];
     if (remote_par->processor.type == PROCESSOR_GPU &&
         remote_par->processor.id != partition->processor.id) {
-      CALL_CU_SAFE(cudaDeviceEnablePeerAccess(remote_par->processor.id, 0));
+      int can_access_peer = 0;
+      CALL_CU_SAFE(cudaDeviceCanAccessPeer(&can_access_peer, 
+                                           partition->processor.id,
+                                           remote_par->processor.id));
+      if (can_access_peer == 1) {
+        CALL_CU_SAFE(cudaDeviceEnablePeerAccess(remote_par->processor.id, 0));
+      }
     }
   }
 }
@@ -358,7 +364,13 @@ void finalize_gpu_disable_peer_access(uint32_t pid, partition_set_t* pset) {
     partition_t* remote_par = &pset->partitions[remote_pid];
     if (remote_par->processor.type == PROCESSOR_GPU &&
         remote_par->processor.id != partition->processor.id) {
-      CALL_CU_SAFE(cudaDeviceDisablePeerAccess(remote_par->processor.id));
+      int can_access_peer = 0;
+      CALL_CU_SAFE(cudaDeviceCanAccessPeer(&can_access_peer, 
+                                           partition->processor.id,
+                                           remote_par->processor.id));
+      if (can_access_peer == 1) {
+        CALL_CU_SAFE(cudaDeviceDisablePeerAccess(remote_par->processor.id));
+      }
     }
   }
 }

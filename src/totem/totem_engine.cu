@@ -429,6 +429,28 @@ void engine_finalize() {
   CALL_SAFE(partition_set_finalize(context.pset));
 }
 
+error_t engine_update_msg_size(grooves_direction_t dir, size_t msg_size) {
+  if (((dir == GROOVES_PUSH) && (msg_size > context.attr.push_msg_size)) ||
+      ((dir == GROOVES_PULL) && (msg_size > context.attr.pull_msg_size))) {
+    return FAILURE;
+  }
+  partition_set_update_msg_size(context.pset, dir, msg_size);
+  return SUCCESS;
+}
+
+void engine_reset_msg_size(grooves_direction_t dir) {
+  size_t msg_size = 0;
+  if (dir == GROOVES_PUSH) {
+    msg_size = context.attr.push_msg_size;
+  } else if(dir == GROOVES_PULL) {
+    msg_size = context.attr.pull_msg_size;
+  } else {
+    fprintf(stderr, "Unsupported communication direction type\n");
+    assert(false);
+  }
+  partition_set_update_msg_size(context.pset, dir, msg_size);
+}
+
 void engine_reset_bsp_timers() {
   context.timing.alg_exec           = 0;
   context.timing.alg_comp           = 0;
