@@ -325,7 +325,7 @@ PRIVATE void graph500(partition_t* par) {
 
 PRIVATE inline void 
 graph500_scatter_cpu(grooves_box_table_t* inbox, graph500_state_t* state, 
-                     bitmap_t visited, vid_t* tree) {
+                     bitmap_t visited, vid_t* tree, int rmt_pid) {
   bitmap_t rmt_bitmap = (bitmap_t)inbox->push_values;
   OMP(omp parallel for schedule(runtime))
   for (vid_t word_index = 0; word_index < bitmap_bits_to_words(inbox->count); 
@@ -338,6 +338,7 @@ graph500_scatter_cpu(grooves_box_table_t* inbox, graph500_state_t* state,
           vid_t vid = inbox->rmt_nbrs[bit_index];
           if (!bitmap_is_set(visited, vid)) {
             bitmap_set_cpu(visited, vid);
+            tree[vid] = SET_PARTITION_ID(GET_VERTEX_ID(VERTEX_ID_MAX), rmt_pid);
           }
         }
       }
@@ -349,7 +350,7 @@ template<int VWARP_WIDTH, int BATCH_SIZE, int THREADS_PER_BLOCK>
 PRIVATE __global__ void
 graph500_scatter_kernel(const bitmap_t __restrict rmt_bitmap,
                         const vid_t* __restrict rmt_nbrs, vid_t word_count,
-                        bitmap_t visited, vid_t* tree) {
+                        bitmap_t visited, vid_t* tree, int rmt_pid) {
   if (THREAD_GLOBAL_INDEX >= 
       vwarp_thread_count(word_count, VWARP_WIDTH, BATCH_SIZE)) return;
   vid_t start_word = vwarp_warp_start_vertex(VWARP_WIDTH, BATCH_SIZE) +
@@ -368,6 +369,7 @@ graph500_scatter_kernel(const bitmap_t __restrict rmt_bitmap,
         vid_t vid = rmt_nbrs[start_vertex + i];
         if (!bitmap_is_set(visited, vid)) {
           bitmap_set_gpu(visited, vid);
+          tree[vid] = SET_PARTITION_ID(GET_VERTEX_ID(VERTEX_ID_MAX), rmt_pid);
         }
       }
     }
@@ -383,7 +385,7 @@ PRIVATE void graph500_scatter(partition_t* par) {
     if (!inbox->count) continue;
     if (par->processor.type == PROCESSOR_CPU) {
       graph500_scatter_cpu(inbox, state, state->visited[par->id], 
-                           state->tree[par->id]);
+                           state->tree[par->id], rmt_pid);
     } else if (par->processor.type == PROCESSOR_GPU) {
       vid_t word_count = bitmap_bits_to_words(inbox->count);
       dim3 blocks;
@@ -395,7 +397,7 @@ PRIVATE void graph500_scatter(partition_t* par) {
       graph500_scatter_kernel<warp_size, batch_size, threads>
         <<<blocks, threads, 0, par->streams[1]>>>
         (rmt_bitmap, inbox->rmt_nbrs, word_count,
-         state->visited[par->id], state->tree[par->id]);
+         state->visited[par->id], state->tree[par->id], rmt_pid);
       CALL_CU_SAFE(cudaGetLastError());
     } else {
       assert(false);
@@ -576,23 +578,30 @@ void graph500_alloc(partition_t* par) {
 }
 
 PRIVATE inline void 
-rmt_tree_scatter_cpu(grooves_box_table_t* inbox, vid_t* tree) {
+rmt_tree_scatter_cpu(grooves_box_table_t* inbox, vid_t* tree, int rmt_pid) {
   bitmap_t rmt_bitmap = (bitmap_t)inbox->push_values;
   vid_t* rmt_tree = (vid_t*)(&rmt_bitmap[bitmap_bits_to_words(inbox->count)]);
   OMP(omp parallel for schedule(runtime))
   for (vid_t index = 0; index < inbox->count; index++) {
     vid_t vid = inbox->rmt_nbrs[index];
-    if (tree[vid] == VERTEX_ID_MAX) tree[vid] = rmt_tree[index];
+    if ((GET_VERTEX_ID(tree[vid]) == GET_VERTEX_ID(VERTEX_ID_MAX)) &&
+        (GET_PARTITION_ID(tree[vid]) == rmt_pid)) {
+      tree[vid] = rmt_tree[index];
+    }
   }
 }
 
 PRIVATE __global__ void
 rmt_tree_scatter_kernel(const vid_t* __restrict rmt_nbrs, vid_t count, 
-                          const vid_t* __restrict rmt_tree, vid_t* tree) {
+                        const vid_t* __restrict rmt_tree, vid_t* tree,
+                        int rmt_pid) {
   vid_t index = THREAD_GLOBAL_INDEX;
   if (index >= count) return;
   vid_t vid = rmt_nbrs[index];
-  if (tree[vid] == VERTEX_ID_MAX) tree[vid] = rmt_tree[index];
+  if ((GET_VERTEX_ID(tree[vid]) == GET_VERTEX_ID(VERTEX_ID_MAX)) &&
+      (GET_PARTITION_ID(tree[vid]) == rmt_pid)) {
+    tree[vid] = rmt_tree[index];
+  }
 }
 
 PRIVATE void rmt_tree_scatter(partition_t* par) {
@@ -603,7 +612,7 @@ PRIVATE void rmt_tree_scatter(partition_t* par) {
     grooves_box_table_t* inbox = &par->inbox[rmt_pid];
     if (!inbox->count) continue;
     if (par->processor.type == PROCESSOR_CPU) {
-      rmt_tree_scatter_cpu(inbox, state->tree[par->id]);
+      rmt_tree_scatter_cpu(inbox, state->tree[par->id], rmt_pid);
     } else if (par->processor.type == PROCESSOR_GPU) {
       const int threads = DEFAULT_THREADS_PER_BLOCK;
       dim3 blocks;
@@ -612,7 +621,8 @@ PRIVATE void rmt_tree_scatter(partition_t* par) {
       vid_t* rmt_tree = 
         (vid_t*)(&rmt_bitmap[bitmap_bits_to_words(inbox->count)]);
       rmt_tree_scatter_kernel<<<blocks, threads, 0, par->streams[1]>>>
-        (inbox->rmt_nbrs, inbox->count, rmt_tree, state->tree[par->id]);
+        (inbox->rmt_nbrs, inbox->count, rmt_tree, state->tree[par->id], 
+         rmt_pid);
       CALL_CU_SAFE(cudaGetLastError());
     } else {
       assert(false);
@@ -636,10 +646,11 @@ error_t graph500_hybrid(vid_t src, vid_t* tree) {
 
   // initialize the engine
   engine_config_t config = {
-    NULL, graph500, graph500_scatter, NULL, graph500_init, NULL, 
-    NULL, GROOVES_PUSH
+    NULL, graph500, graph500_scatter, NULL, graph500_init, 
+    NULL, NULL, GROOVES_PUSH
   };
   engine_config(&config);
+  engine_update_msg_size(GROOVES_PUSH, 1);
   engine_execute();
 
   // initialize the engine
@@ -648,6 +659,7 @@ error_t graph500_hybrid(vid_t src, vid_t* tree) {
     graph500_aggregate, GROOVES_PUSH
   };
   engine_config(&config_update_rmt_parents);
+  engine_reset_msg_size(GROOVES_PUSH);
   engine_execute();
   return SUCCESS;
 }
