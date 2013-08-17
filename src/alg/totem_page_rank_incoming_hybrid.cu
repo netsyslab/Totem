@@ -143,7 +143,7 @@ void page_rank_incoming_kernel(partition_t par, page_rank_state_t ps,
       vwarp_thread_count(vertex_count, VWARP_WIDTH, VWARP_BATCH)) return;
 
   const vid_t* __restrict edges = par.subgraph.edges;
-  const vid_t* __restrict vertices = par.subgraph.vertices;
+  const eid_t* __restrict vertices = par.subgraph.vertices;
 
   vid_t start_vertex = start + 
     vwarp_block_start_vertex(VWARP_WIDTH, VWARP_BATCH) + 
