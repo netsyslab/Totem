@@ -153,20 +153,12 @@ error_t partition_random(graph_t* graph, int partition_count,
   return SUCCESS;
 }
 
-PRIVATE int compare_degrees_asc(const void *a, const void *b) {
-  vdegree_t* d1 = (vdegree_t*)a;
-  vdegree_t* d2 = (vdegree_t*)b;
-  if (d1->degree < d2->degree) return -1;
-  if (d1->degree == d2->degree) return 0;
-  return 1;
+PRIVATE bool compare_degrees_asc(const vdegree_t &a, const vdegree_t &b) {
+  return (a.degree < b.degree);
 }
 
-PRIVATE int compare_degrees_dsc(const void *a, const void *b) {
-  vdegree_t* d1 = (vdegree_t*)a;
-  vdegree_t* d2 = (vdegree_t*)b;
-  if (d1->degree > d2->degree) return -1;
-  if (d1->degree == d2->degree) return 0;
-  return 1;
+PRIVATE bool compare_degrees_dsc(const vdegree_t &a, const vdegree_t &b) {
+  return (a.degree > b.degree);
 }
 
 PRIVATE 
@@ -196,9 +188,9 @@ error_t partition_by_sorted_degree(graph_t* graph, int partition_count,
     vd[v].degree = graph->vertices[v + 1] - graph->vertices[v];
   }
   if (asc) {
-    qsort(vd, graph->vertex_count, sizeof(vdegree_t), compare_degrees_asc);
+    tbb::parallel_sort(vd, vd + graph->vertex_count, compare_degrees_asc);
   } else {
-    qsort(vd, graph->vertex_count, sizeof(vdegree_t), compare_degrees_dsc);
+    tbb::parallel_sort(vd, vd + graph->vertex_count, compare_degrees_dsc);
   }
 
   // Allocate the labels array

@@ -48,7 +48,7 @@ alg:
 	@$(MAKE) -C $(ALG_PATH)
 
 clean:
-	@$(CLEAN_CMD) lib$(TARGET).a
+	@$(CLEAN_CMD) $(TARGET)
 
 clean-all:
 	@$(CLEAN_ALL_CMD) lib$(TARGET).a

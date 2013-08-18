@@ -11,6 +11,7 @@
 // system includes
 #include <assert.h>
 #include <ctype.h>
+#include <errno.h>
 #include <float.h>
 #include <limits.h>
 #include <math.h>
@@ -23,13 +24,15 @@
 #include <time.h>
 #include <unistd.h>
 
+// TBB includes
+#include "tbb/parallel_sort.h"
+
+
 /**
  *  Function return code types
  */
-typedef enum {
-  SUCCESS = 0, /**< generic success return code */
-  FAILURE = -1 /**< generic failure return code */
-} error_t;
+const int SUCCESS = 0;
+const int FAILURE = -1;
 
 /**
  * Processor types. This is used as to identify the the processor on which
