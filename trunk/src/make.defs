@@ -100,7 +100,7 @@ CCFLAGS   += -g $(OPENMP) $(OPTFLAGS) -Wall -Wno-format \
 NVCCFLAGS += -g -Xcompiler "$(OPENMP) -fno-strict-aliasing" -O3 -I. \
              -I$(CUDA_INSTALL_PATH)/include $(SM_TARGETS) -D__STDC_LIMIT_MACROS
 LFLAGS    +=  -lcudart -I. -L. -L$(CUDA_INSTALL_PATH)/lib$(ARCH) -lm \
-	      -Xcompiler "$(OPENMP)"
+	      -Xcompiler "$(OPENMP)" -ltbb
 
 # source files and their corresponding objects and dependencies
 CCSRC   = $(wildcard *.cc)
