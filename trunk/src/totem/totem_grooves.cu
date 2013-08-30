@@ -280,8 +280,10 @@ PRIVATE void init_table_gpu(partition_t* par, partition_set_t* pset,
     vid_t count = box[rmt_pid].count;
     if (count) {
       vid_t* rmt_nbrs = box[rmt_pid].rmt_nbrs;
-      CALL_CU_SAFE(cudaMalloc((void**)&(box[rmt_pid].rmt_nbrs),
-                              count * sizeof(vid_t)));
+      if (inbox) {
+        CALL_CU_SAFE(cudaMalloc((void**)&(box[rmt_pid].rmt_nbrs),
+                                count * sizeof(vid_t)));
+      }
       CALL_CU_SAFE(cudaMemcpy(box[rmt_pid].rmt_nbrs, rmt_nbrs, 
                               count * sizeof(vid_t), cudaMemcpyDefault));
       if((pset->partitions[rmt_pid].processor.type == PROCESSOR_GPU) &&
@@ -338,7 +340,9 @@ PRIVATE void finalize_table_gpu(partition_set_t* pset,
   // finalize the tables on the gpu
   for (uint32_t pid = 0; pid < pset->partition_count; pid++) {
     if (btable[pid].count) {
-      CALL_CU_SAFE(cudaFree(btable[pid].rmt_nbrs));
+      if (inbox) {
+        CALL_CU_SAFE(cudaFree(btable[pid].rmt_nbrs));
+      }
       if (pset->push_msg_size > 0) {
         CALL_CU_SAFE(cudaFree(btable[pid].push_values));
         if (inbox) {
