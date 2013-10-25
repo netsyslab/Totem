@@ -97,8 +97,11 @@ inline PRIVATE void superstep_execute() {
     context.config.ss_kernel_func();
   }
 
-  stopwatch_t scatter;
-  stopwatch_start(&scatter);
+  bool* tmp = context.comm_curr;
+  context.comm_curr = context.comm_prev;
+  context.comm_prev = tmp;
+  memset(context.comm_curr, true, MAX_PARTITION_COUNT);
+
   if ((context.superstep > 1)) {
     for (int pid = 0; pid < engine_partition_count(); pid++) {
       partition_t* par = &context.pset->partitions[pid];
@@ -135,18 +138,24 @@ inline PRIVATE void superstep_execute() {
     }
     if (par->subgraph.vertex_count == 0) continue;
     // If push-based, launch communication; if pull-based, launch gather kernels
-    if (context.config.direction == GROOVES_PUSH) {
-      // communication will be launched in the context of the source stream it
-      // will start only after the kernel in the source partition finished
-      // execution
-      grooves_launch_communications(context.pset, par->id, GROOVES_PUSH);
-    } else if ((context.config.direction == GROOVES_PULL) &&
-               (context.config.par_gather_func != NULL)) {
+    if (context.comm_curr[par->id]) {
+      if (context.config.direction == GROOVES_PUSH) {
+        // communication will be launched in the context of the source stream it
+        // will start only after the kernel in the source partition finished
+        // execution      
+        grooves_launch_communications(context.pset, par->id, GROOVES_PUSH);
+      }
+    }
+  }
+  if ((context.config.direction == GROOVES_PULL) &&
+      (context.config.par_gather_func != NULL)) {
+    for (int pid = 0; pid < engine_partition_count(); pid++) {
+      partition_t* par = &context.pset->partitions[pid];
+      set_processor(par);
+      stopwatch_t gather;
+      stopwatch_start(&gather);
       context.config.par_gather_func(par);
-    } else {
-      assert(false);
-      fprintf(stderr, "Unsupported communication type %d\n", 
-              context.config.direction); fflush(stderr);
+      cpu_gather_time += stopwatch_elapsed(&gather);
     }
   }
   double launch_time = stopwatch_elapsed(&stopwatch);
@@ -166,7 +175,7 @@ inline PRIVATE void superstep_execute() {
   context.timing.alg_gather += cpu_gather_time;
 #ifdef FEATURE_VERBOSE_TIMING
   printf("\tComp: %0.2f\tComm: %0.2f\tLaunch: %0.2f\tCPUScatter: %0.2f"
-         "\tCPUGather: %0.2f\tTotal: %0.2f\n",
+         "\tCPUGather: %0.2f\t\tTotal: %0.2f\n",
          comp_time, comm_time, launch_time, cpu_scatter_time, cpu_gather_time,
          total_time);
 #endif
@@ -393,6 +402,9 @@ error_t engine_init(graph_t* graph, totem_attr_t* attr) {
     }
   }
 
+  context.comm_curr = (bool*)malloc(MAX_PARTITION_COUNT);
+  context.comm_prev = (bool*)malloc(MAX_PARTITION_COUNT);
+
   context.timing.engine_init = stopwatch_elapsed(&stopwatch);
   return SUCCESS;
 }
@@ -404,6 +416,8 @@ error_t engine_config(engine_config_t* config) {
   stopwatch_start(&stopwatch);
   context.superstep = 0;
   *context.finished = false;
+  memset(context.comm_curr, true, MAX_PARTITION_COUNT);
+  memset(context.comm_prev, true, MAX_PARTITION_COUNT);
   // callback the per-partition initialization function
   if (context.config.par_init_func) {
     for (int pid = 0; pid < context.pset->partition_count; pid++) {
@@ -416,6 +430,8 @@ error_t engine_config(engine_config_t* config) {
 }
 
 void engine_finalize() {
+  free(context.comm_curr);
+  free(context.comm_prev);
   // free application-specific state
   if (context.attr.free_func) {
     for (int pid = 0; pid < context.pset->partition_count; pid++) {

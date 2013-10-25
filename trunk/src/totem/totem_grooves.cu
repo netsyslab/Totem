@@ -11,6 +11,7 @@
 #include "totem_mem.h"
 #include "totem_partition.h"
 #include "totem_util.h"
+#include "totem_engine.cuh"
 
 PRIVATE
 void init_get_rmt_nbrs_list(partition_t* par, vid_t vcount, uint32_t pcount,
@@ -499,6 +500,11 @@ error_t grooves_launch_communications(partition_set_t* pset, int pid,
     // hence no need to copy data
     if ((pset->partitions[pid].processor.type == PROCESSOR_CPU) &&
         (pset->partitions[remote_pid].processor.type == PROCESSOR_CPU)) {
+      continue;
+    }
+
+    if ((direction == GROOVES_PULL) &&
+        !engine_get_comm_prev(remote_pid)) {
       continue;
     }
 

@@ -41,6 +41,8 @@ typedef struct engine_context_s {
   eid_t            edge_count[MAX_PARTITION_COUNT];
   vid_t            rmt_vertex_count[MAX_PARTITION_COUNT];
   eid_t            rmt_edge_count[MAX_PARTITION_COUNT];
+  bool*             comm_curr;
+  bool*             comm_prev;
 } engine_context_t;
 
 /**
@@ -220,8 +222,10 @@ void engine_set_outbox(uint32_t pid, T value) {
     if (!outbox->count) continue;
     T* values = (T*)outbox->push_values;
     if (par->processor.type == PROCESSOR_GPU) {
-      CALL_SAFE(totem_memset(values, value, outbox->count, TOTEM_MEM_DEVICE,
-                             par->streams[1]));
+      //CALL_SAFE(totem_memset(values, value, outbox->count, TOTEM_MEM_DEVICE,
+      //                       par->streams[1]));
+      cudaMemsetAsync(values, value, outbox->count * sizeof(T), 
+                      par->streams[1]);
     } else {
       assert(par->processor.type == PROCESSOR_CPU);
       OMP(omp parallel for)
@@ -296,6 +300,18 @@ inline partition_algorithm_t engine_partition_algorithm() {
 
 inline bool engine_sorted() {
   return context.attr.sorted;
+}
+
+inline void engine_report_no_comm(int pid) {
+  context.comm_curr[pid] = false;
+}
+
+inline int engine_get_comm_prev(int pid) {
+  return context.comm_prev[pid];
+}
+
+inline int engine_get_comm_curr(int pid) {
+  return context.comm_curr[pid];
 }
 
 #endif  // TOTEM_ENGINE_INTERNAL_CUH
