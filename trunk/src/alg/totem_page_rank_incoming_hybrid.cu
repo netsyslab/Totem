@@ -47,7 +47,7 @@ typedef struct pagestate_s {
  * beginning of public interfaces (GPU and CPU)
 */
 PRIVATE
-error_t check_special_cases(float* rank, bool* finished) {
+error_t check_special_cases(rank_t* rank, bool* finished) {
   *finished = true;
   if (engine_vertex_count() == 0) {
     return FAILURE;
@@ -138,11 +138,10 @@ template<int VWARP_WIDTH, int VWARP_BATCH, int THREADS_PER_BLOCK>
 PRIVATE __global__
 void page_rank_incoming_kernel(partition_t par, page_rank_state_t ps, 
                                const vid_t start, const vid_t vertex_count,
-                               const bool last_round, const float c1) {
+                               const bool last_round, const rank_t c1) {
   if (THREAD_GLOBAL_INDEX >= 
       vwarp_thread_count(vertex_count, VWARP_WIDTH, VWARP_BATCH)) return;
 
-  const vid_t* __restrict edges = par.subgraph.edges;
   const eid_t* __restrict vertices = par.subgraph.vertices;
 
   vid_t start_vertex = start + 
@@ -160,7 +159,11 @@ void page_rank_incoming_kernel(partition_t par, page_rank_state_t ps,
 
   for(vid_t v = start_vertex; v < end_vertex; v++) {
     const eid_t nbr_count = vertices[v + 1] - vertices[v];
-    const vid_t* __restrict nbrs = &(edges[vertices[v]]);
+    vid_t* nbrs = par.subgraph.edges + vertices[v];
+    if (v >= par.subgraph.vertex_ext) {
+      nbrs = par.subgraph.edges_ext + 
+        (vertices[v] - par.subgraph.edge_count_ext);
+    }
     sum_neighbors<VWARP_WIDTH>
       (nbrs, nbr_count, ps.rank_s, vwarp_rank, warp_offset);
     if (warp_offset == 0) {
@@ -388,7 +391,7 @@ PRIVATE void page_rank_incoming_finalize(partition_t* partition) {
   partition->algo_state = NULL;
 }
 
-error_t page_rank_incoming_hybrid(float *rank_i, float* rank) {
+error_t page_rank_incoming_hybrid(rank_t* rank_i, rank_t* rank) {
   // check for special cases
   bool finished = false;
   error_t rc = check_special_cases(rank, &finished);
@@ -406,7 +409,7 @@ error_t page_rank_incoming_hybrid(float *rank_i, float* rank) {
   };
   engine_config(&config);
   if (engine_largest_gpu_partition()) {
-    CALL_SAFE(totem_malloc(engine_largest_gpu_partition() * sizeof(float), 
+    CALL_SAFE(totem_malloc(engine_largest_gpu_partition() * sizeof(rank_t), 
                            TOTEM_MEM_HOST_PINNED, (void**)&rank_host));
   }
   engine_execute();

@@ -131,7 +131,6 @@ void graph500_kernel(partition_t par, graph500_state_t state,
   }
 
   const eid_t* __restrict vertices = par.subgraph.vertices;
-  const vid_t* __restrict edges = par.subgraph.edges;
 
   // This flag is used to report the finish state of a block of threads. This
   // is useful to avoid having many threads writing to the global finished
@@ -154,7 +153,11 @@ void graph500_kernel(partition_t par, graph500_state_t state,
     // if USE_FRONTIER is true, the if-statement will be removed by the compiler
     if (USE_FRONTIER || bitmap_is_set(state.frontier.current, v)) { 
       const eid_t nbr_count = vertices[v + 1] - vertices[v];
-      const vid_t* __restrict nbrs = &(edges[vertices[v]]);
+      vid_t* nbrs = par.subgraph.edges + vertices[v];
+      if (v >= par.subgraph.vertex_ext) {
+        nbrs = par.subgraph.edges_ext + 
+          (vertices[v] - par.subgraph.edge_count_ext);
+      }
       for(vid_t i = warp_offset; i < nbr_count; i += VWARP_WIDTH) {
         int nbr_pid = GET_PARTITION_ID(nbrs[i]);
         vid_t nbr = GET_VERTEX_ID(nbrs[i]);
