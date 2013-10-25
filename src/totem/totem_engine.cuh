@@ -278,6 +278,12 @@ void engine_reset_msg_size(grooves_direction_t dir);
 bool engine_sorted();
 
 /**
+ */
+void engine_report_no_comm(int pid);
+int engine_get_comm_prev(int pid);
+int engine_get_comm_curr(int pid);
+
+/**
  * Resets the timers that measure the phases of the BSP cycle
  */
 void engine_reset_bsp_timers();
