@@ -202,21 +202,16 @@ error_t partition_by_sorted_degree(graph_t* graph, int partition_count,
     (*partition_labels)[v] = partition_count - 1;
   }
 
-  // Assign vertices to partitions. Considering the sum of edges and vertices as
-  // the normalizing factor allows to create a partition with space complexity 
-  // proportional to the requested fraction. This is important when creating 
-  // partitions with few edges but many vertices (e.g., a partition dominated by
-  // low-degree vertices). 
-  double total_elements = (double)graph->vertex_count +
-    (double)graph->edge_count;
+  // Assign vertices to partitions.
+  double total_elements = (double)graph->edge_count;
   vid_t index = 0;
   for (int pid = 0; pid < partition_count - 1; pid++) {
     double assigned = 0;
     while ((assigned / total_elements < partition_fraction[pid]) &&
            (index < graph->vertex_count)) {
-        assigned += vd[index].degree + 1;
-        (*partition_labels)[vd[index].id] = pid;
-        index++;
+      assigned += vd[index].degree;
+      (*partition_labels)[vd[index].id] = pid;
+      index++;
     }
   }
 
@@ -442,11 +437,20 @@ error_t partition_set_finalize(partition_set_t* pset) {
       } else {
         totem_free(subgraph->vertices, TOTEM_MEM_DEVICE);
       }
-      if (subgraph->gpu_graph_mem == GPU_GRAPH_MEM_MAPPED ||
-          subgraph->gpu_graph_mem == GPU_GRAPH_MEM_MAPPED_EDGES) {
-        totem_free(subgraph->mapped_edges, TOTEM_MEM_HOST_MAPPED);
-      } else {
-        totem_free(subgraph->edges, TOTEM_MEM_DEVICE);
+
+      if (subgraph->edge_count) {
+        if (subgraph->gpu_graph_mem == GPU_GRAPH_MEM_MAPPED ||
+            subgraph->gpu_graph_mem == GPU_GRAPH_MEM_MAPPED_EDGES) {          
+          totem_free(subgraph->mapped_edges, TOTEM_MEM_HOST_MAPPED);
+        } else if ((subgraph->gpu_graph_mem == GPU_GRAPH_MEM_DEVICE) ||
+                   ((subgraph->gpu_graph_mem == 
+                     GPU_GRAPH_MEM_PARTITIONED_EDGES) && 
+                    (subgraph->vertex_ext < subgraph->vertex_count))) {
+          totem_free(subgraph->edges, TOTEM_MEM_DEVICE);
+        } else if (subgraph->gpu_graph_mem == GPU_GRAPH_MEM_PARTITIONED_EDGES) {
+          totem_free(subgraph->edges, TOTEM_MEM_DEVICE);
+          totem_free(subgraph->mapped_edges, TOTEM_MEM_HOST_MAPPED);
+        }
       }
 
       if (subgraph->weighted && subgraph->weights)
