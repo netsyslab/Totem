@@ -104,11 +104,14 @@ const weight_t DEFAULT_VERTEX_VALUE = 0;
  * Type of memory used to place the GPU graph data structure
  */
 typedef enum {
-  GPU_GRAPH_MEM_DEVICE = 0,   // Places the graph on device memory
-  GPU_GRAPH_MEM_MAPPED,       // Places the graph on the host as memory 
-                              // mapped space
-  GPU_GRAPH_MEM_MAPPED_VERTICES, // Places only the vertices array on the host
-  GPU_GRAPH_MEM_MAPPED_EDGES,     // Places only the edges array on the host
+  GPU_GRAPH_MEM_DEVICE = 0,        // Places the graph on device memory
+  GPU_GRAPH_MEM_MAPPED,            // Places the graph on the host as memory 
+                                   // mapped space
+  GPU_GRAPH_MEM_MAPPED_VERTICES,   // Places only the vertices array on the host
+  GPU_GRAPH_MEM_MAPPED_EDGES,      // Places only the edges array on the host
+  GPU_GRAPH_MEM_PARTITIONED_EDGES, // Partitions the edges array such that part
+                                   // of it is placed on device memory and part
+                                   // of it mapped on host memory
   GPU_GRAPH_MEM_MAX
 } gpu_graph_mem_t;
 
@@ -152,9 +155,25 @@ typedef struct graph_s {
                                   array in case it is allocated as a memory
                                   mapped buffer for GPU-resident graphs. Keeping
                                   this pointer is necessary when freeing the
-                                  buffer. Note that in this case, edges will 
+                                  buffer. Note that in this case, "edges" will 
                                   maintain the pointer to the buffer in the 
                                   device address space. */
+  vid_t*    edges_ext;       /**< this member is relevant to GPU-based resident
+                                  graphs. in case the edge list is partitioned
+                                  between device memory and mapped memory on 
+                                  the host, this array stores the part of the
+                                  edge list placed on the host as memory mapped,
+                                  while "edges" is the pointer to the partition
+                                  placed on device memory. */
+  vid_t    vertex_ext;       /** in the case the edges list is partitioned
+                                 between device memory and mapped memory on the
+                                 host, this member specifies the boundary after 
+                                 which the vertices should access their edge
+                                 list via "edges_ext" */
+  eid_t    edge_count_ext;    /** in the case the edges list is partitioned
+                                 between device memory and mapped memory on the
+                                 host, this member specifies the number of edges
+                                 placed on the device */
 } graph_t;
 
 /**

@@ -59,6 +59,7 @@ PRIVATE void display_help(char* exe_name, int exit_err) {
          "     %d: Host as memory mapped\n"
          "     %d: Only the vertices array on the host\n"
          "     %d: Only the edges array on the host\n"
+         "     %d: Edges array partitioned between the device and the host\n"
          "  -o Enables random placement of vertices across GPU partitions\n"
          "     in case of multi-GPU setups (default FALSE)\n"
          "  -pNUM Platform\n"
@@ -79,9 +80,10 @@ PRIVATE void display_help(char* exe_name, int exit_err) {
          BENCHMARK_BETWEENNESS, BENCHMARK_GRAPH500, get_gpu_count(), 
          PAR_RANDOM, PAR_SORTED_ASC, PAR_SORTED_DSC, GPU_GRAPH_MEM_DEVICE, 
          GPU_GRAPH_MEM_MAPPED, GPU_GRAPH_MEM_MAPPED_VERTICES, 
-         GPU_GRAPH_MEM_MAPPED_EDGES, PLATFORM_CPU, PLATFORM_GPU, 
-         PLATFORM_HYBRID, REPEAT_MAX, omp_sched_static, omp_sched_dynamic,
-         omp_sched_guided, omp_get_max_threads(), omp_get_max_threads());
+         GPU_GRAPH_MEM_MAPPED_EDGES, GPU_GRAPH_MEM_PARTITIONED_EDGES, 
+         PLATFORM_CPU, PLATFORM_GPU, PLATFORM_HYBRID, REPEAT_MAX, 
+         omp_sched_static, omp_sched_dynamic, omp_sched_guided, 
+         omp_get_max_threads(), omp_get_max_threads());
   exit(exit_err);
 }
 
