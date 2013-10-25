@@ -166,7 +166,23 @@ betweenness_param_t betweenness_params[] = {
   {&totem_attrs[4], NULL},
   {&totem_attrs[5], NULL},
   {&totem_attrs[6], NULL},
-  {&totem_attrs[7], NULL}
+  {&totem_attrs[7], NULL},
+  {&totem_attrs[8], NULL},
+  {&totem_attrs[9], NULL},
+  {&totem_attrs[10], NULL},
+  {&totem_attrs[11], NULL},
+  {&totem_attrs[12], NULL},
+  {&totem_attrs[13], NULL},
+  {&totem_attrs[14], NULL},
+  {&totem_attrs[15], NULL},
+  {&totem_attrs[16], NULL},
+  {&totem_attrs[17], NULL},
+  {&totem_attrs[18], NULL},
+  {&totem_attrs[19], NULL},
+  {&totem_attrs[20], NULL},
+  {&totem_attrs[21], NULL},
+  {&totem_attrs[22], NULL},
+  {&totem_attrs[23], NULL}
 };
 
 // From Google documentation:
@@ -187,7 +203,24 @@ INSTANTIATE_TEST_CASE_P(BetwCentralityGPUAndCPUTest, BetweennessCentralityTest,
                                &betweenness_params[8],
                                &betweenness_params[9],
                                &betweenness_params[10],
-                               &betweenness_params[11]));
+                               &betweenness_params[11],
+                               &betweenness_params[12],
+                               &betweenness_params[13],
+                               &betweenness_params[14],
+                               &betweenness_params[15],
+                               &betweenness_params[16],
+                               &betweenness_params[17],
+                               &betweenness_params[18],
+                               &betweenness_params[19],
+                               &betweenness_params[20],
+                               &betweenness_params[21],
+                               &betweenness_params[22],
+                               &betweenness_params[23],
+                               &betweenness_params[24],
+                               &betweenness_params[25],
+                               &betweenness_params[26],
+                               &betweenness_params[27],
+                               &betweenness_params[28]));
 #else
 
 // From Google documentation:
