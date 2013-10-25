@@ -160,13 +160,13 @@ error_t apsp_gpu(graph_t* graph, weight_t** distances);
  * @param[out] rank the PageRank output array
  * @return generic success or failure
  */
-error_t page_rank_cpu(graph_t* graph, float* rank_i, float* rank);
-error_t page_rank_gpu(graph_t* graph, float* rank_i, float* rank);
-error_t page_rank_vwarp_gpu(graph_t* graph, float* rank_i, float* rank);
-error_t page_rank_incoming_cpu(graph_t* graph, float* rank_i, float* rank);
-error_t page_rank_incoming_gpu(graph_t* graph, float* rank_i, float* rank);
-error_t page_rank_hybrid(float* rank_i, float* rank);
-error_t page_rank_incoming_hybrid(float* rank_i, float* rank);
+error_t page_rank_cpu(graph_t* graph, rank_t* rank_i, rank_t* rank);
+error_t page_rank_gpu(graph_t* graph, rank_t* rank_i, rank_t* rank);
+error_t page_rank_vwarp_gpu(graph_t* graph, rank_t* rank_i, rank_t* rank);
+error_t page_rank_incoming_cpu(graph_t* graph, rank_t* rank_i, rank_t* rank);
+error_t page_rank_incoming_gpu(graph_t* graph, rank_t* rank_i, rank_t* rank);
+error_t page_rank_hybrid(rank_t* rank_i, rank_t* rank);
+error_t page_rank_incoming_hybrid(rank_t* rank_i, rank_t* rank);
 
 
 /**
