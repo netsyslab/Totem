@@ -82,7 +82,9 @@ bfs_cpu_sparse_frontier(graph_t* subgraph, bfs_state_t* state, int pid) {
   // or omp_set_schedule interface.
   bitmap_t frontier = state->frontier.current;
   bool finished = true;
-  OMP(omp parallel for schedule(runtime) reduction(& : finished))
+  vid_t count = 0;
+  OMP(omp parallel for schedule(runtime) reduction(& : finished)
+      reduction(+ : count))
   for (vid_t word_index = 0; word_index < words; word_index++) {
     if (!frontier[word_index]) continue;
     vid_t v = word_index * BITMAP_BITS_PER_WORD;
@@ -90,6 +92,7 @@ bfs_cpu_sparse_frontier(graph_t* subgraph, bfs_state_t* state, int pid) {
     if (last_v > subgraph->vertex_count) last_v = subgraph->vertex_count;
     for (; v < last_v; v++) {
       if (!bitmap_is_set(frontier, v)) continue;
+      count++;
       bfs_cpu_process_vertex(subgraph, state, v, pid, finished);
     }
   }
@@ -99,9 +102,12 @@ bfs_cpu_sparse_frontier(graph_t* subgraph, bfs_state_t* state, int pid) {
 PRIVATE void
 bfs_cpu_dense_frontier(graph_t* subgraph, bfs_state_t* state, int pid) {
   bool finished = true;
-  OMP(omp parallel for schedule(runtime) reduction(& : finished))
+  vid_t count = 0;
+  OMP(omp parallel for schedule(runtime) reduction(& : finished)
+      reduction(+ : count))
   for (vid_t v = 0; v < subgraph->vertex_count; v++) {
     if (state->cost[v] != state->level) continue;
+    count++;
     bfs_cpu_process_vertex(subgraph, state, v, pid, finished);
   }  
   if (!finished) *(state->finished) = false;
@@ -160,7 +166,6 @@ void bfs_kernel(partition_t par, bfs_state_t state,
       vwarp_thread_count(count, VWARP_WIDTH, VWARP_BATCH)) return;
 
   const eid_t* __restrict vertices = par.subgraph.vertices;
-  const vid_t* __restrict edges = par.subgraph.edges;
   const cost_t* __restrict cost = state.cost;
 
   // This flag is used to report the finish state of a block of threads. This
@@ -186,7 +191,11 @@ void bfs_kernel(partition_t par, bfs_state_t state,
     // if USE_FRONTIER is true, the if-statement will be removed by the compiler
     if (USE_FRONTIER || (cost[v] == state.level)) { 
       const eid_t nbr_count = vertices[v + 1] - vertices[v];
-      const vid_t* __restrict nbrs = &(edges[vertices[v]]);
+      vid_t* nbrs = par.subgraph.edges + vertices[v];
+      if (v >= par.subgraph.vertex_ext) {
+        nbrs = par.subgraph.edges_ext + 
+          (vertices[v] - par.subgraph.edge_count_ext);
+      }
       for(vid_t i = warp_offset; i < nbr_count; i += VWARP_WIDTH) {
         int nbr_pid = GET_PARTITION_ID(nbrs[i]);
         vid_t nbr = GET_VERTEX_ID(nbrs[i]);
