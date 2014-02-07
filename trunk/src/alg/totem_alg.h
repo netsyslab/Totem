@@ -117,6 +117,17 @@ void graph500_free(partition_t* par);
 void graph500_alloc(partition_t* par);
 
 /**
+ * Given a graph, compute the clustering coefficient of each vertex.
+ *
+ * @param[in] graph the input graph
+ * @param[out] coefficients array containing computed coefficinets
+ */
+error_t clustering_coefficient_cpu(const graph_t* graph, 
+                                   weight_t** coefficients);
+error_t clustering_coefficient_gpu(const graph_t* graph, 
+                                   weight_t** coefficients);
+
+/*
  * Given a weighted graph \f$G = (V, E, w)\f$ and a source vertex \f$v\inV\f$,
  * Dijkstra's algorithm computes the distance from \f$v\f$ to every other
  * vertex in a directed, weighted graph, where the edges have non-negative
