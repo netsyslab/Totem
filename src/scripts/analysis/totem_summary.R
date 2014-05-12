@@ -19,13 +19,13 @@
 ##  * edges:<number>\tpartitioning:<RAND|HIGH|LOW>\tplatform:<CPU|GPU|HYBRID>\t
 ##  * alpha:<percentage of edges on the CPU>\trepeat:<number of runs>\t
 ##  * gpu_count:<number>\tthread_count:<CPU threads>\tthread_bind:<TRUE|FALSE>\t
-##  * time_init:<Totem init time>\ttime_par:<Graph partitoining time>\t"
+##  * time_init:<Totem init time>\ttime_par:<Graph partitioning time>\t"
 ##  * rmt_vertex:<% of remote vertices>\trmt_edge:<% of remote edges>\t
 ##  * beta:<% of remote edges after aggregation>
 ##
 ## Multiple lines, each line details a run's timing breakdown. Note that the 
 ## first line is a header:
-##  * total\texec\tinit\tcomp\tcomm\tfinalize\tgpu_comp\tscatter\tgather\taggr\t
+##  * total\texec\tinit\tcomp\tcomm\tfinalize\tcpu_comp\tgpu_comp\tgpu_total_comp\tscatter\tgather\taggr\t
 ##  * trv_edges\texec_rate
 ##
 ## where
@@ -34,9 +34,11 @@
 ## exec: Execution time without buffer allocation (comp + comm + aggr)
 ## init: Algorithm initialization (mainly buffer allocations)
 ## comp: Compute phase
-## comm: Communication phase (inlcudes scatter/gather)
+## comm: Communication phase (includes scatter/gather)
 ## finalize: Algorithm finalization (buffer deallocations)
+## cpu_comp: CPU computation
 ## gpu_comp: GPU computation (included in comp)
+## gpu_total_comp: Total GPU computation
 ## scatter: The scatter step in communication (push mode)
 ## gather: The gather step in communication (pull mode)
 ## aggr: Final result aggregation
@@ -96,15 +98,15 @@ totem.summary <- function(dir) {
   data.avg   = data.frame(TOT = numeric(l), EXEC = numeric(l), 
                           INIT = numeric(l), COMP = numeric(l),
                           COMM = numeric(l), FINALIZE = numeric(l),
-                          CPUCOMP = numeric(l),
-                          GPUCOMP = numeric(l), SCATTER = numeric(l),
+                          CPUCOMP = numeric(l), GPUCOMP = numeric(l),
+                          GPUTOTALCOMP = numeric(l), SCATTER = numeric(l),
                           GATHER = numeric(l), AGGR = numeric(l),
                           TRV = numeric(l), RATE = numeric(l));
   data.ci = data.frame(TOT_CI = numeric(l), EXEC_CI = numeric(l),
                        INIT_CI = numeric(l), COMP_CI = numeric(l),
                        COMM_CI = numeric(l), FIN_CI = numeric(l),
-                       CPUCOMP_CI = numeric(l),
-                       GPUCOMP_CI = numeric(l), SCAT_CI = numeric(l),
+                       CPUCOMP_CI = numeric(l), GPUCOMP_CI = numeric(l), 
+                       GPUTOTALCOMP_CI = numeric(l), SCAT_CI = numeric(l),
                        GATH_CI = numeric(l), AGGR_CI = numeric(l),
                        TRV_CI = numeric(l), RATE_CI = numeric(l));
   index = 1;
