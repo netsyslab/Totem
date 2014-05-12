@@ -5,7 +5,7 @@ changed from 9600 to 115200
 
 To compile the binary type
 
-    gcc -o wattsup wattsup.c
+    gcc -std=c99 -o wattsup wattsup.c
 
 Sample usage is as follows
 
