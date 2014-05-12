@@ -22,6 +22,11 @@ typedef uint16_t cost_t;
 const cost_t INF_COST = (cost_t)INFINITE;
 
 /**
+ * A type for BFS tree type.
+ */
+typedef int64_t bfs_tree_t;
+
+/**
  * For traversal-based algorithms, this constant determines the threshold
  * (as percentage of the total number of vertices) below which the frontier
  * is considered sparse. This is used to tune the graph algorithm (for example)
@@ -111,8 +116,8 @@ error_t bfs_hybrid(vid_t src_id, cost_t* cost);
  * @param[out] tree   the BFS tree (the parent of each vertex)
  * @return generic success or failure
 */
-error_t graph500_cpu(graph_t* graph, vid_t src, vid_t* tree);
-error_t graph500_hybrid(vid_t src, vid_t* tree);
+error_t graph500_cpu(graph_t* graph, vid_t src, bfs_tree_t* tree);
+error_t graph500_hybrid(vid_t src, bfs_tree_t* tree);
 void graph500_free(partition_t* par);
 void graph500_alloc(partition_t* par);
 

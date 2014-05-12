@@ -25,12 +25,12 @@ typedef struct graph500_state_s {
  * global state shared among all partitions
  */
 typedef struct graph500_global_state_s {
-  bool      initialized; // indicates if the global state is initialized
-  vid_t*    tree;        // final tree output buffer
-  vid_t*    tree_h;      // Used as a temporary buffer to receive the final 
-                         // result copied back from GPU partitions before being
-                         // copied again to the final output buffer
-  vid_t     src;         // source vertex id (the id after partitioning)
+  bool        initialized; // indicates if the global state is initialized
+  bfs_tree_t* tree;        // final tree output buffer
+  vid_t*      tree_h;      // Used as a temporary buffer to receive the final 
+                           // result copied back from GPU partitions before
+                           // being copied again to the final output buffer
+  vid_t       src;         // source vertex id (the id after partitioning)
 } graph500_global_state_t;
 PRIVATE graph500_global_state_t state_g = {false, NULL, NULL, 0};
 
@@ -38,7 +38,8 @@ PRIVATE graph500_global_state_t state_g = {false, NULL, NULL, 0};
  * Checks for input parameters and special cases. This is invoked at the
  * beginning of public functions (GPU and CPU)
 */
-PRIVATE error_t check_special_cases(vid_t src, vid_t* tree, bool* finished) {
+PRIVATE error_t check_special_cases(vid_t src, bfs_tree_t* tree, 
+                                    bool* finished) {
   *finished = true;
   if (!state_g.initialized) return FAILURE;
   if((src >= engine_vertex_count()) || (tree == NULL)) {
@@ -48,7 +49,7 @@ PRIVATE error_t check_special_cases(vid_t src, vid_t* tree, bool* finished) {
     return SUCCESS;
   } else if(engine_edge_count() == 0) {
     // Initialize tree to INFINITE.
-    totem_memset(tree, VERTEX_ID_MAX, engine_vertex_count(), TOTEM_MEM_HOST);
+    totem_memset(tree, (bfs_tree_t)(-1), engine_vertex_count(), TOTEM_MEM_HOST);
     tree[src] = src;
     return SUCCESS;
   }
@@ -637,7 +638,7 @@ void rmt_tree(partition_t* par) {
   if (engine_superstep() == 1) engine_report_not_finished();
 }
 
-error_t graph500_hybrid(vid_t src, vid_t* tree) {
+error_t graph500_hybrid(vid_t src, bfs_tree_t* tree) {
   // check for special cases
   bool finished = false;
   error_t rc = check_special_cases(src, tree, &finished);
@@ -646,6 +647,7 @@ error_t graph500_hybrid(vid_t src, vid_t* tree) {
   // initialize the global state
   state_g.tree = tree;
   state_g.src  = engine_vertex_id_in_partition(src);
+  totem_memset(tree, (bfs_tree_t)-1, engine_vertex_count(), TOTEM_MEM_HOST);
 
   // initialize the engine
   engine_config_t config = {

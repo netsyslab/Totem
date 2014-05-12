@@ -59,7 +59,7 @@ const benchmark_attr_t BENCHMARKS[] = {
   {
     benchmark_graph500,
     "GRAPH500",
-    sizeof(vid_t),
+    sizeof(bfs_tree_t),
     true,
     (sizeof(vid_t) * BITS_PER_BYTE) + 1,
     MSG_SIZE_ZERO,
@@ -169,7 +169,7 @@ PRIVATE void benchmark_betweenness(graph_t* graph, void* betweenness_score,
 
 PRIVATE
 void benchmark_graph500(graph_t* graph, void* tree, totem_attr_t* attr) {
-  CALL_SAFE(graph500_hybrid(get_random_src(graph), (vid_t*)tree));
+  CALL_SAFE(graph500_hybrid(get_random_src(graph), (bfs_tree_t*)tree));
 }
 
 /**
