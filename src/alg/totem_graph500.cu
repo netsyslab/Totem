@@ -11,7 +11,7 @@
 
 #include "totem_alg.h"
 
-PRIVATE error_t check_special_cases(graph_t* graph, vid_t src, vid_t* tree,
+PRIVATE error_t check_special_cases(graph_t* graph, vid_t src, bfs_tree_t* tree,
                                     bool* finished) {
   *finished = true;
   if((graph == NULL) || (src >= graph->vertex_count) || (tree == NULL)) {
@@ -21,7 +21,7 @@ PRIVATE error_t check_special_cases(graph_t* graph, vid_t src, vid_t* tree,
     return SUCCESS;
   } else if(graph->edge_count == 0) {
     // Initialize tree to INFINITE and self to the source node
-    totem_memset(tree, VERTEX_ID_MAX, graph->vertex_count, TOTEM_MEM_HOST);
+    totem_memset(tree, (bfs_tree_t)-1, graph->vertex_count, TOTEM_MEM_HOST);
     tree[src] = src;
     return SUCCESS;
   }
@@ -29,13 +29,14 @@ PRIVATE error_t check_special_cases(graph_t* graph, vid_t src, vid_t* tree,
   return SUCCESS;
 }
 
-PRIVATE bitmap_t initialize_cpu(graph_t* graph, vid_t src, vid_t* tree, 
+PRIVATE bitmap_t initialize_cpu(graph_t* graph, vid_t src, bfs_tree_t* tree, 
                                 cost_t** cost) {
   // Initialize cost to INFINITE and create the vertices bitmap
   CALL_SAFE(totem_malloc(graph->vertex_count * sizeof(cost_t), TOTEM_MEM_HOST, 
                          (void**)cost));
   totem_memset(*cost, INF_COST, graph->vertex_count, TOTEM_MEM_HOST);
-  totem_memset(tree, VERTEX_ID_MAX, graph->vertex_count, TOTEM_MEM_HOST);
+  totem_memset(tree, (bfs_tree_t)-1, graph->vertex_count, 
+               TOTEM_MEM_HOST);
   bitmap_t visited = bitmap_init_cpu(graph->vertex_count);
   
   // Initialize the state of the source vertex
@@ -46,7 +47,7 @@ PRIVATE bitmap_t initialize_cpu(graph_t* graph, vid_t src, vid_t* tree,
 }
 
 __host__
-error_t graph500_cpu(graph_t* graph, vid_t src, vid_t* tree) {
+error_t graph500_cpu(graph_t* graph, vid_t src, bfs_tree_t* tree) {
   // Check for special cases
   bool finished = false;
   error_t rc = check_special_cases(graph, src, tree, &finished);
