@@ -22,10 +22,10 @@ objects: $(OBJDIR) $(CCOBJS) $(CUOBJS)
 $(OBJDIR):
 	@if test ! -d $(OBJDIR); then mkdir $(OBJDIR); fi
 
-$(CCOBJS): $(OBJDIR)/%.o: %.cc $(CCDEPS)
+$(CCOBJS): $(OBJDIR)/%.cc.o: %.cc $(CCDEPS)
 	$(CC) $(CCFLAGS) -c $< -o $@
 
-$(CUOBJS): $(OBJDIR)/%.o: %.cu $(CCDEPS) $(CUDEPS)
+$(CUOBJS): $(OBJDIR)/%.cu.o: %.cu $(CCDEPS) $(CUDEPS)
 	$(NVCC) $(NVCCFLAGS) -c $< -o $@
 
 clean:

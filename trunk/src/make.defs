@@ -90,6 +90,7 @@ OBJDIR = obj
 OPENMP    = -fopenmp
 
 # compilers
+C   = gcc
 CC   = g++
 NVCC = $(CUDA_INSTALL_PATH)/bin/nvcc
 
@@ -103,10 +104,12 @@ LFLAGS    +=  -lcudart -I. -L. -L$(CUDA_INSTALL_PATH)/lib$(ARCH) -lm \
 	      -Xcompiler "$(OPENMP)" -ltbb
 
 # source files and their corresponding objects and dependencies
+CSRC    = $(wildcard *.c)
+COBJS   = $(CSRC:%.c=$(OBJDIR)/%.c.o)
 CCSRC   = $(wildcard *.cc)
+CCOBJS  = $(CCSRC:%.cc=$(OBJDIR)/%.cc.o)
 CUSRC   = $(wildcard *.cu)
-CCOBJS  = $(CCSRC:%.cc=$(OBJDIR)/%.o)
-CUOBJS  = $(CUSRC:%.cu=$(OBJDIR)/%.o)
+CUOBJS  = $(CUSRC:%.cu=$(OBJDIR)/%.cu.o)
 CCDEPS  = $(wildcard *.h)
 CUDEPS  = $(wildcard *.cuh)
 
