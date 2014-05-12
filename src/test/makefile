@@ -32,14 +32,14 @@ ALG_DEPS   = $(wildcard $(ALG_PATH)/*.[cuh,h])
 ifdef TEST
 CCSRC = $(filter-out %.cu, $(TEST_FILE))
 CUSRC = $(filter-out %.cc, $(TEST_FILE))
-CCOBJS = $(CCSRC:%.cc=$(OBJDIR)/%.o)
-CUOBJS = $(CUSRC:%.cu=$(OBJDIR)/%.o)
+CCOBJS = $(CCSRC:%.cc=$(OBJDIR)/%.cc.o)
+CUOBJS = $(CUSRC:%.cu=$(OBJDIR)/%.cu.o)
 endif
 ALL_OBJS = $(CCOBJS) $(CUOBJS)
 
 NVCCFLAGS += $(GTEST_INC) $(TOTEM_INC) $(ALG_INC)
 CCFLAGS   += $(GTEST_INC) $(TOTEM_INC) $(ALG_INC)
-LFLAGS    += $(ALG_LIB) $(TOTEM_LIB)
+LFLAGS    := $(ALG_LIB) $(TOTEM_LIB) $(LFLAGS)
 BUILD_LINE = $(ALL_OBJS) $(GTEST_SRC) $(GTEST_INC) $(LFLAGS)
 
 DEPS = $(CCDEPS) $(CUDEPS) $(TOTEM_DEPS) $(ALG_DEPS)
@@ -68,10 +68,10 @@ objects: $(OBJDIR) $(CCOBJS) $(CUOBJS)
 $(OBJDIR):
 	@if test ! -d $(OBJDIR); then mkdir $(OBJDIR); fi
 
-$(CCOBJS): $(OBJDIR)/%.o: %.cc $(DEPS)
+$(CCOBJS): $(OBJDIR)/%.cc.o: %.cc $(DEPS)
 	$(CC) $(CCFLAGS) -c $< -o $@
 
-$(CUOBJS): $(OBJDIR)/%.o: %.cu $(DEPS)
+$(CUOBJS): $(OBJDIR)/%.cu.o: %.cu $(DEPS)
 	$(NVCC) $(NVCCFLAGS) -c $< -o $@
 
 totem:
