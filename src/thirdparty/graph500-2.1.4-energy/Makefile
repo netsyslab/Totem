@@ -35,7 +35,7 @@ all: $(BIN)
 CPPFLAGS += -I./generator
 
 make-edgelist: CFLAGS:=$(CFLAGS) $(CFLAGS_OPENMP)
-make-edgelist:	make-edgelist.c options.c rmat.c kronecker.c prng.c totem_graph.c \
+make-edgelist:	make-edgelist.c options.c rmat.c kronecker.c prng.c \
 	xalloc.c timer.c $(addprefix generator/,$(GENERATOR_SRCS))
 
 seq-list/seq-list: seq-list/seq-list.c $(GRAPH500_SOURCES) \
