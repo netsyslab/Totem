@@ -43,36 +43,35 @@ static int64_t bfs_nedge[NBFS_max];
 static packed_edge * restrict IJ;
 static int64_t nedge;
 
-static void run_bfs (void);
-static void output_results (const int64_t SCALE, int64_t nvtx_scale,
-                            int64_t edgefactor,
-                            const double A, const double B,
-                            const double C, const double D,
-                            const double generation_time,
-                            const double construction_time,
-                            const int NBFS,
-                            const double *bfs_time, const int64_t *bfs_nedge);
+static void run_bfs(void);
+static void output_results(const int64_t SCALE, int64_t nvtx_scale,
+                           int64_t edgefactor,
+                           const double A, const double B,
+                           const double C, const double D,
+                           const double generation_time,
+                           const double construction_time,
+                           const int NBFS,
+                           const double *bfs_time, const int64_t *bfs_nedge);
 
-int
-main (int argc, char **argv)
-{
+int main(int argc, char **argv) {
   int64_t desired_nedge;
-  if (sizeof (int64_t) < 8) {
-    fprintf (stderr, "No 64-bit support.\n");
+  if (sizeof(int64_t) < 8) {
+    fprintf(stderr, "No 64-bit support.\n");
     return EXIT_FAILURE;
   }
 
-  if (argc > 1)
-    get_options (argc, argv);
+  if (argc > 1) {
+    get_options(argc, argv);
+  }
 
   nvtx_scale = ((int64_t)1)<<SCALE;
 
-  init_random ();
+  init_random();
 
   desired_nedge = nvtx_scale * edgefactor;
   /* Catch a few possible overflows. */
-  assert (desired_nedge >= nvtx_scale);
-  assert (desired_nedge >= edgefactor);
+  assert(desired_nedge >= nvtx_scale);
+  assert(desired_nedge >= edgefactor);
 
   /*
     If running the benchmark under an architecture simulator, replace
@@ -80,30 +79,40 @@ main (int argc, char **argv)
     to wherever the edge list is mapped into the simulator's memory.
   */
   if (!dumpname) {
-    if (VERBOSE) fprintf (stderr, "Generating edge list...");
+    if (VERBOSE) fprintf(stderr, "Generating edge list...");
     if (use_RMAT) {
       nedge = desired_nedge;
-      IJ = xmalloc_large_ext (nedge * sizeof (*IJ));
-      TIME(generation_time, rmat_edgelist (IJ, nedge, SCALE, A, B, C));
+      IJ = xmalloc_large_ext(nedge * sizeof(*IJ));
+      TIME(generation_time, rmat_edgelist(IJ, nedge, SCALE, A, B, C));
     } else {
-      TIME(generation_time, make_graph (SCALE, desired_nedge, userseed, 
-                                        userseed, &nedge, 
-                                        (packed_edge**)(&IJ)));
+      TIME(generation_time, make_graph(SCALE, desired_nedge, userseed, 
+                                       userseed, &nedge, 
+                                       (packed_edge**)(&IJ)));
     }
-    if (VERBOSE) fprintf (stderr, " done.\n");
+    if (VERBOSE) fprintf(stderr, " done.\n");
   } else {
-    int fd;
-    ssize_t sz;
-    if ((fd = open (dumpname, O_RDONLY)) < 0) {
-      perror ("Cannot open input graph file");
+    FILE* p_file = fopen(dumpname, "rb");
+
+    if(p_file == NULL) {
+      fprintf(stderr, "Cannot open input file : %s\n", dumpname);
       return EXIT_FAILURE;
     }
-    sz = nedge * sizeof (*IJ);
-    if (sz != read (fd, IJ, sz)) {
-      perror ("Error reading input graph file");
+
+    if (VERBOSE) fprintf(stderr, "Figuring out graph size...");
+    fseek(p_file, 0 , SEEK_END);
+    size_t file_size = ftell(p_file);
+    rewind(p_file);
+    IJ = xmalloc_large_ext(file_size);
+    nedge = file_size / sizeof(*IJ);
+    if (VERBOSE) fprintf(stderr, "done: %ull edges\n", nedge);
+
+    if (VERBOSE) fprintf(stderr, "Reading edge list from %s...", dumpname);
+    if (file_size != fread(IJ, 1, file_size, p_file)) {
+      perror("Error reading input graph file");
       return EXIT_FAILURE;
     }
-    close (fd);
+    fclose(p_file);
+    if (VERBOSE) fprintf(stderr, " done.\n");
   }
 
   run_bfs();
@@ -116,18 +125,17 @@ main (int argc, char **argv)
   return EXIT_SUCCESS;
 }
 
-void
-run_bfs (void) {
+void run_bfs(void) {
   int * restrict has_adj;
   int m, err;
   int64_t k, t;
 
-  if (VERBOSE) fprintf (stderr, "Creating graph...");
+  if (VERBOSE) fprintf(stderr, "Creating graph...");
   TIME(construction_time, err = create_graph_from_edgelist(IJ, nedge));
-  if (VERBOSE) fprintf (stderr, "done.\n");
+  if (VERBOSE) fprintf(stderr, "done.\n");
   if (err) {
-    fprintf (stderr, "Failure creating graph.\n");
-    exit (EXIT_FAILURE);
+    fprintf(stderr, "Failure creating graph.\n");
+    exit(EXIT_FAILURE);
   }
 
   /*
@@ -136,7 +144,7 @@ run_bfs (void) {
     to wherever the BFS roots are mapped into the simulator's memory.
   */
   if (!rootname) {
-    has_adj = xmalloc_large (nvtx_scale * sizeof (*has_adj));
+    has_adj = xmalloc_large(nvtx_scale * sizeof(*has_adj));
     OMP("omp parallel") {
       OMP("omp for")
       for (k = 0; k < nvtx_scale; ++k)
@@ -154,111 +162,109 @@ run_bfs (void) {
     m = 0;
     t = 0;
     while (m < NBFS && t < nvtx_scale) {
-      double R = mrg_get_double_orig (prng_state);
+      double R = mrg_get_double_orig(prng_state);
       if (!has_adj[t] || (nvtx_scale - t)*R > NBFS - m) ++t;
       else bfs_root[m++] = t++;
     }
     if (t >= nvtx_scale && m < NBFS) {
       if (m > 0) {
-        fprintf (stderr, "Cannot find %d sample roots of non-self degree > 0, using %d.\n",
+        fprintf(stderr, "Cannot find %d sample roots of non-self degree"
+                " > 0, using %d.\n",
                  NBFS, m);
         NBFS = m;
       } else {
-        fprintf (stderr, "Cannot find any sample roots of non-self degree > 0.\n");
-        exit (EXIT_FAILURE);
+        fprintf(stderr, "Cannot find any sample roots of non-self "
+                "degree > 0.\n");
+        exit(EXIT_FAILURE);
       }
     }
     
-    xfree_large (has_adj);
+    xfree_large(has_adj);
   } else {
     int fd;
     ssize_t sz;
-    if ((fd = open (rootname, O_RDONLY)) < 0) {
-      perror ("Cannot open input BFS root file");
-      exit (EXIT_FAILURE);
+    if ((fd = open(rootname, O_RDONLY)) < 0) {
+      perror("Cannot open input BFS root file");
+      exit(EXIT_FAILURE);
     }
-    sz = NBFS * sizeof (*bfs_root);
-    if (sz != read (fd, bfs_root, sz)) {
-      perror ("Error reading input BFS root file");
-      exit (EXIT_FAILURE);
+    sz = NBFS * sizeof(*bfs_root);
+    if (sz != read(fd, bfs_root, sz)) {
+      perror("Error reading input BFS root file");
+      exit(EXIT_FAILURE);
     }
-    close (fd);
+    close(fd);
   }
 
   for (m = 0; m < NBFS; ++m) {
     int64_t *bfs_tree, max_bfsvtx;
 
     /* Re-allocate. Some systems may randomize the addres... */
-    bfs_tree = xmalloc_large (nvtx_scale * sizeof (*bfs_tree));
-    assert (bfs_root[m] < nvtx_scale);
+    bfs_tree = xmalloc_large(nvtx_scale * sizeof(*bfs_tree));
+    assert(bfs_root[m] < nvtx_scale);
 
-    if (VERBOSE) fprintf (stderr, "Running bfs %d...", m);
+    if (VERBOSE) fprintf(stderr, "Running bfs %d...", m);
     // printf("start\n"); fflush(stdout);
-    TIME(bfs_time[m], err = make_bfs_tree (bfs_tree, &max_bfsvtx, bfs_root[m]));
-    if (VERBOSE) fprintf (stderr, "done\n");
+    TIME(bfs_time[m], err = make_bfs_tree(bfs_tree, &max_bfsvtx, bfs_root[m]));
+    if (VERBOSE) fprintf(stderr, "done\n");
 
     if (err) {
-      perror ("make_bfs_tree failed");
-      abort ();
+      perror("make_bfs_tree failed");
+      abort();
     }
 
-    if (VERBOSE) fprintf (stderr, "Verifying bfs %d...", m);
-    bfs_nedge[m] = verify_bfs_tree (bfs_tree, max_bfsvtx,
-                                    bfs_root[m], IJ, nedge);
-    if (VERBOSE) fprintf (stderr, "done\n");
+    if (VERBOSE) fprintf(stderr, "Verifying bfs %d...", m);
+    bfs_nedge[m] = verify_bfs_tree(bfs_tree, max_bfsvtx,
+                                   bfs_root[m], IJ, nedge);
+    if (VERBOSE) fprintf(stderr, "done\n");
     if (bfs_nedge[m] < 0) {
-      fprintf (stderr,
-               "bfs %d from %" PRId64 " failed verification (%" PRId64 ")\n",
+      fprintf(stderr,
+              "bfs %d from %" PRId64 " failed verification (%" PRId64 ")\n",
                m, bfs_root[m], bfs_nedge[m]);
       abort();
     }
 
-    xfree_large (bfs_tree);
+    xfree_large(bfs_tree);
   }
 
-  destroy_graph ();
+  destroy_graph();
 }
 
 #define NSTAT 9
-#define PRINT_STATS(lbl, israte)					\
-  do {									\
-    printf ("min_%s: %20.17e\n", lbl, stats[0]);			\
-    printf ("firstquartile_%s: %20.17e\n", lbl, stats[1]);		\
-    printf ("median_%s: %20.17e\n", lbl, stats[2]);			\
-    printf ("thirdquartile_%s: %20.17e\n", lbl, stats[3]);		\
-    printf ("max_%s: %20.17e\n", lbl, stats[4]);			\
-    if (!israte) {							\
-      printf ("mean_%s: %20.17e\n", lbl, stats[5]);			\
-      printf ("stddev_%s: %20.17e\n", lbl, stats[6]);			\
-    } else {								\
-      printf ("harmonic_mean_%s: %20.17e\n", lbl, stats[7]);		\
-      printf ("harmonic_stddev_%s: %20.17e\n", lbl, stats[8]);	\
-    }									\
+#define PRINT_STATS(lbl, israte)                                \
+  do {                                                          \
+    printf ("min_%s: %20.17e\n", lbl, stats[0]);                \
+    printf ("firstquartile_%s: %20.17e\n", lbl, stats[1]);      \
+    printf ("median_%s: %20.17e\n", lbl, stats[2]);             \
+    printf ("thirdquartile_%s: %20.17e\n", lbl, stats[3]);      \
+    printf ("max_%s: %20.17e\n", lbl, stats[4]);                \
+    if (!israte) {                                              \
+      printf ("mean_%s: %20.17e\n", lbl, stats[5]);             \
+      printf ("stddev_%s: %20.17e\n", lbl, stats[6]);           \
+    } else {                                                    \
+      printf ("harmonic_mean_%s: %20.17e\n", lbl, stats[7]);    \
+      printf ("harmonic_stddev_%s: %20.17e\n", lbl, stats[8]);  \
+    }                                                           \
   } while (0)
 
 
-static int
-dcmp (const void *a, const void *b)
-{
+static int dcmp(const void *a, const void *b) {
   const double da = *(const double*)a;
   const double db = *(const double*)b;
   if (da > db) return 1;
   if (db > da) return -1;
   if (da == db) return 0;
-  fprintf (stderr, "No NaNs permitted in output.\n");
-  abort ();
+  fprintf(stderr, "No NaNs permitted in output.\n");
+  abort();
   return 0;
 }
 
-void
-statistics (double *out, double *data, int64_t n)
-{
+void statistics(double *out, double *data, int64_t n) {
   long double s, mean;
   double t;
   int k;
 
   /* Quartiles */
-  qsort (data, n, sizeof (*data), dcmp);
+  qsort(data, n, sizeof(*data), dcmp);
   out[0] = data[0];
   t = (n+1) / 4.0;
   k = (int) t;
@@ -291,7 +297,7 @@ statistics (double *out, double *data, int64_t n)
     long double tmp = data[k-1] - mean;
     s += tmp * tmp;
   }
-  out[6] = sqrt (s/(n-1));
+  out[6] = sqrt(s/(n-1));
 
   s = (data[0]? 1.0L/data[0] : 0);
   for (k = 1; k < n; ++k)
@@ -310,48 +316,47 @@ statistics (double *out, double *data, int64_t n)
     long double tmp = (data[k]? 1.0L/data[k] : 0) - mean;
     s += tmp * tmp;
   }
-  s = (sqrt (s)/(n-1)) * out[7] * out[7];
+  s = (sqrt(s)/(n-1)) * out[7] * out[7];
   out[8] = s;
 }
 
-void
-output_results (const int64_t SCALE, int64_t nvtx_scale, int64_t edgefactor,
-                const double A, const double B, const double C, const double D,
-                const double generation_time,
-                const double construction_time,
-                const int NBFS, const double *bfs_time, 
-                const int64_t *bfs_nedge) {
+void output_results(const int64_t SCALE, int64_t nvtx_scale, int64_t edgefactor,
+                    const double A, const double B, const double C, 
+                    const double D, const double generation_time,
+                    const double construction_time,
+                    const int NBFS, const double *bfs_time, 
+                    const int64_t *bfs_nedge) {
   int k;
   int64_t sz;
   double *tm;
   double *stats;
 
-  tm = alloca (NBFS * sizeof (*tm));
-  stats = alloca (NSTAT * sizeof (*stats));
+  tm = alloca(NBFS * sizeof(*tm));
+  stats = alloca(NSTAT * sizeof(*stats));
   if (!tm || !stats) {
     perror ("Error allocating within final statistics calculation.");
-    abort ();
+    abort();
   }
 
-  sz = (1L << SCALE) * edgefactor * 2 * sizeof (int64_t);
-  printf ("SCALE: %" PRId64 "\nnvtx: %" PRId64 "\nedgefactor: %" PRId64 "\n"
-          "terasize: %20.17e\n", SCALE, nvtx_scale, edgefactor, sz/1.0e12);
-  printf ("A: %20.17e\nB: %20.17e\nC: %20.17e\nD: %20.17e\n", A, B, C, D);
-  printf ("generation_time: %20.17e\n", generation_time);
-  printf ("construction_time: %20.17e\n", construction_time);
-  printf ("nbfs: %d\n", NBFS);
+  sz = (1L << SCALE) * edgefactor * 2 * sizeof(int64_t);
+  printf("SCALE: %" PRId64 "\nnvtx: %" PRId64 "\nedgefactor: %" PRId64 "\n"
+         "terasize: %20.17e\n", SCALE, nvtx_scale, edgefactor, sz/1.0e12);
+  printf("A: %20.17e\nB: %20.17e\nC: %20.17e\nD: %20.17e\n", A, B, C, D);
+  printf("generation_time: %20.17e\n", generation_time);
+  printf("construction_time: %20.17e\n", construction_time);
+  printf("nbfs: %d\n", NBFS);
 
-  memcpy (tm, bfs_time, NBFS*sizeof(tm[0]));
-  statistics (stats, tm, NBFS);
+  memcpy(tm, bfs_time, NBFS * sizeof(tm[0]));
+  statistics(stats, tm, NBFS);
   PRINT_STATS("time", 0);
 
   for (k = 0; k < NBFS; ++k)
     tm[k] = bfs_nedge[k];
-  statistics (stats, tm, NBFS);
+  statistics(stats, tm, NBFS);
   PRINT_STATS("nedge", 0);
 
   for (k = 0; k < NBFS; ++k)
     tm[k] = bfs_nedge[k] / bfs_time[k];
-  statistics (stats, tm, NBFS);
+  statistics(stats, tm, NBFS);
   PRINT_STATS("TEPS", 1);
 }

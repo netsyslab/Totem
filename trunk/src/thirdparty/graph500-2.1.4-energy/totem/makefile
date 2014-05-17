@@ -38,7 +38,7 @@ $(OBJDIR):
 	@if test ! -d $(OBJDIR); then mkdir $(OBJDIR); fi
 
 $(COBJS): $(OBJDIR)/%.c.o: %.c $(DEPS)
-	$(C) $(CCFLAGS) -std=c99 -c $< -o $@
+	$(C) $(CCFLAGS) -D_FILE_OFFSET_BITS=64 -std=c99 -c $< -o $@
 
 $(CCOBJS): $(OBJDIR)/%.cc.o: %.cc $(DEPS)
 	$(CC) $(CCFLAGS) -c $< -o $@
@@ -53,7 +53,7 @@ alg:
 	@$(MAKE) -C $(ALG_PATH)
 
 clean:
-	@$(CLEAN_CMD)
+	@$(CLEAN_CMD) $(TARGET)
 
 clean-all:
 	@$(CLEAN_ALL_CMD) $(TARGET)
