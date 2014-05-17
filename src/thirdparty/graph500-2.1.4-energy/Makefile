@@ -34,7 +34,7 @@ all: $(BIN)
 
 CPPFLAGS += -I./generator
 
-make-edgelist: CFLAGS:=$(CFLAGS) $(CFLAGS_OPENMP)
+make-edgelist: CFLAGS:=$(CFLAGS) $(CFLAGS_OPENMP) -D_FILE_OFFSET_BITS=64
 make-edgelist:	make-edgelist.c options.c rmat.c kronecker.c prng.c \
 	xalloc.c timer.c $(addprefix generator/,$(GENERATOR_SRCS))
 
@@ -67,3 +67,4 @@ clean:
 	rm -f generator/generator_test_seq generator/generator_test_omp \
 		$(BIN)
 	-$(MAKE) -C mpi clean
+	-$(MAKE) -C totem clean

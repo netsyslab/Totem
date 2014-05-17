@@ -37,13 +37,12 @@ static int64_t nedge;
 static int64_t bfs_root[NBFS_max];
 
 int64_t
-int64_casval(int64_t* p, int64_t oldval, int64_t newval)
-{
-  return __sync_val_compare_and_swap (p, oldval, newval);
+int64_casval(int64_t* p, int64_t oldval, int64_t newval) {
+  return __sync_val_compare_and_swap(p, oldval, newval);
 }
 
-static int64_t
-find_nv (const struct packed_edge * restrict IJ, const int64_t nedge) {
+static int64_t find_nv(const struct packed_edge * restrict IJ, 
+                       const int64_t nedge) {
   int64_t maxvtx = -1;
   OMP("omp parallel") {
     int64_t k, gmaxvtx, tmaxvtx = -1;
@@ -57,66 +56,60 @@ find_nv (const struct packed_edge * restrict IJ, const int64_t nedge) {
     }
     gmaxvtx = maxvtx;
     while (tmaxvtx > gmaxvtx)
-      gmaxvtx = int64_casval (&maxvtx, gmaxvtx, tmaxvtx);
+      gmaxvtx = int64_casval(&maxvtx, gmaxvtx, tmaxvtx);
   }
   return 1+maxvtx;
 }
 
-int main (int argc, char **argv) {
-  int * restrict has_adj;
+int main(int argc, char **argv) {
+  int* restrict has_adj;
   int fd;
   int64_t desired_nedge;
-  if (sizeof (int64_t) < 8) {
-    fprintf (stderr, "No 64-bit support.\n");
+  if (sizeof(int64_t) < 8) {
+    fprintf(stderr, "No 64-bit support.\n");
     return EXIT_FAILURE;
   }
 
-  if (argc > 1)
-    get_options (argc, argv);
+  if (argc > 1) get_options(argc, argv);
 
-  nvtx_scale = 1L<<SCALE;
+  nvtx_scale = 1L << SCALE;
 
-  init_random ();
+  init_random();
 
   desired_nedge = nvtx_scale * edgefactor - 1;
   /* Catch a few possible overflows. */
   assert (desired_nedge >= nvtx_scale);
   assert (desired_nedge >= edgefactor);
 
-
-  if (VERBOSE) fprintf (stderr, "Generating edge list...");
+  if (VERBOSE) fprintf(stderr, "Generating edge list...");
   if (use_RMAT) {
     nedge = desired_nedge;
-    IJ = xmalloc_large_ext (nedge * sizeof (*IJ));
-    rmat_edgelist (IJ, nedge, SCALE, A, B, C);
+    IJ = xmalloc_large_ext(nedge * sizeof(*IJ));
+    rmat_edgelist(IJ, nedge, SCALE, A, B, C);
   } else {
     make_graph(SCALE, desired_nedge, userseed, userseed, 
                &nedge, (struct packed_edge**)(&IJ));
   }
-  if (VERBOSE) fprintf (stderr, " done.\n");
+  if (VERBOSE) fprintf(stderr, " done.\n");
 
-  if (dumpname)
-    fd = open (dumpname, O_WRONLY|O_CREAT|O_TRUNC, 0666);
-  else
-    fd = 1;
-
-  if (fd < 0) {
-    fprintf (stderr, "Cannot open output file : %s\n",
-             (dumpname? dumpname : "stdout"));
-    return EXIT_FAILURE;
+  if (dumpname) {
+    FILE* p_file = fopen(dumpname, "wb");    
+    if(p_file == NULL) {
+      fprintf(stderr, "Cannot open output file : %s\n", dumpname);
+      return EXIT_FAILURE;
+    }
+    fwrite(IJ, sizeof(*IJ), nedge, p_file);
+    fclose(p_file);
   }
 
-  write (fd, IJ, 2 * nedge * sizeof (*IJ));
-
-  close (fd);
-
-  if (rootname)
-    fd = open (rootname, O_WRONLY|O_CREAT|O_TRUNC, 0666);
-  else
+  if (rootname) {
+    fd = open(rootname, O_WRONLY|O_CREAT|O_TRUNC, 0666);
+  } else {
     fd = -1;
+  }
 
   if (rootname >= 0) {
-    has_adj = xmalloc_large (nvtx_scale * sizeof (*has_adj));
+    has_adj = xmalloc_large(nvtx_scale * sizeof(*has_adj));
     OMP("omp parallel") {
       OMP("omp for")
         for (int64_t k = 0; k < nvtx_scale; ++k)
@@ -135,28 +128,26 @@ int main (int argc, char **argv) {
       int m = 0;
       int64_t t = 0;
       while (m < NBFS && t < nvtx_scale) {
-        double R = mrg_get_double_orig (prng_state);
+        double R = mrg_get_double_orig(prng_state);
         if (!has_adj[t] || (nvtx_scale - t)*R > NBFS - m) ++t;
         else bfs_root[m++] = t++;
       }
       if (t >= nvtx_scale && m < NBFS) {
         if (m > 0) {
-          fprintf (stderr, "Cannot find %d sample roots of "
-                   "non-self degree > 0, using %d.\n", NBFS, m);
+          fprintf(stderr, "Cannot find %d sample roots of "
+                  "non-self degree > 0, using %d.\n", NBFS, m);
           NBFS = m;
         } else {
-          fprintf (stderr, "Cannot find any sample roots "
-                   "of non-self degree > 0.\n");
-          exit (EXIT_FAILURE);
+          fprintf(stderr, "Cannot find any sample roots "
+                  "of non-self degree > 0.\n");
+          exit(EXIT_FAILURE);
         }
       }
     }
 
-    for (int64_t r = 0; r < NBFS; r++) printf("%llu\n", bfs_root[r]);
-
-    xfree_large (has_adj);
-    write (fd, bfs_root, NBFS * sizeof (*bfs_root));
-    close (fd);
+    xfree_large(has_adj);
+    write(fd, bfs_root, NBFS * sizeof(*bfs_root));
+    close(fd);
   }
 
   return EXIT_SUCCESS;
