@@ -104,7 +104,7 @@ int main(int argc, char **argv) {
     rewind(p_file);
     IJ = xmalloc_large_ext(file_size);
     nedge = file_size / sizeof(*IJ);
-    if (VERBOSE) fprintf(stderr, "done: %ull edges\n", nedge);
+    if (VERBOSE) fprintf(stderr, "done: %llu edges\n", nedge);
 
     if (VERBOSE) fprintf(stderr, "Reading edge list from %s...", dumpname);
     if (file_size != fread(IJ, 1, file_size, p_file)) {

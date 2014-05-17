@@ -89,18 +89,29 @@ int main(int argc, char **argv) {
                                        (packed_edge**)(&IJ)));
     }
     if (VERBOSE) fprintf(stderr, " done.\n");
-  } else {
+  }  else {
     FILE* p_file = fopen(dumpname, "rb");
+
     if(p_file == NULL) {
       fprintf(stderr, "Cannot open input file : %s\n", dumpname);
       return EXIT_FAILURE;
     }
-    size_t sz = nedge * sizeof(*IJ);
-    if (sz != fread(IJ, sizeof(*IJ), nedge, p_file)) {
+
+    if (VERBOSE) fprintf(stderr, "Figuring out graph size...");
+    fseek(p_file, 0 , SEEK_END);
+    size_t file_size = ftell(p_file);
+    rewind(p_file);
+    IJ = xmalloc_large_ext(file_size);
+    nedge = file_size / sizeof(*IJ);
+    if (VERBOSE) fprintf(stderr, "done: %llu edges\n", nedge);
+
+    if (VERBOSE) fprintf(stderr, "Reading edge list from %s...", dumpname);
+    if (file_size != fread(IJ, 1, file_size, p_file)) {
       perror("Error reading input graph file");
       return EXIT_FAILURE;
     }
     fclose(p_file);
+    if (VERBOSE) fprintf(stderr, " done.\n");
   }
 
   run_bfs();
