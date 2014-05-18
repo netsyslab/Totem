@@ -43,6 +43,8 @@ static int64_t bfs_nedge[NBFS_max];
 static packed_edge * restrict IJ;
 static int64_t nedge;
 
+static void get_roots();
+static void create_graph();
 static void run_bfs(void);
 static void output_results(const int64_t SCALE, int64_t nvtx_scale,
                            int64_t edgefactor,
@@ -64,20 +66,18 @@ int main(int argc, char **argv) {
     get_options(argc, argv);
   }
 
-  nvtx_scale = ((int64_t)1)<<SCALE;
+  nvtx_scale = ((int64_t)1) << SCALE;
 
   init_random();
 
   desired_nedge = nvtx_scale * edgefactor;
-  /* Catch a few possible overflows. */
+  // Catch a few possible overflows.
   assert(desired_nedge >= nvtx_scale);
   assert(desired_nedge >= edgefactor);
-
-  /*
-    If running the benchmark under an architecture simulator, replace
-    the following if () {} else {} with a statement pointing IJ
-    to wherever the edge list is mapped into the simulator's memory.
-  */
+  
+  // If running the benchmark under an architecture simulator, replace the
+  // following if () {} else {} with a statement pointing IJ to wherever the 
+  // edge list is mapped into the simulator's memory.
   if (!dumpname) {
     if (VERBOSE) fprintf(stderr, "Generating edge list...");
     if (use_RMAT) {
@@ -92,7 +92,6 @@ int main(int argc, char **argv) {
     if (VERBOSE) fprintf(stderr, " done.\n");
   } else {
     FILE* p_file = fopen(dumpname, "rb");
-
     if(p_file == NULL) {
       fprintf(stderr, "Cannot open input file : %s\n", dumpname);
       return EXIT_FAILURE;
@@ -115,42 +114,40 @@ int main(int argc, char **argv) {
     if (VERBOSE) fprintf(stderr, " done.\n");
   }
 
+  get_roots();
+  create_graph();
   run_bfs();
 
   xfree_large(IJ);
-
   output_results(SCALE, nvtx_scale, edgefactor, A, B, C, D, generation_time,
                  construction_time, NBFS, bfs_time, bfs_nedge);
 
   return EXIT_SUCCESS;
 }
 
-void run_bfs(void) {
-  int * restrict has_adj;
-  int m, err;
-  int64_t k, t;
-
+static void create_graph() {
   if (VERBOSE) fprintf(stderr, "Creating graph...");
+  int err;
   TIME(construction_time, err = create_graph_from_edgelist(IJ, nedge));
   if (VERBOSE) fprintf(stderr, "done.\n");
   if (err) {
     fprintf(stderr, "Failure creating graph.\n");
     exit(EXIT_FAILURE);
   }
+}
 
-  /*
-    If running the benchmark under an architecture simulator, replace
-    the following if () {} else {} with a statement pointing bfs_root
-    to wherever the BFS roots are mapped into the simulator's memory.
-  */
+static void get_roots() {
+  // If running the benchmark under an architecture simulator, replace
+  // the following if () {} else {} with a statement pointing bfs_root
+  // to wherever the BFS roots are mapped into the simulator's memory.
   if (!rootname) {
-    has_adj = xmalloc_large(nvtx_scale * sizeof(*has_adj));
+    int* restrict has_adj = xmalloc_large(nvtx_scale * sizeof(*has_adj));
     OMP("omp parallel") {
       OMP("omp for")
-      for (k = 0; k < nvtx_scale; ++k)
+      for (int64_t k = 0; k < nvtx_scale; ++k)
         has_adj[k] = 0;
       MTA("mta assert nodep") OMP("omp for")
-      for (k = 0; k < nedge; ++k) {
+      for (int64_t k = 0; k < nedge; ++k) {
         const int64_t i = get_v0_from_edge(&IJ[k]);
         const int64_t j = get_v1_from_edge(&IJ[k]);
         if (i != j)
@@ -159,8 +156,8 @@ void run_bfs(void) {
     }
 
     /* Sample from {0, ..., nvtx_scale-1} without replacement. */
-    m = 0;
-    t = 0;
+    int m = 0;
+    int64_t t = 0;
     while (m < NBFS && t < nvtx_scale) {
       double R = mrg_get_double_orig(prng_state);
       if (!has_adj[t] || (nvtx_scale - t)*R > NBFS - m) ++t;
@@ -178,7 +175,6 @@ void run_bfs(void) {
         exit(EXIT_FAILURE);
       }
     }
-    
     xfree_large(has_adj);
   } else {
     int fd;
@@ -194,8 +190,10 @@ void run_bfs(void) {
     }
     close(fd);
   }
+}
 
-  for (m = 0; m < NBFS; ++m) {
+static void run_bfs(void) {
+  for (int m = 0; m < NBFS; ++m) {
     int64_t *bfs_tree, max_bfsvtx;
 
     /* Re-allocate. Some systems may randomize the addres... */
@@ -203,7 +201,7 @@ void run_bfs(void) {
     assert(bfs_root[m] < nvtx_scale);
 
     if (VERBOSE) fprintf(stderr, "Running bfs %d...", m);
-    // printf("start\n"); fflush(stdout);
+    int err;
     TIME(bfs_time[m], err = make_bfs_tree(bfs_tree, &max_bfsvtx, bfs_root[m]));
     if (VERBOSE) fprintf(stderr, "done\n");
 
