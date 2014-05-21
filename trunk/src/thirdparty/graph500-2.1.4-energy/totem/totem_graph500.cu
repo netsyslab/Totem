@@ -1,13 +1,15 @@
 
 
+// Totem includes.
 #include "totem.h"
 #include "totem_alg.h"
 #include "totem_util.h"
+#include "totem_benchmark.h"
+#include "totem_benchmark_cmdline.cu"
 
 #include "../graph500.h"
 #include "../xalloc.h"
 #include "../generator/graph_generator.h"
-
 
 int64_t int64_casval(int64_t* p, int64_t oldval, int64_t newval) {
   return __sync_val_compare_and_swap (p, oldval, newval);
@@ -32,7 +34,7 @@ static int64_t find_nv (const struct packed_edge * IJ, const int64_t nedge) {
 
 static void allocate_graph(vid_t vertex_count, eid_t edge_count, 
                            graph_t** graph_ret) {
-  // Allocate the main structure
+  // Allocate the main structure.
   graph_t* graph = (graph_t*)calloc(1, sizeof(graph_t));
   assert(graph);
 
@@ -100,25 +102,77 @@ static void create_graph(const struct packed_edge * IJ, vid_t vertex_count,
 }
 
 extern "C" {
+
+/**
+ *  Parses totem flags from a string.
+ *  
+ *  @param input_optarg   The input arguments, as a string.
+ *  @param program_name   The runtime program name, for the first argument
+ *                        to be passed into the next parser.
+ */
+void totem_set_options(const char* input_optarg, char* program_name) {
+  char* totem_args;
+  int   new_argc;
+  char* new_argv[32]; // Probably don't need more than 32 arguments?
+  char* tokened_args;
+  
+  new_argv[0] = program_name;              // Copy program name.
+  new_argc = 1;                            // argc count starts at 1.
+  
+  totem_args = (char*) malloc(sizeof(char) * strlen(input_optarg)); 
+  strcpy(totem_args, input_optarg);        // Since strtok modifies string,
+                                           // don't globber the original.
+  
+  tokened_args = strtok(totem_args, " ");  // Tokenize over spaces.
+  while (tokened_args) {
+    new_argv[new_argc++] = tokened_args;   // Add all words to the argv.
+    tokened_args = strtok(NULL, " ");
+    assert(new_argc < 32);
+  }
+  
+  new_argv[new_argc++] = "/dev/null";     // Don't need a graph file.
+  new_argv[new_argc] = NULL;              // End of args.
+  
+  // Parse Totem benchmarking options. No need to retrieve the result here.
+  benchmark_cmdline_parse(new_argc, new_argv);
+
+  free(totem_args);
+  return;
+}
+
+
+
 int create_graph_from_edgelist(struct packed_edge *IJ, int64_t nedge) {
-  eid_t edge_count = nedge;
+  eid_t edge_count   = nedge;
   vid_t vertex_count = find_nv(IJ, nedge);
+  
   create_graph(IJ, vertex_count, edge_count);
 
-  // TODO(scott): allow the settings below to be set via command line.
-  totem_attr_t attr       = TOTEM_DEFAULT_ATTR;
-  attr.par_algo           = PAR_SORTED_ASC; // LOW (DSC) HIGH (ASC)
-  attr.cpu_par_share      = .52;
-  attr.platform           = PLATFORM_HYBRID;
-  attr.gpu_count          = 1;
-  attr.gpu_graph_mem      = GPU_GRAPH_MEM_DEVICE;
-  attr.gpu_par_randomized = true;
+  totem_attr_t attr = TOTEM_DEFAULT_ATTR;
+  
+  // Use the options specified by created benchmark options.
+  benchmark_options_t* b_options = totem_benchmark_get_options();
+  assert(b_options);
+
+  attr.par_algo           = b_options->par_algo;
+  attr.cpu_par_share      = b_options->alpha / 100.0;
+  attr.platform           = b_options->platform;
+  attr.gpu_count          = b_options->gpu_count;
+  attr.gpu_graph_mem      = b_options->gpu_graph_mem;
+  attr.gpu_par_randomized = b_options->gpu_par_randomized;
+  attr.sorted             = b_options->sorted;
+  
+  // OpenMP attributes.
+  omp_set_num_threads(b_options->thread_count);
+  omp_set_schedule(b_options->omp_sched, 0);
+  
+  // Static graph500 attributes.
   attr.push_msg_size      = (sizeof(vid_t) * BITS_PER_BYTE) + 1;
   attr.pull_msg_size      = MSG_SIZE_ZERO;
   attr.alloc_func         = graph500_alloc;
   attr.free_func          = graph500_free;
-
-  // Partitions the graph and loads the GPU-partitions
+  
+  // Partitions the graph and loads the GPU-partitions.
   CALL_SAFE(totem_init(graph, &attr));
 
   return 0;
@@ -137,4 +191,5 @@ void destroy_graph (void) {
   graph_finalize(graph);
   graph = NULL;
 }
-}
+
+} // End of extern "C"

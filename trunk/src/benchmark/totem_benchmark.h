@@ -70,6 +70,11 @@ typedef struct benchmark_options_s {
 } benchmark_options_t;
 
 /**
+ * The getter for a reference to the Totem options values.
+ */
+benchmark_options_t* totem_benchmark_get_options();
+
+/**
  * Parses command line options
  * @param[in] argc number of arguments
  * @param[in] argv argument array
