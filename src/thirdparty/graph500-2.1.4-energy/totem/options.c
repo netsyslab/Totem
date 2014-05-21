@@ -48,7 +48,7 @@ get_options (int argc, char **argv) {
   if (getenv ("VERBOSE"))
     VERBOSE = 1;
 
-  while ((c = getopt (argc, argv, "v?hRs:e:A:a:B:b:C:c:D:d:Vo:r:")) != -1)
+  while ((c = getopt (argc, argv, "v?hRs:e:A:a:B:b:C:c:D:d:Vo:r:t:")) != -1)
     switch (c) {
     case 'v':
       printf ("%s version %d\n", NAME, VERSION);
@@ -72,6 +72,7 @@ get_options (int argc, char **argv) {
 	      "  V   : Enable extra (Verbose) output\n"
 	      "  o   : Read the edge list from (or dump to) the named file\n"
 	      "  r   : Read the BFS roots from (or dump to) the named file\n"
+	      "  t   : A string of the totem arguments (ex \"-a 50 -g 2\") "
 	      "\n"
 	      "Outputs take the form of \"key: value\", with keys:\n"
 	      "  SCALE\n"
@@ -224,6 +225,25 @@ get_options (int argc, char **argv) {
       whichset |= 8;
       ++nset;
       break;
+    case 't':  {
+        int   temp_optind;
+        char* temp_optarg;
+        
+        temp_optind = optind; // We have to keep track of the current op info,
+        temp_optarg = optarg; // as the getop() function in the upcoming 
+                              // calls globbers it all because the variables 
+                              // are considered external/global.
+    
+        optind = 1;           // Reset optind to default (1).
+        
+        // Applies the totem arguments defined in totem_graph500.cu.
+        // Additionally, let it know the program name.
+        totem_set_options (optarg, argv[0]);
+        
+        optind = temp_optind; // Restore values of op info.
+        optarg = temp_optarg;
+        break;
+      }
     default:
       fprintf (stderr, "Unrecognized option\n");
       err = -1;

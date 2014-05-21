@@ -18,11 +18,21 @@ ALG_INC    = -I$(ALG_PATH)
 ALG_LIB    =  -lalg -L$(ALG_PATH)
 ALG_DEPS   = $(wildcard $(ALG_PATH)/*.[cuh,h])
 
+BENCHMARK_PATH   = "../../../benchmark"
+BENCHMARK_INC    = -I$(BENCHMARK_PATH)
+BENCHMARK_LIB    = -lbenchmark -L$(BENCHMARK_PATH)
+BENCHMARK_DEPS   = $(wildcard $(BENCHMARK_PATH)/*.[cuh,h])
+
+
 GRAPH500_INC = -I"../" -I"../generator"
 
-NVCCFLAGS += $(GTEST_INC) $(TOTEM_INC) $(ALG_INC) $(GRAPH500_INC)
-CCFLAGS   += $(GTEST_INC) $(TOTEM_INC) $(ALG_INC) $(GRAPH500_INC)
-DEPS = $(CCDEPS) $(CUDEPS) $(TOTEM_DEPS) $(ALG_DEPS)
+NVCCFLAGS += 	$(GTEST_INC) $(TOTEM_INC) $(ALG_INC) $(GRAPH500_INC) \
+		$(BENCHMARK_INC)
+
+CCFLAGS   += 	$(GTEST_INC) $(TOTEM_INC) $(ALG_INC) $(GRAPH500_INC) \
+		$(BENCHMARK_INC)
+
+DEPS = 		$(CCDEPS) $(CUDEPS) $(TOTEM_DEPS) $(ALG_DEPS) $(BENCHMARK_DEPS)
 
 .PHONY: objects clean clean-all tags
 
@@ -30,7 +40,8 @@ all: $(TARGET)
 
 $(TARGET): objects totem alg
 	@printf "\nLinking %s executable ...\n" $(TARGET)
-	$(NVCC) -o $@ $(COBJS) $(CCOBJS) $(CUOBJS) $(TOTEM_LIB) $(ALG_LIB) $(LFLAGS)
+	$(NVCC) -o $@ $(COBJS) $(CCOBJS) $(CUOBJS) $(TOTEM_LIB) $(ALG_LIB) \
+	$(BENCHMARK_LIBS) $(LFLAGS)
 
 objects: $(OBJDIR) $(COBJS) $(CCOBJS) $(CUOBJS)
 
@@ -52,6 +63,9 @@ totem:
 alg:
 	@$(MAKE) -C $(ALG_PATH)
 
+benchmark:
+	@$(MAKE) -C $(BENCHMARK_PATH)
+
 clean:
 	@$(CLEAN_CMD) $(TARGET)
 
@@ -59,6 +73,7 @@ clean-all:
 	@$(CLEAN_ALL_CMD) $(TARGET)
 	@$(MAKE) -C $(TOTEM_PATH) clean-all
 	@$(MAKE) -C $(ALG_PATH) clean-all
+	@$(MAKE) -C $(BENCHMARK_PATH) clean-all
 
 tags:
 	@$(ETAGS_CMD)

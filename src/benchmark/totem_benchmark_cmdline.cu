@@ -27,6 +27,11 @@ PRIVATE benchmark_options_t options = {
 };
 
 /**
+ * A getter for a reference to the Totem options values.
+ */
+benchmark_options_t* totem_benchmark_get_options() {return &options;}
+
+/**
  * Maximum Number of times an experiment is repeated or sources used to 
  * benchmark a traversal algorithm
 */
