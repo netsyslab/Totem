@@ -5,7 +5,6 @@
 #include "totem_alg.h"
 #include "totem_util.h"
 #include "totem_benchmark.h"
-#include "totem_benchmark_cmdline.cu"
 
 #include "../graph500.h"
 #include "../xalloc.h"
@@ -67,7 +66,7 @@ void sort_nbrs(graph_t* graph) {
 static graph_t* graph = NULL;
 
 // TODO(scott): A parallel way to create the graph.
-static void create_graph(const struct packed_edge * IJ, vid_t vertex_count,
+static void create_graph(struct packed_edge* IJ, vid_t vertex_count,
                          eid_t edge_count) {
   // The graph is undirected, hence the number of edges allocated is multiplied
   // by 2 as edges in Totem's graph representation are considered directed.
@@ -142,7 +141,7 @@ void totem_set_options(const char* input_optarg, char* program_name) {
 
 
 
-int create_graph_from_edgelist(struct packed_edge *IJ, int64_t nedge) {
+int create_graph_from_edgelist(struct packed_edge* IJ, int64_t nedge) {
   eid_t edge_count   = nedge;
   vid_t vertex_count = find_nv(IJ, nedge);
   
@@ -179,14 +178,14 @@ int create_graph_from_edgelist(struct packed_edge *IJ, int64_t nedge) {
 }
   
   
-int make_bfs_tree(int64_t *bfs_tree_out, int64_t *max_vtx_out,
+int make_bfs_tree(int64_t* bfs_tree_out, int64_t* max_vtx_out,
                   int64_t srcvtx) {
   *max_vtx_out = graph->vertex_count - 1;
   CALL_SAFE(graph500_hybrid(srcvtx, bfs_tree_out));
   return 0;
 }
   
-void destroy_graph (void) {
+void destroy_graph() {
   totem_finalize();
   graph_finalize(graph);
   graph = NULL;

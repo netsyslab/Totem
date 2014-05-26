@@ -22,13 +22,24 @@ NVCCFLAGS += $(GTEST_INC) $(TOTEM_INC) $(ALG_INC)
 CCFLAGS   += $(GTEST_INC) $(TOTEM_INC) $(ALG_INC)
 DEPS = $(CCDEPS) $(CUDEPS) $(TOTEM_DEPS) $(ALG_DEPS)
 
+CCLIBOBJS=$(filter-out %_binary.cc.o, $(CCOBJS))
+CULIBOBJS=$(filter-out %_binary.cu.o, $(CUOBJS))
+CCBINOBJS=$(filter %_binary.cc.o, $(CCOBJS))
+CUBINOBJS=$(filter %_binary.cu.o, $(CUOBJS))
+
+
 .PHONY: objects clean clean-all tags
 
 all: $(TARGET)
 
-$(TARGET): objects totem alg
+lib: objects
+	@printf "\nCreating %s library ...\n" $(TARGET)
+	ar -r -u lib$(TARGET).a $(CCLIBOBJS) $(CULIBOBJS)
+	ranlib lib$(TARGET).a
+
+$(TARGET): lib totem alg
 	@printf "\nLinking %s executable ...\n" $(TARGET)
-	$(NVCC) -o $@ $(CCOBJS) $(CUOBJS) $(ALG_LIB) $(TOTEM_LIB) $(LFLAGS)
+	$(NVCC) -o $@ $(CCBINOBJS) $(CUBINOBJS) -l$(TARGET) $(ALG_LIB) $(TOTEM_LIB) $(LFLAGS)
 
 objects: $(OBJDIR) $(CCOBJS) $(CUOBJS)
 
