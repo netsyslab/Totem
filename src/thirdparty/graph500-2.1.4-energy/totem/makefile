@@ -38,7 +38,7 @@ DEPS = 		$(CCDEPS) $(CUDEPS) $(TOTEM_DEPS) $(ALG_DEPS) $(BENCHMARK_DEPS)
 
 all: $(TARGET)
 
-$(TARGET): objects totem alg
+$(TARGET): objects benchmark totem alg
 	@printf "\nLinking %s executable ...\n" $(TARGET)
 	$(NVCC) -o $@ $(COBJS) $(CCOBJS) $(CUOBJS) $(TOTEM_LIB) $(ALG_LIB) \
 	$(BENCHMARK_LIB) $(LFLAGS)
