@@ -41,7 +41,7 @@ all: $(TARGET)
 $(TARGET): objects totem alg
 	@printf "\nLinking %s executable ...\n" $(TARGET)
 	$(NVCC) -o $@ $(COBJS) $(CCOBJS) $(CUOBJS) $(TOTEM_LIB) $(ALG_LIB) \
-	$(BENCHMARK_LIBS) $(LFLAGS)
+	$(BENCHMARK_LIB) $(LFLAGS)
 
 objects: $(OBJDIR) $(COBJS) $(CCOBJS) $(CUOBJS)
 
