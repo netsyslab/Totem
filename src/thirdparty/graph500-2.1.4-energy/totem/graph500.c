@@ -70,7 +70,7 @@ int main(int argc, char **argv) {
 
   init_random();
 
-  desired_nedge = nvtx_scale * edgefactor;
+  desired_nedge = nvtx_scale * edgefactor - 1;
   // Catch a few possible overflows.
   assert(desired_nedge >= nvtx_scale);
   assert(desired_nedge >= edgefactor);
