@@ -1,5 +1,3 @@
-
-
 // Totem includes.
 #include "totem.h"
 #include "totem_alg.h"
@@ -139,20 +137,16 @@ void totem_set_options(const char* input_optarg, char* program_name) {
   return;
 }
 
-
-
 int create_graph_from_edgelist(struct packed_edge* IJ, int64_t nedge) {
   eid_t edge_count   = nedge;
   vid_t vertex_count = find_nv(IJ, nedge);
-  
   create_graph(IJ, vertex_count, edge_count);
-
-  totem_attr_t attr = TOTEM_DEFAULT_ATTR;
   
   // Use the options specified by created benchmark options.
   benchmark_options_t* b_options = totem_benchmark_get_options();
   assert(b_options);
 
+  totem_attr_t attr = TOTEM_DEFAULT_ATTR;
   attr.par_algo           = b_options->par_algo;
   attr.cpu_par_share      = b_options->alpha / 100.0;
   attr.platform           = b_options->platform;
@@ -170,18 +164,28 @@ int create_graph_from_edgelist(struct packed_edge* IJ, int64_t nedge) {
   attr.pull_msg_size      = MSG_SIZE_ZERO;
   attr.alloc_func         = graph500_alloc;
   attr.free_func          = graph500_free;
-  
+
+  // Free the edge list to free up space for creating Totem's partitined graph.
+  free(IJ);
+
+  // Print out the configurations.
+  print_config(graph, totem_benchmark_get_options(), "GRAPH500");
+
   // Partitions the graph and loads the GPU-partitions.
   CALL_SAFE(totem_init(graph, &attr));
+  print_header(graph, true);
 
   return 0;
-}
-  
-  
+}  
+
 int make_bfs_tree(int64_t* bfs_tree_out, int64_t* max_vtx_out,
                   int64_t srcvtx) {
+  totem_timing_reset();
+  stopwatch_t stopwatch;
+  stopwatch_start(&stopwatch);
   *max_vtx_out = graph->vertex_count - 1;
   CALL_SAFE(graph500_hybrid(srcvtx, bfs_tree_out));
+  print_timing(graph, stopwatch_elapsed(&stopwatch), graph->edge_count, true);
   return 0;
 }
   
