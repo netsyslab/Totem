@@ -4,29 +4,35 @@
 #include "totem_util.h"
 #include "totem_benchmark.h"
 
+// Graph500 includes.
 #include "../graph500.h"
 #include "../xalloc.h"
 #include "../generator/graph_generator.h"
 
-int64_t int64_casval(int64_t* p, int64_t oldval, int64_t newval) {
-  return __sync_val_compare_and_swap (p, oldval, newval);
-}
-
 // Counts the number of vertices in the edge list.
 static int64_t find_nv (const struct packed_edge * IJ, const int64_t nedge) {
   int64_t maxvtx = -1;  
-  int64_t k, gmaxvtx, tmaxvtx = -1;  
-  for (k = 0; k < nedge; ++k) {
-    if (get_v0_from_edge(&IJ[k]) > tmaxvtx)
-      tmaxvtx = get_v0_from_edge(&IJ[k]);
-    if (get_v1_from_edge(&IJ[k]) > tmaxvtx)
-      tmaxvtx = get_v1_from_edge(&IJ[k]);
-  }
-  gmaxvtx = maxvtx;
-  while (tmaxvtx > gmaxvtx)
-    gmaxvtx = int64_casval (&maxvtx, gmaxvtx, tmaxvtx);
   
-  return 1+maxvtx;
+  // Offers a minimal speed-up by doing a parallel maximum.
+  OMP(omp parallel for shared (maxvtx))
+  for (int64_t k = 0; k < nedge; k++) {
+    int64_t localmax = -1;
+    
+    if (get_v0_from_edge(&IJ[k]) > maxvtx)
+      localmax = get_v0_from_edge(&IJ[k]);
+    if (get_v1_from_edge(&IJ[k]) > (localmax > maxvtx ? localmax : maxvtx))
+      localmax = get_v1_from_edge(&IJ[k]);
+    
+    if (localmax > maxvtx) {   // Avoid critical section if possible.
+      OMP(omp critical(updatemax))
+      {
+        if (localmax > maxvtx) // Final update inside critical section.
+          maxvtx = localmax;  
+      }
+    }
+  }
+  
+  return 1 + maxvtx;
 }
 
 static void allocate_graph(vid_t vertex_count, eid_t edge_count, 
@@ -51,7 +57,7 @@ static void allocate_graph(vid_t vertex_count, eid_t edge_count,
 
 // Sorts the neighbours in ascending order.
 void sort_nbrs(graph_t* graph) {  
-#pragma omp parallel for
+OMP(omp parallel for schedule(guided))
   for (vid_t v = 0; v < graph->vertex_count; v++) {
     vid_t* nbrs = &graph->edges[graph->vertices[v]];
     qsort(nbrs, graph->vertices[v+1] - graph->vertices[v], sizeof(vid_t),
@@ -63,7 +69,7 @@ void sort_nbrs(graph_t* graph) {
 // provided by Totem to the Graph500 benchmark.
 static graph_t* graph = NULL;
 
-// TODO(scott): A parallel way to create the graph.
+// Creates a Totem graph from a graph500 graph.
 static void create_graph(struct packed_edge* IJ, vid_t vertex_count,
                          eid_t edge_count) {
   // The graph is undirected, hence the number of edges allocated is multiplied
@@ -71,29 +77,60 @@ static void create_graph(struct packed_edge* IJ, vid_t vertex_count,
   allocate_graph(vertex_count, edge_count * 2, &graph);
 
   eid_t* degree = (eid_t*)calloc(vertex_count, sizeof(eid_t));
-  for(eid_t i = 0; i < edge_count; i++) {
-    degree[get_v0_from_edge(&IJ[i])]++;
-    degree[get_v1_from_edge(&IJ[i])]++;
+  assert(degree);
+  
+  // Calculate the degree of each vertex.
+  OMP(omp parallel)
+  {
+    OMP(omp for nowait)
+    for(eid_t i = 0; i < edge_count; i++) {
+      vid_t v0 = get_v0_from_edge(&IJ[i]);
+      OMP(omp atomic)
+        degree[v0]++;
+    }
+    
+    OMP(omp for nowait)
+    for(eid_t i = 0; i < edge_count; i++) {
+      vid_t v1 = get_v1_from_edge(&IJ[i]);
+      OMP(omp atomic)
+        degree[v1]++;
+    }
   }
 
+  // Calculate the running total (prefix sum) of the degree for each vertex.
   graph->vertices[0] = 0;
   for (vid_t i = 1; i <= vertex_count; i++) {
     graph->vertices[i] = graph->vertices[i - 1] + degree[i - 1];
   }
   
-  for (eid_t i = 0; i < edge_count; i++) {
-    vid_t u = get_v0_from_edge(&IJ[i]);
-    vid_t v = get_v1_from_edge(&IJ[i]);
+  // Build the Totem edges, one in each direction.
+  OMP(omp parallel)
+  {
+    OMP(omp for nowait)
+    for (eid_t i = 0; i < edge_count; i++) {
+      vid_t u = get_v0_from_edge(&IJ[i]);
+      vid_t v = get_v1_from_edge(&IJ[i]);
+      eid_t pos;
 
-    // one direction
-    eid_t pos = degree[u]--;
-    graph->edges[graph->vertices[u] + pos - 1] = v;
+      // one direction
+      OMP(omp atomic capture)
+        { pos = degree[u]; degree[u]--; }
+      graph->edges[graph->vertices[u] + pos - 1] = v;    
+    }
+  
+    OMP(omp for nowait)
+    for (eid_t i = 0; i < edge_count; i++) {
+      vid_t u = get_v0_from_edge(&IJ[i]);
+      vid_t v = get_v1_from_edge(&IJ[i]);
+      eid_t pos;
 
-    // other direction
-    pos = degree[v]--;
-    graph->edges[graph->vertices[v] + pos - 1] = u;
+      // other direction
+      OMP(omp atomic capture)
+        { pos = degree[v]; degree[v]--; }
+      graph->edges[graph->vertices[v] + pos - 1] = u;
+    }
   }
-
+  
   sort_nbrs(graph);
   free(degree);
 }
