@@ -281,6 +281,8 @@ PRIVATE void init_allocate_partitions_space(partition_set_t* pset) {
         subgraph->edges = (vid_t*)malloc(sizeof(vid_t) * subgraph->edge_count);
         assert(subgraph->edges);
         if (pset->graph->weighted) {
+          // Update edge-weight state of the subgraph
+          subgraph->weighted = pset->graph->weighted;
           subgraph->weights = (weight_t*)malloc(sizeof(weight_t) *
                                                 subgraph->edge_count);
           assert(subgraph->weights);
@@ -356,6 +358,7 @@ PRIVATE void init_sort_nbrs(partition_set_t* pset) {
       vid_t* nbrs = &subgraph->edges[subgraph->vertices[v]];
       qsort(nbrs, subgraph->vertices[v+1] - subgraph->vertices[v],
             sizeof(vid_t), compare_ids);
+      // TODO (treza): Required updates for edge-weights.
     }
   }
 }
