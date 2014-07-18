@@ -8,6 +8,7 @@
 // totem includes
 #include "totem_util.h"
 #include "totem_graph.h"
+#include "totem_partition.h"
 
 /**
  * Ensure the device supports the minimum CUDA architecture requirements
@@ -39,7 +40,7 @@ error_t check_cuda_version() {
 int get_gpu_count() {
   int gpu_count = 0;
   cudaGetDeviceCount(&gpu_count);
-  return gpu_count;
+  return min((MAX_PARTITION_COUNT - 1), gpu_count);
 }
 
 int compare_ids(const void *a, const void *b) {
