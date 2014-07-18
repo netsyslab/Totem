@@ -10,6 +10,7 @@
 // totem includes
 #include "totem_graph.h"
 #include "totem_grooves.h"
+#include <cuda_runtime.h>
 
 /**
  * Log (base 2) of the maximum number of partitions. Practically, it specifies
@@ -18,7 +19,7 @@
  * TODO(abdullah): change the macros to constant variables and inline functions
  */
 #ifndef MAX_LOG_PARTITION_COUNT
-#define MAX_LOG_PARTITION_COUNT  3
+#define MAX_LOG_PARTITION_COUNT  2
 #endif
 
 /**
