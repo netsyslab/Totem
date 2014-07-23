@@ -2,10 +2,9 @@
  * Unit tests for clustering coefficient algorithm.
  *
  * Created on: 2013-07-09
- * Author: Sidney Pontes Filho
- *
- * Last updated on: 2014-02-03
- * Author: Tahsin Arafat Reza 
+ * Authors: Sidney Pontes Filho
+ *          Tahsin Arafat Reza
+ *          Tanuj Kr Aasawat
  *
  */
 
@@ -89,7 +88,23 @@ TEST_P(ClusteringCoefficientTest, CompleteGraph300NodesUndirected) {
   }  
 }
 
-// Tests ClustreingCoefficinet for an undirected chain graph with 1K nodes.
+// Tests ClusteringCoefficient for an undirected grid graph with 15 nodes.
+TEST_P(ClusteringCoefficientTest, GridGraph15NodesUndirected) {
+  EXPECT_EQ(SUCCESS,
+            graph_initialize(DATA_FOLDER("grid_graph_15_nodes_weight.totem"),
+                             false, &_graph));
+
+  CALL_SAFE(totem_malloc(_graph->vertex_count * sizeof(weight_t), _mem_type,
+                         (void**)&_coefficients));
+
+  EXPECT_EQ(SUCCESS, clustering(_graph, &_coefficients));
+  EXPECT_FALSE(_coefficients == NULL);
+  for(vid_t vertex = 0; vertex < _graph->vertex_count; vertex++){
+    EXPECT_FLOAT_EQ(0.0, _coefficients[vertex]);
+  }
+}
+
+// Tests ClusteringCoefficient for an undirected chain graph with 1000 nodes.
 TEST_P(ClusteringCoefficientTest, ChainGraph1000NodesUndirected) {
   EXPECT_EQ(SUCCESS,
             graph_initialize(DATA_FOLDER("chain_1000_nodes.totem"),
@@ -169,7 +184,9 @@ TEST_P(ClusteringCoefficientTest, RingCenterGraph1000NodesUndirected) {
 INSTANTIATE_TEST_CASE_P(ClusteringCoefficientGPUandCPUTest, 
                         ClusteringCoefficientTest, 
                         Values(&clustering_coefficient_cpu,
-                        &clustering_coefficient_gpu));
+                        &clustering_coefficient_gpu,
+                        &clustering_coefficient_sorted_neighbours_cpu,
+                        &clustering_coefficient_sorted_neighbours_gpu));
 
 #else
 
