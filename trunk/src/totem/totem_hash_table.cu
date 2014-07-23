@@ -1,12 +1,12 @@
 /**
- * Defines a hash table interface. Mainly the data-structure the insert and
- * the retrieve operations. Based on the hash table described in [Alcantara09].
- * D.A. Alcantara et al., "Real-time parallel hashing on the GPU," in
- * ACM Transactions on Graphics (TOG).
+ * Defines a hash table interface. Mainly the data-structure the insert and the
+ * retrieve operations. Based on the hash table described in [Alcantara09].
+ * D.A. Alcantara et al., "Real-time parallel hashing on the GPU," in ACM
+ * Transactions on Graphics (TOG).
  *
- * Note that this implementation does not support inserting individual items
- * to the table, rather it allows for only building the hash table at once
- * (i.e., all (key,value) pairs to be inserted in the table should be known at
+ * Note that this implementation does not support inserting individual items to
+ * the table, rather it allows for only building the hash table at once (i.e.,
+ * all (key,value) pairs to be inserted in the table should be known at
  * initialization time).
 
  *  Created on: 2011-12-30
@@ -15,24 +15,69 @@
 
 // totem includes
 #include "totem_comdef.h"
-#include "totem_mem.h"
 #include "totem_comkernel.cuh"
 #include "totem_hash_table.h"
+#include "totem_mem.h"
+#include "totem_util.h"
 
 /**
- * The ratio of the space to be allocated in the table with respect to the
- * maximum number of entries to be hosted in the table.
+ * Maximum length of the eviction (collision) chain during the key insertion
+ * operation.
  */
-#define HT_SPACE_EXPANSION_RATIO 3
+#define HT_MAX_ITERATIONS 1000
 
 /**
- * Maximum length of the eviction (collision) chain during the key
- * insertion operation
+ * Stores prime numbers that are used to determine the actual size of the array
+ * used to implement the hash table.
  */
-#define HT_MAX_ITERATIONS        100
+PRIVATE uint32_t primes[] = {
+  1,          /* 1 item */
+  7,          /* 2 items */
+  17,         /* 4 items */
+  29,         /* 8 items */
+  53,         /* 16 items */
+  97,         /* 32 items */
+  193,        /* 64 items */
+  389,        /* 128 items */
+  769,        /* 256 items */
+  1543,       /* 512 items */
+  3079,       /* 1024 items */
+  6151,       /* 2048 items */
+  12289,      /* 4096 items */
+  24593,      /* 8192 items */
+  49157,      /* 16K items */
+  98317,      /* 32K items */
+  196613,     /* 64K items */
+  393241,     /* 128K items */
+  786433,     /* 256K items */
+  1572869,    /* 512K items */
+  3145739,    /* 1M items */
+  6291469,    /* 2M items */
+  12582917,   /* 4M items */
+  25165843,   /* 8M items */
+  50331653,   /* 16M items */
+  100663319,  /* 32M items */
+  201326611,  /* 64M items */
+  402653189,  /* 128M items */
+  805306457,  /* 256M items */
+  1610612741, /* 512M items */
+  3143102429  /* 1B items */
+};
+
+/**
+ * Returns the size of the array that should be allocated to store the hash
+ * table.
+ * @param[in] count maximum number of elements to be stored in the hash table
+ * @param[out] the size of the array in words
+ */
+PRIVATE uint32_t get_size(uint32_t count) {
+  if (count == 0 || get_mssb(count) > 30) return 0;
+  return primes[get_mssb(count)];
+}
 
 error_t hash_table_initialize_cpu(uint32_t count, hash_table_t* hash_table) {
-  hash_table->size = count * HT_SPACE_EXPANSION_RATIO;
+  hash_table->size = get_size(count);
+  if (hash_table->size == 0) return FAILURE;
   hash_table->allocated = false;
   hash_table->entries = (uint64_t*)calloc(hash_table->size, sizeof(uint64_t));
   memset(hash_table->entries, -1, hash_table->size * sizeof(uint64_t));
@@ -40,7 +85,6 @@ error_t hash_table_initialize_cpu(uint32_t count, hash_table_t* hash_table) {
 }
 
 error_t hash_table_initialize_cpu(uint32_t count, hash_table_t** hash_table) {
-  // allocate hash table state
   *hash_table = (hash_table_t*)calloc(1, sizeof(hash_table_t));
   error_t rc = hash_table_initialize_cpu(count, *hash_table);
   (*hash_table)->allocated = true;
@@ -50,12 +94,10 @@ error_t hash_table_initialize_cpu(uint32_t count, hash_table_t** hash_table) {
 error_t hash_table_initialize_cpu(uint32_t* keys, uint32_t count,
                                   hash_table_t** hash_table) {
   if (count <= 0 || !keys) return FAILURE;
-
-  // allocate the hash table's state
   CHK_SUCCESS(hash_table_initialize_cpu(count, hash_table), err);
 
-  // build the hash table: insert all the keys, where the value corresponding
-  // to each key is its index in keys array
+  // Build the hash table: insert all the keys, where the value corresponding
+  // to each key is its index in keys array.
   for (int index = 0; index < count; index++) {
     uint32_t key = keys[index];
     CHK_SUCCESS(hash_table_put_cpu(*hash_table, key, index), err_free_state);
@@ -86,12 +128,12 @@ error_t hash_table_put_cpu(hash_table_t* hash_table, uint32_t key, int value) {
   int its = 0;
 
   for (; its < HT_MAX_ITERATIONS; its++) {
-    // Insert the new item
+    // Insert the new item.
     entry = __sync_lock_test_and_set(&(hash_table->entries[location]), entry);
     key = HT_GET_KEY(entry);
     if (key == HT_KEY_EMPTY) break;
 
-    // if an item was evicted, reinsert it again
+    // If an item was evicted, reinsert it again.
     uint32_t location_1 = HT_FUNC1(hash_table, key);
     uint32_t location_2 = HT_FUNC2(hash_table, key);
     uint32_t location_3 = HT_FUNC3(hash_table, key);
@@ -101,7 +143,7 @@ error_t hash_table_put_cpu(hash_table_t* hash_table, uint32_t key, int value) {
     else if (location == location_3) location = location_4;
     else location = location_1;
   }
-  // the eviction chain was too long, can't build the hash table
+  // The eviction chain was too long, can't build the hash table.
   if (its == HT_MAX_ITERATIONS) {
     return FAILURE;
   }
@@ -156,8 +198,8 @@ error_t hash_table_get_keys_cpu(hash_table_t* hash_table, uint32_t** keys,
  * @param[in] count number of keys
  * @param[out] values the list of retrieved values
  */
-__global__ void get_kernel(hash_table_t hash_table, uint32_t* keys,
-                           uint32_t count, int* values) {
+PRIVATE __global__ void get_kernel(hash_table_t hash_table, uint32_t* keys,
+                                   uint32_t count, int* values) {
   uint32_t index = THREAD_GLOBAL_INDEX;
   if (index >= count) return;
   int value;
@@ -185,12 +227,10 @@ error_t hash_table_get_gpu(hash_table_t* hash_table, uint32_t* keys,
   CHK_CU_SUCCESS(cudaMemcpy(*values, values_d, count * sizeof(int),
                             cudaMemcpyDeviceToHost), err_free_values);
   }
-  // clean up and return
   CALL_CU_SAFE(cudaFree(values_d));
   CALL_CU_SAFE(cudaFree(keys_d));
   return SUCCESS;
 
-  // error handling
  err_free_values:
   totem_free(*values, TOTEM_MEM_HOST);
  err_free_values_d:
@@ -224,7 +264,6 @@ error_t hash_table_initialize_gpu(hash_table_t* hash_table,
                             cudaMemcpyHostToDevice), err_free_entries);
   return SUCCESS;
 
-  // error handling
  err_free_entries:
   CALL_CU_SAFE(cudaFree(hash_table_d->entries));
  err:
@@ -247,12 +286,8 @@ error_t hash_table_initialize_gpu(uint32_t* keys, uint32_t count,
                                   hash_table_t** hash_table) {
   hash_table_t* hash_table_h;
   CHK_SUCCESS(hash_table_initialize_cpu(keys, count, &hash_table_h), err);
-
-  // allocate space on the gpu and move the table
   CHK_SUCCESS(hash_table_initialize_gpu(hash_table_h, hash_table),
               err_free_host_state);
-
-  // done, clean temporary host state
   hash_table_finalize_cpu(hash_table_h);
   return SUCCESS;
 

@@ -7,7 +7,6 @@
 
 // totem includes
 #include "totem_util.h"
-#include "totem_graph.h"
 #include "totem_partition.h"
 
 /**
@@ -43,10 +42,21 @@ int get_gpu_count() {
   return min((MAX_PARTITION_COUNT - 1), gpu_count);
 }
 
-int compare_ids(const void *a, const void *b) {
+int compare_ids(const void* a, const void* b) {
   vid_t v1 = *((vid_t*)a);
   vid_t v2 = *((vid_t*)b);
   if (v1 < v2) return -1;
   if (v1 == v2) return 0;
   return 1;
+}
+
+bool compare_ids_tbb(const vid_t& v1, const vid_t& v2) {
+  return (v1 < v2);
+}
+
+int get_mssb(uint32_t word) {
+  if (word == 0) return -1;
+  int mssb = 0;
+  while ((word >>= 1) != 0) mssb++;
+  return mssb;
 }

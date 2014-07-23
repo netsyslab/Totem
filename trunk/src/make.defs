@@ -18,23 +18,23 @@
 
 # Set compilation options
 NVCCFLAGS =
-CCFLAGS =
+CFLAGS =
 # 64bit edge IDs
 ifeq ($(EID), 64)
   NVCCFLAGS += -DFEATURE_64BIT_EDGE_ID
-  CCFLAGS += -DFEATURE_64BIT_EDGE_ID
+  CFLAGS += -DFEATURE_64BIT_EDGE_ID
 endif
 
 ifdef PBIT
   NVCCFLAGS += -DMAX_LOG_PARTITION_COUNT=$(PBIT)
-  CCFLAGS += -DMAX_LOG_PARTITION_COUNT=$(PBIT)
+  CFLAGS += -DMAX_LOG_PARTITION_COUNT=$(PBIT)
 endif
 
 # enable verbose output
 ifdef VERBOSE
 ifeq ($(VERBOSE), YES)
   NVCCFLAGS += -DFEATURE_VERBOSE_TIMING
-  CCFLAGS += -DFEATURE_VERBOSE_TIMING
+  CFLAGS += -DFEATURE_VERBOSE_TIMING
 endif
 endif
 
@@ -61,13 +61,13 @@ ifdef GPU_ARCH
   ifeq ($(GPU_ARCH), 20)
     SM_TARGETS = $(GEN_SM20)
     NVCCFLAGS += -DFEATURE_SM20
-    CCFLAGS += -DFEATURE_SM20
+    CFLAGS += -DFEATURE_SM20
   else ifeq ($(GPU_ARCH), 35)
     SM_TARGETS = $(GEN_SM35)
     NVCCFLAGS += -dc
     LFLAGS    += $(SM_TARGETS) -rdc=true -lcudadevrt 
     NVCCFLAGS += -DFEATURE_SM35
-    CCFLAGS += -DFEATURE_SM35
+    CFLAGS += -DFEATURE_SM35
   else
     $(error unsupported GPU architecture)
   endif
@@ -77,7 +77,7 @@ else
   NVCCFLAGS += -dc
   LFLAGS    += $(SM_TARGETS) -rdc=true -lcudadevrt 
   NVCCFLAGS += -DFEATURE_SM35
-  CCFLAGS += -DFEATURE_SM35
+  CFLAGS += -DFEATURE_SM35
 endif
 
 
@@ -96,8 +96,9 @@ NVCC = $(CUDA_INSTALL_PATH)/bin/nvcc
 
 # compilation and linking flags. Note that OPTFLAGS is used only for *.c files
 OPTFLAGS   = -O3 -fno-strict-aliasing
-CCFLAGS   += -g $(OPENMP) $(OPTFLAGS) -Wall -Wno-format \
-             -I$(CUDA_INSTALL_PATH)/include -D__STDC_LIMIT_MACROS
+CFLAGS    += -g $(OPENMP) $(OPTFLAGS) -Wall -Wno-format \
+            -I$(CUDA_INSTALL_PATH)/include -D__STDC_LIMIT_MACROS 
+CCFLAGS    = $(CFLAGS) -std=c++11 
 NVCCFLAGS += -g -Xcompiler "$(OPENMP) -fno-strict-aliasing" -O3 -I. \
              -I$(CUDA_INSTALL_PATH)/include $(SM_TARGETS) -D__STDC_LIMIT_MACROS
 LFLAGS    +=  -lcudart -I. -L. -L$(CUDA_INSTALL_PATH)/lib$(ARCH) -lm \
