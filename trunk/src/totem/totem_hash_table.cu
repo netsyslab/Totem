@@ -33,7 +33,7 @@
 PRIVATE uint32_t primes[] = {
   1,          /* 1 item */
   7,          /* 2 items */
-  17,         /* 4 items */
+  23,         /* 4 items */
   29,         /* 8 items */
   53,         /* 16 items */
   97,         /* 32 items */
