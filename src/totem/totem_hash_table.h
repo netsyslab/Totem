@@ -31,29 +31,22 @@
 #define HT_GET_KEY(_entry) ((uint32_t)((_entry) >> 32))
 #define HT_GET_VALUE(_entry) ((uint32_t)((_entry) & ((uint32_t)-1)))
 
-/**
- * A prime number used in the hash functions
- */
-#define HT_PRIME_NUMBER          334214459
-
-/**
- * A special key used to indicate an empty spot
- */
+/** A special key used to indicate an empty spot. */
 #define HT_KEY_EMPTY             ((uint32_t)(-1))
 
 /**
  * Weak hash functions following the form (OP(A,KEY) + B) mod P mod SIZE, where
  * OP is either a multiply or an XOR operation. A and B are random numbers, P is
- * a prime number and SIZE is the table size
-*/
-#define HT_FUNC1(ht, k) (((9600^(k)) + 11517) % HT_PRIME_NUMBER % (ht)->size)
-#define HT_FUNC2(ht, k) (((16726*(k)) + 6274) % HT_PRIME_NUMBER % (ht)->size)
-#define HT_FUNC3(ht, k) (((8334^(k)) + 19108) % HT_PRIME_NUMBER % (ht)->size)
-#define HT_FUNC4(ht, k) (((23720*(k)) + 7860) % HT_PRIME_NUMBER % (ht)->size)
+ * a prime number and SIZE is the table size.
+ */
+#define HT_FUNC1(ht, k)  (((((int64_t)2039^(k)) + 11517)) % (ht)->size)
+#define HT_FUNC2(ht, k)  (((((int64_t)2999*(k)) + 6274)) % (ht)->size)
+#define HT_FUNC3(ht, k)  (((((int64_t)3491^(k)) + 19108)) % (ht)->size)
+#define HT_FUNC4(ht, k)  (((((int64_t)3541*(k)) + 7860)) % (ht)->size)
 
 /**
  * Macro to look up a value index from the hash table. This macro can be used
- * for both, the CPU and the GPU-hosted tables
+ * for both, the CPU and the GPU-based tables.
  */
 #define HT_LOOKUP(_ht, _key, _value)                                    \
   do {                                                                  \
@@ -72,9 +65,7 @@
     _value = HT_GET_VALUE(_entry);                                      \
   } while(0)
 
-/**
- * Macro to check if a key exists
- */
+/** Macro to check if a key exists. */
 #define HT_CHECK(_ht, _key, _found)                                     \
   do {                                                                  \
     uint32_t _location_1 = HT_FUNC1((_ht), (_key));                     \
@@ -137,14 +128,14 @@ error_t hash_table_initialize_cpu(uint32_t* keys, uint32_t count,
                                   hash_table_t** hash_table);
 
 /**
- * Frees the state allocated for the hash table
+ * Frees the state allocated for the hash table.
  * @param[in] hash_table a reference to the hash table
  * @return generic success or failure
  */
 error_t hash_table_finalize_cpu(hash_table_t* hash_table);
 
 /**
- * Inserts a (key, value) to the hash table
+ * Inserts a (key, value) to the hash table.
  * @param[in] graph a reference to the hash table
  * @param[in] key key to be inserted
  * @param[in] index a value's index to accompany the key
@@ -174,7 +165,7 @@ error_t hash_table_get_cpu(hash_table_t* hash_table, uint32_t* keys,
                            uint32_t count, int** values);
 
 /**
- * Retrieves the list of keys in the hash table
+ * Retrieves the list of keys in the hash table.
  * @param[in] hash_table a reference to the hash table
  * @param[out] keys a reference to the list of returned keys
  * @param[out] count number of keys
@@ -185,7 +176,7 @@ error_t hash_table_get_keys_cpu(hash_table_t* hash_table, uint32_t** keys,
 
 /**
  * Initializes a hash table on the gpu. It allocates the state on the cpu and
- * moves it to the gpu
+ * moves it to the gpu.
  * @param[in] values an array of values to be inserted in the table
  * @param[in] keys   the corresponding keys of the values
  * @param[in] count  the numbero f values
@@ -218,7 +209,7 @@ error_t hash_table_initialize_gpu(hash_table_t* hash_table,
                                   hash_table_t* hash_table_d);
 
 /**
- * Frees the state allocated for the gpu-based hash table
+ * Frees the state allocated for the gpu-based hash table.
  * @param[in] hash_table a reference to the hash table
  * @return generic success or failure
  */

@@ -29,6 +29,9 @@ GRAPH500_INC = -I"../" -I"../generator"
 NVCCFLAGS += 	$(GTEST_INC) $(TOTEM_INC) $(ALG_INC) $(GRAPH500_INC) \
 		$(BENCHMARK_INC)
 
+CFLAGS   += 	$(GTEST_INC) $(TOTEM_INC) $(ALG_INC) $(GRAPH500_INC) \
+		$(BENCHMARK_INC)
+
 CCFLAGS   += 	$(GTEST_INC) $(TOTEM_INC) $(ALG_INC) $(GRAPH500_INC) \
 		$(BENCHMARK_INC)
 
@@ -49,7 +52,7 @@ $(OBJDIR):
 	@if test ! -d $(OBJDIR); then mkdir $(OBJDIR); fi
 
 $(COBJS): $(OBJDIR)/%.c.o: %.c $(DEPS)
-	$(C) $(CCFLAGS) -D_FILE_OFFSET_BITS=64 -std=c99 -c $< -o $@
+	$(C) $(CFLAGS) -D_FILE_OFFSET_BITS=64 -std=c99 -c $< -o $@
 
 $(CCOBJS): $(OBJDIR)/%.cc.o: %.cc $(DEPS)
 	$(CC) $(CCFLAGS) -c $< -o $@
