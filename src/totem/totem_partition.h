@@ -10,6 +10,7 @@
 // totem includes
 #include "totem_graph.h"
 #include "totem_grooves.h"
+#include "totem_attributes.h"
 #include <cuda_runtime.h>
 
 /**
@@ -58,7 +59,7 @@
 /**
  * A graph partition type based on adjacency list representation. The vertex ids
  * in the edges list have the partition id encoded in the most significant bits.
- * This allows for a vertex to have a neighbor in another partition.
+ * This allows for a vertex to have a neighbour in another partition.
  *
  * The outbox and inbox parameters represent the communication stubs of Grooves.
  * Outbox is a list of tables where each table stores the state to be
@@ -167,13 +168,15 @@ error_t partition_modularity(graph_t* graph, partition_set_t* partition_set,
  *                               the sum of this array should be exactly 1. if
  *                               NULL, the partitions will be assigned equal
  *                               fractions.
+ * @param[in] attr The totem context attributes, for option configurations.
  * @param[out] partition_labels an array with a partition id for each vertex as
  *                              identified by the array position. It is set to
  *                              NULL in case of failure.
  * @return SUCCESS if the partitions are assigned, FAILURE otherwise.
  */
 error_t partition_random(graph_t* graph, int partition_count, 
-                         double* partition_fraction, vid_t** partition_labels);
+                         double* partition_fraction, vid_t** partition_labels,
+                         totem_attr_t* attr);
 
 /**
  * Split the graph after sorting the vertices by edge degree into the specified 
@@ -188,6 +191,7 @@ error_t partition_random(graph_t* graph, int partition_count,
  *                               the sum of this array should be exactly 1. if
  *                               NULL, the partitions will be assigned equal
  *                               fractions.
+ * @param[in] attr The totem context attributes, for option configurations.
  * @param[out] partition_labels an array with a partition id for each vertex as
  *                              identified by the array position. It is set to
  *                              NULL in case of failure.
@@ -195,10 +199,12 @@ error_t partition_random(graph_t* graph, int partition_count,
  */
 error_t partition_by_asc_sorted_degree(graph_t* graph, int partition_count,
                                        double* partition_fraction, 
-                                       vid_t** partition_labels);
+                                       vid_t** partition_labels,
+                                       totem_attr_t* attr);
 error_t partition_by_dsc_sorted_degree(graph_t* graph, int partition_count,
                                        double* partition_fraction,
-                                       vid_t** partition_labels);
+                                       vid_t** partition_labels,
+                                       totem_attr_t* attr);
 
 /**
  * The following defines the signature of a partitioning algorithm function. The
@@ -207,7 +213,7 @@ error_t partition_by_dsc_sorted_degree(graph_t* graph, int partition_count,
  * that the order of the functions here must be the same as their corresponding 
  * entry in the enumeration.
  */
-typedef error_t(*partition_func_t)(graph_t*, int, double*, vid_t**);
+typedef error_t(*partition_func_t)(graph_t*, int, double*, vid_t**, totem_attr_t*);
 PRIVATE const partition_func_t PARTITION_FUNC[] = {
   partition_random,
   partition_by_asc_sorted_degree,
@@ -243,7 +249,8 @@ error_t partition_set_initialize(graph_t* graph, vid_t* partition_labels,
                                  int partition_count, 
                                  gpu_graph_mem_t gpu_graph_mem,
                                  size_t push_msg_size, size_t pull_msg_size, 
-                                 partition_set_t** partition_set);
+                                 partition_set_t** partition_set,
+                                 totem_attr_t* attr);
 
 /**
  * De-allocates a partition set object
