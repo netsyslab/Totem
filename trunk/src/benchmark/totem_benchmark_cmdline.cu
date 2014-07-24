@@ -23,7 +23,7 @@ PRIVATE benchmark_options_t options = {
   GPU_GRAPH_MEM_DEVICE,  // allocate gpu-based partitions on the device
   false,                 // do not randomize vertex placement across
                          // GPU partitions
-  false,                 // vertex ids are not sorted by edge degree
+  false,                 // vertex ids will not be sorted by edge degree
 };
 
 /**
@@ -71,8 +71,8 @@ PRIVATE void display_help(char* exe_name, int exit_err) {
          "     %d: Execute on CPU only (default)\n"
          "     %d: Execute on GPUs only\n"
          "     %d: Execute on the CPU and on the GPUs\n"
-         "  -q Indicates that the vertex ids in the input graph are sorted by\n"
-         "     degree (default FALSE)\n"
+         "  -q Enables mapping by sorted vertex degree during partitioning\n"
+         "     (default FALSE)\n"
          "  -rNUM [1-%d] Number of times an experiment is repeated or sources\n"
          "        used to benchmark a traversal algorithm (default 5)\n"
          "  -sNUM OMP scheduling type\n"

@@ -65,8 +65,9 @@ typedef struct benchmark_options_s {
   bool                  gpu_par_randomized; /**< Indicates if the placement of
                                                  vertices across GPUs is random
                                                  or according to par_algo */
-  bool                  sorted;       /**< Indicates whether the vertex ids are
-                                           sorted by edge degree or not */
+  bool                  sorted;       /**< Maps the vertex ids in sorted order
+                                           by edge degree during the
+                                           partitioning phase */
 } benchmark_options_t;
 
 /**
