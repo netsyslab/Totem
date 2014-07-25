@@ -127,10 +127,17 @@ void graph500_alloc(partition_t* par);
  * @param[in] graph the input graph
  * @param[out] coefficients array containing computed coefficinets
  */
+ //TODO(treza): change the data type from weight_t to something specific 
+ //to clustering coefficient (e.g., clustering_coefficient_t) or 
+ //even change this to a template.
 error_t clustering_coefficient_cpu(const graph_t* graph, 
                                    weight_t** coefficients);
 error_t clustering_coefficient_gpu(const graph_t* graph, 
                                    weight_t** coefficients);
+error_t clustering_coefficient_sorted_neighbours_cpu(const graph_t* graph, 
+                                                     weight_t** coefficients);
+error_t clustering_coefficient_sorted_neighbours_gpu(const graph_t* graph, 
+                                                     weight_t** coefficients);
 
 /*
  * Given a weighted graph \f$G = (V, E, w)\f$ and a source vertex \f$v\inV\f$,
