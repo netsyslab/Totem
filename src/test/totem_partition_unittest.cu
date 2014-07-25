@@ -52,8 +52,7 @@ __global__ void CheckInboxValuesGPUKernel(uint32_t pid, int* values,
   KERNEL_EXPECT_TRUE(values[index] == pid + 1);
 }
 
-typedef error_t(*PartitionFunction)(graph_t*, int, double*, vid_t**);
-class GraphPartitionTest : public TestWithParam<PartitionFunction> {
+class GraphPartitionTest : public TestWithParam<partition_func_t> {
  public:
   virtual void SetUp() {
     // Ensure the minimum CUDA architecture is supported
@@ -64,7 +63,7 @@ class GraphPartitionTest : public TestWithParam<PartitionFunction> {
     partitions_ = NULL;
     partition_set_ = NULL;
     partition_count_ = gpu_count + 1;
-    partition_processor_ = 
+    partition_processor_ =
       (processor_t*)calloc(partition_count_, sizeof(processor_t));
     partition_processor_[0].type = PROCESSOR_CPU;
     for (int gpu = 0; gpu < gpu_count; gpu++) {
@@ -159,9 +158,9 @@ class GraphPartitionTest : public TestWithParam<PartitionFunction> {
         if (remote_outbox->count == 0) continue;
         if (partition->processor.type == PROCESSOR_GPU) {
           ASSERT_EQ(cudaSuccess, cudaSetDevice(partition->processor.id));
-          ASSERT_EQ(SUCCESS, totem_memset((int*)remote_outbox->push_values, 
-                                          (int)(remote_pid + 1), 
-                                          remote_outbox->count, 
+          ASSERT_EQ(SUCCESS, totem_memset((int*)remote_outbox->push_values,
+                                          (int)(remote_pid + 1),
+                                          remote_outbox->count,
                                           TOTEM_MEM_DEVICE));
           ASSERT_EQ(cudaSuccess, cudaThreadSynchronize());
         } else {
@@ -213,22 +212,24 @@ class GraphPartitionTest : public TestWithParam<PartitionFunction> {
   }
 
   void TestPartitionedGraphDataStructure() {
-    EXPECT_EQ(SUCCESS, partition_func_(graph_, partition_count_, NULL, 
-                                       &partitions_));
+    totem_attr_t attr = TOTEM_DEFAULT_ATTR;
+    EXPECT_EQ(SUCCESS, partition_func_(graph_, partition_count_, NULL,
+                                       &partitions_, &attr));
     EXPECT_TRUE(partition_count_ <= MAX_PARTITION_COUNT);
-    EXPECT_EQ(SUCCESS, partition_set_initialize(graph_, partitions_, 
+    EXPECT_EQ(SUCCESS, partition_set_initialize(graph_, partitions_,
                                                 partition_processor_,
                                                 partition_count_,
                                                 GPU_GRAPH_MEM_DEVICE,
                                                 MSG_SIZE_WORD,
                                                 MSG_SIZE_ZERO,
-                                                &partition_set_));
+                                                &partition_set_,
+                                                &attr));
     TestState();
     TestCommunication();
   }
 
  protected:
-  PartitionFunction  partition_func_;
+  partition_func_t  partition_func_;
   graph_t*           graph_;
   vid_t*             partitions_;
   uint32_t           partition_count_;
@@ -239,7 +240,8 @@ class GraphPartitionTest : public TestWithParam<PartitionFunction> {
 TEST_P(GraphPartitionTest , PartitionInvalidPartitionNumber) {
   EXPECT_EQ(SUCCESS, graph_initialize(DATA_FOLDER("single_node.totem"),
                                       false, &graph_));
-  EXPECT_EQ(FAILURE, partition_func_(graph_, -1, NULL, &partitions_));
+  totem_attr_t attr = TOTEM_DEFAULT_ATTR;
+  EXPECT_EQ(FAILURE, partition_func_(graph_, -1, NULL, &partitions_, &attr));
 }
 
 TEST_P(GraphPartitionTest , PartitionFractionInvalidFraction) {
@@ -248,19 +250,21 @@ TEST_P(GraphPartitionTest , PartitionFractionInvalidFraction) {
   double* partition_fraction = (double *) calloc(2, sizeof(double));
   partition_fraction[0] = 2.0;
   partition_fraction[1] = -1.0; // Invalid fraction
-  EXPECT_EQ(FAILURE, partition_func_(graph_, 2, partition_fraction, 
-                                     &partitions_));
+  totem_attr_t attr = TOTEM_DEFAULT_ATTR;
+  EXPECT_EQ(FAILURE, partition_func_(graph_, 2, partition_fraction,
+                                     &partitions_, &attr));
   partition_fraction[0] = 0.8;
   partition_fraction[1] = 0.1; // Invalid fraction sum
   EXPECT_EQ(FAILURE, partition_func_(graph_, 2, partition_fraction,
-                                     &partitions_));
+                                     &partitions_, &attr));
   free(partition_fraction);
 }
 
 TEST_P(GraphPartitionTest , PartitionSingleNodeGraph) {
   EXPECT_EQ(SUCCESS, graph_initialize(DATA_FOLDER("single_node.totem"),
                                       false, &graph_));
-  EXPECT_EQ(SUCCESS, partition_func_(graph_, 10, NULL, &partitions_));
+  totem_attr_t attr = TOTEM_DEFAULT_ATTR;
+  EXPECT_EQ(SUCCESS, partition_func_(graph_, 10, NULL, &partitions_, &attr));
   EXPECT_TRUE(partitions_[0] < 10);
 }
 
@@ -271,8 +275,9 @@ TEST_P(GraphPartitionTest , PartitionFractionSingleNodeGraph) {
   for (int i = 0; i < 10; i++) {
     partition_fraction[i] = (1.0 / 10);
   }
+  totem_attr_t attr = TOTEM_DEFAULT_ATTR;
   EXPECT_EQ(SUCCESS, partition_func_(graph_, 10, partition_fraction,
-                                     &partitions_));
+                                     &partitions_, &attr));
   EXPECT_TRUE(partitions_[0] < 10);
   free(partition_fraction);
 }
@@ -280,7 +285,8 @@ TEST_P(GraphPartitionTest , PartitionFractionSingleNodeGraph) {
 TEST_P(GraphPartitionTest , PartitionChainGraph) {
   EXPECT_EQ(SUCCESS, graph_initialize(DATA_FOLDER("chain_1000_nodes.totem"),
                                       false, &graph_));
-  EXPECT_EQ(SUCCESS, partition_func_(graph_, 10, NULL, &partitions_));
+  totem_attr_t attr = TOTEM_DEFAULT_ATTR;
+  EXPECT_EQ(SUCCESS, partition_func_(graph_, 10, NULL, &partitions_, &attr));
   for (vid_t i = 0; i < graph_->vertex_count; i++) {
     EXPECT_TRUE(partitions_[i] < 10);
   }
@@ -293,8 +299,9 @@ TEST_P(GraphPartitionTest , PartitionFractionChainGraph) {
   for (int i = 0; i < 10; i++) {
     partition_fraction[i] = (1.0 / 10);
   }
+  totem_attr_t attr = TOTEM_DEFAULT_ATTR;
   EXPECT_EQ(SUCCESS, partition_func_(graph_, 10, partition_fraction,
-                                     &partitions_));
+                                     &partitions_, &attr));
   for (vid_t i = 0; i < graph_->vertex_count; i++) {
     EXPECT_TRUE(partitions_[i] < 10);
   }
@@ -305,15 +312,16 @@ TEST_P(GraphPartitionTest , GetPartitionsSingleNodeGraph) {
   EXPECT_EQ(SUCCESS, graph_initialize(DATA_FOLDER("single_node.totem"),
                                       false, &graph_));
   partition_count_ = 1;
+  totem_attr_t attr = TOTEM_DEFAULT_ATTR;
   EXPECT_EQ(SUCCESS, partition_func_(graph_, partition_count_, NULL,
-                                      &partitions_));
+                                     &partitions_, &attr));
   EXPECT_EQ(SUCCESS, partition_set_initialize(graph_, partitions_,
                                               partition_processor_,
                                               partition_count_,
                                               GPU_GRAPH_MEM_DEVICE,
                                               MSG_SIZE_WORD,
                                               MSG_SIZE_ZERO,
-                                              &partition_set_));
+                                              &partition_set_, &attr));
   EXPECT_EQ(partition_set_->partition_count, 1);
   partition_t* partition = &partition_set_->partitions[0];
   EXPECT_EQ(partition->subgraph.vertex_count, (vid_t)1);
@@ -347,13 +355,15 @@ TEST_P(GraphPartitionTest, GetPartitionsImbalancedChainGraph) {
   // other 999 in the second partition.
   partitions_ = (vid_t*)calloc(1000, sizeof(vid_t));
   partitions_[0] = 1;
+  totem_attr_t attr = TOTEM_DEFAULT_ATTR;
   EXPECT_EQ(SUCCESS, partition_set_initialize(graph_, partitions_,
                                               partition_processor_,
                                               partition_count_,
                                               GPU_GRAPH_MEM_DEVICE,
                                               MSG_SIZE_WORD,
                                               MSG_SIZE_ZERO,
-                                              &partition_set_));
+                                              &partition_set_,
+                                              &attr));
   for (int pid = 0; pid < partition_set_->partition_count; pid++) {
     partition_t* partition = &partition_set_->partitions[pid];
     EXPECT_EQ(pid, partition->id);
@@ -376,8 +386,8 @@ TEST_P(GraphPartitionTest, GetPartitionsImbalancedChainGraph) {
 // Values() receives a list of parameters and the framework will execute the
 // whole set of tests PCoreTest for each element of Values()
 INSTANTIATE_TEST_CASE_P(GRAPHPARTITIONTEST, GraphPartitionTest,
-                        Values(&partition_random, 
-                               &partition_by_asc_sorted_degree, 
+                        Values(&partition_random,
+                               &partition_by_asc_sorted_degree,
                                &partition_by_dsc_sorted_degree));
 
 #else
