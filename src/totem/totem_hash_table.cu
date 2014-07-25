@@ -72,7 +72,16 @@ PRIVATE uint32_t primes[] = {
  */
 PRIVATE uint32_t get_size(uint32_t count) {
   if (count == 0 || get_mssb(count) > 30) return 0;
-  return primes[get_mssb(count)];
+  int mssb = get_mssb(count);
+  int index = 0;
+  if (mssb > 0) {
+    // Test if the bit to the right of the most significant one is set. If so,
+    // then "count" is in the second half of the range covered by the entry
+    // indexed by "mssb", and hence the next bracket is chosen instead to
+    // double the table size.
+    index = (count & (1 << (mssb - 1))) ? mssb + 1 : mssb;
+  }
+  return primes[index];
 }
 
 error_t hash_table_initialize_cpu(uint32_t count, hash_table_t* hash_table) {
