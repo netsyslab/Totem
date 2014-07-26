@@ -184,9 +184,7 @@ TEST_P(ClusteringCoefficientTest, RingCenterGraph1000NodesUndirected) {
 INSTANTIATE_TEST_CASE_P(ClusteringCoefficientGPUandCPUTest, 
                         ClusteringCoefficientTest, 
                         Values(&clustering_coefficient_cpu,
-                        &clustering_coefficient_gpu,
-                        &clustering_coefficient_sorted_neighbours_cpu,
-                        &clustering_coefficient_sorted_neighbours_gpu));
+                        &clustering_coefficient_gpu));
 
 #else
 
