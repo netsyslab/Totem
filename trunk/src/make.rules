@@ -1,0 +1,55 @@
+#--------------------------------------------------------------------------
+# Common rules to all internal makefiles
+#
+# Created on: 2014-07-26
+# Author: Abdullah Gharaibeh
+#
+#--------------------------------------------------------------------------
+
+objects: $(OBJDIR) $(CCOBJS) $(CUOBJS) $(COBJS)
+
+.PHONY: lib libbenchmark libtotem libalg clean clean-build clean-all
+
+lib: objects $(LIBDIR)
+	@printf "\nCreating %s library ...\n" $(LIBDIR)/lib$(TARGET).a
+	ar -r -u $(LIBDIR)/lib$(TARGET).a $(CLIBOBJS) $(CCLIBOBJS) $(CULIBOBJS)
+	ranlib $(LIBDIR)/lib$(TARGET).a
+
+libbenchmark:
+	@$(MAKE) lib -C $(BENCHMARK_PATH)
+
+libtotem:
+	@$(MAKE) lib -C $(TOTEM_PATH)
+
+libalg:
+	@$(MAKE) lib -C $(ALG_PATH)
+
+$(OBJDIR):
+	@mkdir -p $(OBJDIR)
+
+$(LIBDIR):
+	@mkdir -p $(LIBDIR)
+
+$(BINDIR):
+	@mkdir -p $(BINDIR)
+
+$(COBJS): $(OBJDIR)/%.c.o: %.c $(DEPS)
+	$(C) $(CFLAGS) $(INC) -D_FILE_OFFSET_BITS=64 -std=c99 -c $< -o $@
+
+$(CCOBJS): $(OBJDIR)/%.cc.o: %.cc $(DEPS)
+	$(CC) $(CCFLAGS) $(INC) -c $< -o $@
+
+$(CUOBJS): $(OBJDIR)/%.cu.o: %.cu $(DEPS)
+	$(NVCC) $(NVCCFLAGS) $(INC) -c $< -o $@
+
+clean:
+	@rm -rf *~ $(OBJDIR)
+
+clean-emacs:
+	@rm -rf *~
+
+clean-build:
+	@rm -rf *~ $(BUILDDIR)
+
+clean-all:
+	@rm -rf *~ $(BUILDBASEDIR)

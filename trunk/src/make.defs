@@ -2,12 +2,10 @@
 # Common definitions to all internal makefiles
 #
 # Features (e.g., make DEBUG="DEVICE"):
-#   
+#
 #   EID=64           // 64-bit edge ids
 #   GPU_ARCH=[20|35] // GPU architecture to compile for
 #   VERBOSE=YES      // enable verbose timing of Totem execution rounds
-#   PBIT=[NUM]       // number of bits designated for the partition id embedded
-#                    // in the vertex id
 #   DEBUG=DEVICE     // produce device debugging symbols
 #   L1=YES           // enable using GPU L1 cache (default disabled)
 #
@@ -16,21 +14,27 @@
 #
 #--------------------------------------------------------------------------
 
-# Set compilation options
+# The path to the root directory must be defined by the makefile that includes
+# this file.
+ifndef ROOTDIR
+  $(error root directory not defined)
+endif
+
+# The following variables will be set depending on the build options.
 NVCCFLAGS =
 CFLAGS =
-# 64bit edge IDs
+BUILDPATH =
+
+# Configure the size of the edge IDs.
 ifeq ($(EID), 64)
   NVCCFLAGS += -DFEATURE_64BIT_EDGE_ID
   CFLAGS += -DFEATURE_64BIT_EDGE_ID
+  BUILDPATH := EID64
+else
+  BUILDPATH := EID32
 endif
 
-ifdef PBIT
-  NVCCFLAGS += -DMAX_LOG_PARTITION_COUNT=$(PBIT)
-  CFLAGS += -DMAX_LOG_PARTITION_COUNT=$(PBIT)
-endif
-
-# enable verbose output
+# Enable verbose output if specified.
 ifdef VERBOSE
 ifeq ($(VERBOSE), YES)
   NVCCFLAGS += -DFEATURE_VERBOSE_TIMING
@@ -38,84 +42,110 @@ ifeq ($(VERBOSE), YES)
 endif
 endif
 
-# set debugging options
+# Set debugging flags.
 ifeq ($(DEBUG), DEVICE)
   NVCCFLAGS  += -G
 endif
 
-# Enable/disable GPU L1 cache
+# Enable/disable GPU L1 cache.
 ifneq ($(L1), YES)
   NVCCFLAGS += -Xptxas -dlcm=cg
 endif
 
-# Architecture to compile for
+# Set the architecture to compile for.
 ARCH = $(shell getconf LONG_BIT)
 ifeq ($(ARCH), 32)
   ARCH =
 endif
 
-# Compute capability targets
-GEN_SM20 = -gencode=arch=compute_20,code=\"sm_20,compute_20\" 
-GEN_SM35 = -gencode=arch=compute_35,code=\"sm_35,compute_35\" 
+# Compute capability targets.
+GEN_SM20 = -gencode=arch=compute_20,code=\"sm_20,compute_20\"
+GEN_SM35 = -gencode=arch=compute_35,code=\"sm_35,compute_35\"
 ifdef GPU_ARCH
   ifeq ($(GPU_ARCH), 20)
     SM_TARGETS = $(GEN_SM20)
     NVCCFLAGS += -DFEATURE_SM20
     CFLAGS += -DFEATURE_SM20
+    BUILDPATH := $(BUILDPATH)_CC20
   else ifeq ($(GPU_ARCH), 35)
     SM_TARGETS = $(GEN_SM35)
     NVCCFLAGS += -dc
-    LFLAGS    += $(SM_TARGETS) -rdc=true -lcudadevrt 
+    LFLAGS    += $(SM_TARGETS) -rdc=true -lcudadevrt
     NVCCFLAGS += -DFEATURE_SM35
     CFLAGS += -DFEATURE_SM35
+    BUILDPATH := $(BUILDPATH)_CC35
   else
     $(error unsupported GPU architecture)
   endif
 else
-  # default is 3.5
+  # Default is 3.5
   SM_TARGETS = $(GEN_SM35)
   NVCCFLAGS += -dc
-  LFLAGS    += $(SM_TARGETS) -rdc=true -lcudadevrt 
+  LFLAGS    += $(SM_TARGETS) -rdc=true -lcudadevrt
   NVCCFLAGS += -DFEATURE_SM35
   CFLAGS += -DFEATURE_SM35
+  BUILDPATH := $(BUILDPATH)_CC35
 endif
 
-
-# directory definitions
+# Compilers.
 CUDA_INSTALL_PATH = /usr/local/cuda
-LIBDIR = $(ROOT_DIR)/lib
-OBJDIR = obj
-
-# OpenMP
-OPENMP    = -fopenmp
-
-# compilers
 C   = gcc
 CC   = g++
 NVCC = $(CUDA_INSTALL_PATH)/bin/nvcc
 
-# compilation and linking flags. Note that OPTFLAGS is used only for *.c files
-OPTFLAGS   = -O3 -fno-strict-aliasing
-CFLAGS    += -g $(OPENMP) $(OPTFLAGS) -Wall -Wno-format \
-            -I$(CUDA_INSTALL_PATH)/include -D__STDC_LIMIT_MACROS 
-CCFLAGS    = $(CFLAGS) -std=c++11 
-NVCCFLAGS += -g -Xcompiler "$(OPENMP) -fno-strict-aliasing" -O3 -I. \
-             -I$(CUDA_INSTALL_PATH)/include $(SM_TARGETS) -D__STDC_LIMIT_MACROS
-LFLAGS    +=  -lcudart -I. -L. -L$(CUDA_INSTALL_PATH)/lib$(ARCH) -lm \
-	      -Xcompiler "$(OPENMP)" -ltbb
+# Compilation and linking flags.
+CFLAGS    := $(CFLAGS) -g -fopenmp $(OPTFLAGS) -Wall -Wno-format -O3 \
+             -fno-strict-aliasing -I$(CUDA_INSTALL_PATH)/include \
+             -D__STDC_LIMIT_MACROS
+CCFLAGS   := $(CFLAGS) -std=c++11
+NVCCFLAGS := $(NVCCFLAGS) -g -Xcompiler "-fopenmp -fno-strict-aliasing" -O3 \
+             -I. -I$(CUDA_INSTALL_PATH)/include $(SM_TARGETS) \
+             -D__STDC_LIMIT_MACROS
+LFLAGS    := $(LFLAGS) -lcudart -I. -L. -L$(CUDA_INSTALL_PATH)/lib$(ARCH) -lm  \
+             -ltbb -Xcompiler "-fopenmp"
 
-# source files and their corresponding objects and dependencies
+# Build directories.
+BUILDBASEDIR := $(ROOTDIR)/build
+BUILDDIR := $(BUILDBASEDIR)/$(BUILDPATH)
+OBJDIR   := $(BUILDDIR)/obj/$(TARGET)
+LIBDIR   := $(BUILDDIR)/lib
+BINDIR   := $(BUILDBASEDIR)/bin
+
+# Source files and their corresponding objects and dependencies.
 CSRC    = $(wildcard *.c)
 COBJS   = $(CSRC:%.c=$(OBJDIR)/%.c.o)
 CCSRC   = $(wildcard *.cc)
 CCOBJS  = $(CCSRC:%.cc=$(OBJDIR)/%.cc.o)
 CUSRC   = $(wildcard *.cu)
 CUOBJS  = $(CUSRC:%.cu=$(OBJDIR)/%.cu.o)
-CCDEPS  = $(wildcard *.h)
-CUDEPS  = $(wildcard *.cuh)
+DEPS    = $(wildcard *.[cuh,h])
 
-# common commands across make files
-ETAGS_CMD     = rm -f TAGS; find . -name '*.c' -o -name '*.h' -o \
-                -name '*.cu' | xargs etags
-CLEAN_CMD     = rm -f $(OBJDIR)/*.o *~
-CLEAN_ALL_CMD = rm -rf $(TARGET) $(OBJDIR) *~ TAGS
+# Source files that end with _binary are assumed to contain a main function and
+# hence produce executables. The definitions below split the objects produced by
+# such files such that they are not included in the list of objects used to
+# create libraries.
+CLIBOBJS=$(filter-out %_binary.c.o, $(COBJS))
+CCLIBOBJS=$(filter-out %_binary.cc.o, $(CCOBJS))
+CULIBOBJS=$(filter-out %_binary.cu.o, $(CUOBJS))
+CBINOBJS=$(filter %_binary.c.o, $(COBJS))
+CCBINOBJS=$(filter %_binary.cc.o, $(CCOBJS))
+CUBINOBJS=$(filter %_binary.cu.o, $(CUOBJS))
+
+# Paths to various modules.
+ALG_PATH   = $(ROOTDIR)/alg
+ALG_DEPS   = $(wildcard $(ALG_PATH)/*.[cuh,h])
+
+BENCHMARK_PATH   = $(ROOTDIR)/benchmark
+BENCHMARK_DEPS   = $(wildcard $(BENCHMARK_PATH)/*.[cuh,h])
+
+GRAPH500_PATH   = $(ROOTDIR)/thirdparty/graph500-2.1.4-energy/totem
+GRAPH500_DEPS   = $(wildcard $(GRAPH500_PATH)/*.[cuh,h])
+
+GTEST_PATH = $(GTEST)
+GTEST_SRC  = $(GTEST_PATH)/src/gtest_main.cc $(GTEST_PATH)/src/gtest-all.cc
+
+TEST_PATH   = $(ROOTDIR)/test
+TEST_DEPS   = $(wildcard $(TEST_PATH)/*.[cuh,h])
+
+TOTEM_PATH   = $(ROOTDIR)/totem
+TOTEM_DEPS   = $(wildcard $(TOTEM_PATH)/*.[cuh,h])

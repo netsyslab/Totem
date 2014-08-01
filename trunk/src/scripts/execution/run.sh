@@ -4,7 +4,7 @@
 #
 # The script will produce an output file per configuration with the following
 # format:
-# 
+#
 # The first line describes the experiment configuration:
 #  * file:<graph file>\tbenchmark:<BFS|PageRank|etc>\tvertices:<number>\t
 #  * edges:<number>\tpartitioning:<RAND|HIGH|LOW>\tplatform:<CPU|GPU|HYBRID>\t
@@ -14,7 +14,7 @@
 #  * rmt_vertex:<% of remote vertices>\trmt_edge:<% of remote edges>\t
 #  * beta:<% of remote edges after aggregation>
 #
-# Multiple lines, each line details a run's timing breakdown. Note that the 
+# Multiple lines, each line details a run's timing breakdown. Note that the
 # first line is a header:
 #  * total\texec\tinit\tcomp\tcomm\tfinalize\tgpu_comp\tscatter\tgather\taggr\t
 #  * trv_edges\texec_rate
@@ -95,7 +95,7 @@ MIN_ALPHA=5
 MAX_ALPHA=95
 BENCHMARK=${BFS}
 RESULT_BASE="../../results"
-TOTEM_EXE="../../benchmark/benchmark"
+TOTEM_EXE="../../build/bin/benchmark"
 MAX_GPU_COUNT=1
 REPEAT_COUNT=
 OMP_SCHED=${OMP_SCHED_GUIDED}
@@ -114,18 +114,18 @@ function usage() {
   echo "  -a  <minimum alpha> minimum value of alpha (the percentage of edges "
   echo "                      in the CPU partition) to use for experiments on"
   echo "                      hybrid platforms (default ${MIN_ALPHA}%)"
-  echo "  -b  <benchmark> BFS=${BFS}, PageRank=${PAGERANK}" \
-       "SSSP=${SSSP}, BC=${BC}, GRAPH500=${GRAPH500}" \
+  echo "  -b  <benchmark> BFS=${BFS}, PageRank=${PAGERANK}, SSSP=${SSSP}," \
+       "BC=${BC}, GRAPH500=${GRAPH500}" \
        "(default ${BENCHMARK_STR[${BENCHMARK}]})"
   echo "  -d  <results base directory> (default ${RESULT_BASE})"
   echo "  -e  <totem executable> (default ${TOTEM_EXE})"
-  echo "  -g  <max gpu count> maximum number of GPUs to use" \
-       "(default ${MAX_GPU_COUNT})"
+  echo "  -g  <max gpu count> maximum number of GPUs to use(default " \
+       "${MAX_GPU_COUNT})"
   echo "  -m Enables allocating the vertices array of the GPU partitions as a"
   echo "     memory mapped buffer on the host (default FALSE)"
   echo "  -o Enables random placement of vertices across GPU partitions in case"
   echo "     of multi-GPU setups (default FALSE)"
-  echo "  -q Indicates that the graph is sorted by degree (default FALSE)"
+  echo "  -q The graph is sorted by degree (default FALSE)"
   echo "  -r  <repeat count> number of times an experiment is repeated"
   echo "                     (default BFS:${BENCHMARK_REPEAT[$BFS]}," \
       "PageRank:${BENCHMARK_REPEAT[$PAGERANK]})"
@@ -177,12 +177,16 @@ done
 shift $(($OPTIND - 1))
 
 if [ $# -ne 1 ]; then
-    printf "\nError: Missing workload\n\n"
+    printf "Error: Missing workload\n"
     usage
     exit -1
 fi
 if [ ! -f $1 ]; then
-    printf "\nError: Workload $1 does not exist\n\n"
+    printf "Error: Workload \"$1\" does not exist\n"
+    exit -1
+fi
+if [ ! -f $TOTEM_EXE ]; then
+    printf "Error: The benchmark tool \"$TOTEM_EXE\" does not exist.\n"
     exit -1
 fi
 
@@ -201,7 +205,7 @@ mkdir -p ${RESULT_DIR}
 LOG=${RESULT_DIR}"/log"
 LOG_FAILED_RUNS=${RESULT_DIR}"/logFailedRuns"
 
-# Get the default number of execution rounds if not already specified 
+# Get the default number of execution rounds if not already specified
 # by command line
 if [ ! $REPEAT_COUNT ]; then
     REPEAT_COUNT=${BENCHMARK_REPEAT[$BENCHMARK]}
@@ -253,7 +257,7 @@ function run() {
     fi
 }
 
-## CPU Only, alpha and GPU count has no effect when running only on CPU 
+## CPU Only, alpha and GPU count has no effect when running only on CPU
 alpha=0
 gpu_count=0
 for socket_count in $(seq 1 ${MAX_SOCKET_COUNT}); do

@@ -1,5 +1,5 @@
 #--------------------------------------------------------------------------
-# Unit tests makefile
+# Unit tests makefile.
 #
 # Created on: 2011-03-18
 # Author: Abdullah Gharaibeh
@@ -7,83 +7,40 @@
 # To compile all tests: make
 # To compile a test   : make TEST=unit_test
 #--------------------------------------------------------------------------
-include ../make.defs
+TARGET  = tests
+ROOTDIR = ..
+include $(ROOTDIR)/make.defs
 
-.PHONY: clean
-
-TEST_FILE  = $(filter-out %~, $(wildcard totem_$(TEST)_unittest.*))
-EXE_EXT   = .test
-
-GTEST_PATH = $(GTEST)
-GTEST_SRC  = $(GTEST_PATH)/src/gtest_main.cc $(GTEST_PATH)/src/gtest-all.cc
-GTEST_INC  = -I$(GTEST_PATH)/include/ -I$(GTEST_PATH)
-GEST_LIB   = -L$(GTEST_PATH)/lib
-
-TOTEM_PATH   = ../totem
-TOTEM_INC    = -I$(TOTEM_PATH)
-TOTEM_LIB    = -ltotem -L$(TOTEM_PATH)
-TOTEM_DEPS   = $(wildcard $(TOTEM_PATH)/*.[cuh,h])
-
-ALG_PATH   = ../alg
-ALG_INC    = -I$(ALG_PATH)
-ALG_LIB    =  -lalg -L$(ALG_PATH)
-ALG_DEPS   = $(wildcard $(ALG_PATH)/*.[cuh,h])
+ifndef GTEST
+  $(error GTEST environment variable is not defined)
+endif
 
 ifdef TEST
-CCSRC = $(filter-out %.cu, $(TEST_FILE))
-CUSRC = $(filter-out %.cc, $(TEST_FILE))
-CCOBJS = $(CCSRC:%.cc=$(OBJDIR)/%.cc.o)
-CUOBJS = $(CUSRC:%.cu=$(OBJDIR)/%.cu.o)
+  TEST_FILE = $(filter-out %~, $(wildcard totem_$(TEST)_unittest.*))
+  ifeq ($(strip $(TEST_FILE)),)
+    $(error $(TEST) unit test does not exist)
+  endif
+  CCSRC = $(filter-out %.cu, $(TEST_FILE))
+  CUSRC = $(filter-out %.cc, $(TEST_FILE))
+  CCOBJS = $(CCSRC:%.cc=$(OBJDIR)/%.cc.o)
+  CUOBJS = $(CUSRC:%.cu=$(OBJDIR)/%.cu.o)
 endif
 ALL_OBJS = $(CCOBJS) $(CUOBJS)
 
-NVCCFLAGS += $(GTEST_INC) $(TOTEM_INC) $(ALG_INC)
-CCFLAGS   += $(GTEST_INC) $(TOTEM_INC) $(ALG_INC)
-LFLAGS    := $(ALG_LIB) $(TOTEM_LIB) $(LFLAGS)
-BUILD_LINE = $(ALL_OBJS) $(GTEST_SRC) $(GTEST_INC) $(LFLAGS)
+INC := -I. -I$(GTEST_PATH)/include/ -I$(GTEST_PATH) -I$(TOTEM_PATH) \
+       -I$(ALG_PATH)
+LIBS = -lalg -ltotem -L$(LIBDIR) -L$(GTEST_PATH)/lib
+DEPS := $(DEPS) $(TOTEM_DEPS) $(ALG_DEPS)
+BUILD_LINE = $(ALL_OBJS) $(GTEST_SRC) $(INC) $(LIBS) $(LFLAGS)
+EXE_EXT   = .test
 
-DEPS = $(CCDEPS) $(CUDEPS) $(TOTEM_DEPS) $(ALG_DEPS)
-
-all: environment totem alg objects
+all: objects libalg libtotem $(BINDIR)
 ifndef TEST
 	@printf "\nBuilding all unit tests ...\n"
-	$(NVCC) $(BUILD_LINE) -o all$(EXE_EXT)
+	$(NVCC) $(BUILD_LINE) -o $(BINDIR)/all$(EXE_EXT)
 else
-	@if test ! $(TEST_FILE); then \
-	  printf "\n%s unit test does not exist\n" $(TEST); \
-	  exit 2; \
-	fi
 	@printf "\nBuilding %s unit test ...\n" $(TEST_FILE)
-	$(NVCC) $(BUILD_LINE) -o $(TEST)$(EXE_EXT)
+	$(NVCC) $(BUILD_LINE) -o $(BINDIR)/$(TEST)$(EXE_EXT)
 endif
 
-environment:
-ifndef GTEST
-	@echo "GTEST environment variable is not defined"
-	@exit 2
-endif
-
-objects: $(OBJDIR) $(CCOBJS) $(CUOBJS)
-
-$(OBJDIR):
-	@if test ! -d $(OBJDIR); then mkdir $(OBJDIR); fi
-
-$(CCOBJS): $(OBJDIR)/%.cc.o: %.cc $(DEPS)
-	$(CC) $(CCFLAGS) -c $< -o $@
-
-$(CUOBJS): $(OBJDIR)/%.cu.o: %.cu $(DEPS)
-	$(NVCC) $(NVCCFLAGS) -c $< -o $@
-
-totem:
-	@$(MAKE) -C $(TOTEM_PATH)
-
-alg:
-	@$(MAKE) -C $(ALG_PATH)
-
-clean:
-	@$(CLEAN_CMD) *$(EXE_EXT)
-
-clean-all: clean
-	@$(CLEAN_ALL_CMD)
-	@$(MAKE) -C $(TOTEM_PATH) clean
-	@$(MAKE) -C $(ALG_PATH) clean
+include $(ROOTDIR)/make.rules
