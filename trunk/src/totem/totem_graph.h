@@ -43,25 +43,24 @@
 //               of the following two types and related constants. The goal is
 //               to allow clients to set on compile time the specific type their
 //               applications will use.
-/**
- * Specifies an id type. 
- * We have two id types (vid_t and eid_t). The rule to use them is as follows: 
- * anything that is constrained by the number of vertices should be defined 
- * using the vid_t type, similarly anything that is constrained by the number
- * of edges eid_t should be used as a type. For example, to access the vertices
- * array, a vid_t index is used, while accessing the edges array requires an 
- * index of type eid_t. A typical iteration over the graph looks like this:
- * 
- * for (vid_t vid = 0; vid < graph->vertex_count; vid++) {
- *   for (eid_t eid = graph->vertices[vid]; 
- *        eid < graph->vertices[vid + 1]; eid++) {
- *     vid_t nbr_id = graph->edges[eid];
- *     // do stuff to the neighbour
- *   }
- * }
- *
- * Finally, to enable 64 bit edge ids, the code must be compiled: make EID=64
- */
+
+// Specifies an id type.
+// We have two id types (vid_t and eid_t). The rule to use them is as follows:
+// anything that is constrained by the number of vertices should be defined
+// using the vid_t type, similarly anything that is constrained by the number
+// of edges eid_t should be used as a type. For example, to access the vertices
+// array, a vid_t index is used, while accessing the edges array requires an
+// index of type eid_t. A typical iteration over the graph looks like this:
+//
+// for (vid_t vid = 0; vid < graph->vertex_count; vid++) {
+//   for (eid_t eid = graph->vertices[vid];
+//        eid < graph->vertices[vid + 1]; eid++) {
+//     vid_t nbr_id = graph->edges[eid];
+//     // do stuff to the neighbour
+//   }
+// }
+//
+// Finally, to enable 64 bit edge ids, the code must be compiled: make EID=64
 typedef uint32_t vid_t;
 #ifdef FEATURE_64BIT_EDGE_ID
 typedef uint64_t eid_t;
@@ -69,127 +68,114 @@ typedef uint64_t eid_t;
 typedef uint32_t eid_t;
 #endif
 
-/**
- * Specifies the maximum value an id can hold.
- */
+// Specifies the maximum value an id can hold.
 const vid_t VERTEX_ID_MAX = UINT32_MAX;
 
-/**
- * Specifies the infinite quantity used by several algorithms (e.g., edge cost).
- */
+// Specifies the infinite quantity used by several algorithms (e.g., edge cost).
 const uint32_t INFINITE = UINT32_MAX;
 
-/**
- * Specifies a type for edge weights. This is useful to allow future changes in
- * the precision and value range that edge weights can hold.
- */
+// Specifies a type for edge weights. This is useful to allow future changes in
+// the precision and value range that edge weights can hold.
 typedef float weight_t;
 
-/**
- * Specifies the maximum value a weight can hold.
- */
+// Specifies the maximum value a weight can hold.
 const weight_t WEIGHT_MAX = FLT_MAX;
 
-/**
- * Specifies the default edge weight
- */
+// Specifies the default edge weight
 const weight_t DEFAULT_EDGE_WEIGHT =  1;
 
-/**
- * Specifies the default vertex value in the vertex list
- */
+// Specifies the default vertex value in the vertex list
 const weight_t DEFAULT_VERTEX_VALUE = 0;
 
-/**
- * Type of memory used to place the GPU graph data structure
- */
+// Type of memory used to place the GPU graph data structure.
 typedef enum {
-  GPU_GRAPH_MEM_DEVICE = 0,        // Places the graph on device memory
-  GPU_GRAPH_MEM_MAPPED,            // Places the graph on the host as memory 
-                                   // mapped space
-  GPU_GRAPH_MEM_MAPPED_VERTICES,   // Places only the vertices array on the host
-  GPU_GRAPH_MEM_MAPPED_EDGES,      // Places only the edges array on the host
-  GPU_GRAPH_MEM_PARTITIONED_EDGES, // Partitions the edges array such that part
-                                   // of it is placed on device memory and part
-                                   // of it mapped on host memory
+  GPU_GRAPH_MEM_DEVICE = 0,         // Places the graph on device memory.
+  GPU_GRAPH_MEM_MAPPED,             // Places the graph on the host as memory
+                                    // mapped space.
+  GPU_GRAPH_MEM_MAPPED_VERTICES,    // Only the vertices array on the host.
+  GPU_GRAPH_MEM_MAPPED_EDGES,       // Only the edges array on the host.
+  GPU_GRAPH_MEM_PARTITIONED_EDGES,  // Partitions the edges array such that part
+                                    // of it is placed on device memory and part
+                                    // of it mapped on host memory.
   GPU_GRAPH_MEM_MAX
 } gpu_graph_mem_t;
 
-/**
- * A graph type based on adjacency list representation.
- * Modified from [Harish07]:
- * A graph G(V,E) is represented as adjacency list, with adjacency lists packed
- * into a single large array. Each vertex points to the starting position of its
- * own adjacency list in this large array of edges. Vertices of graph G(V,E) are
- * represented as a vertices array. Another array of adjacency lists stores the
- * edges with edges of vertex i + 1 immediately following the edges of vertex i
- * for all i in V. Each entry in the vertices array corresponds to the starting
- * index of its adjacency list in the edges array. Each entry of the edges array
- * refers to a vertex in vertices array.
- *
- * IMPORTANT: vertices without edges have the same index in the vertices array
- * as the next vertex, hence their number of edges as zero would be calculated
- * in the same way as every other vertex.
- */
+// A graph type based on adjacency list representation.
+// Modified from [Harish07]:
+// A graph G(V,E) is represented as adjacency list, with adjacency lists packed
+// into a single large array. Each vertex points to the starting position of its
+// own adjacency list in this large array of edges. Vertices of graph G(V,E) are
+// represented as a vertices array. Another array of adjacency lists stores the
+// edges with edges of vertex i + 1 immediately following the edges of vertex i
+// for all i in V. Each entry in the vertices array corresponds to the starting
+// index of its adjacency list in the edges array. Each entry of the edges array
+// refers to a vertex in vertices array.
+//
+// IMPORTANT: vertices without edges have the same index in the vertices array
+// as the next vertex, hence their number of edges as zero would be calculated
+// in the same way as every other vertex.
 typedef struct graph_s {
-  eid_t*    vertices;        /**< the vertices list. */
-  vid_t*    edges;           /**< the edges list. */
-  weight_t* weights;         /**< stores the weights of the edges. */
-  weight_t* values;          /**< stores the values of the vertices. */
-  vid_t     vertex_count;    /**< number of vertices. */
-  eid_t     edge_count;      /**< number of edges. */
-  bool      valued;          /**< indicates if vertices have values. */
-  bool      weighted;        /**< indicates if edges have weights. */
-  bool      directed;        /**< indicates if the graph is directed. */
-  gpu_graph_mem_t gpu_graph_mem; /**< the type of memory used to allocate the
-                                       graph data structure of GPU-based 
-                                       partitions*/
-  eid_t*    mapped_vertices; /**< maintains the host pointer of the vertices
-                                  array in case it is allocated as a memory
-                                  mapped buffer for GPU-resident graphs. Keeping
-                                  this pointer is necessary when freeing the
-                                  buffer. Note that in this case, vertices will 
-                                  maintain the pointer to the buffer in the 
-                                  device address space. */
-  eid_t*    mapped_edges;    /**< maintains the host pointer of the edges
-                                  array in case it is allocated as a memory
-                                  mapped buffer for GPU-resident graphs. Keeping
-                                  this pointer is necessary when freeing the
-                                  buffer. Note that in this case, "edges" will 
-                                  maintain the pointer to the buffer in the 
-                                  device address space. */
-  vid_t*    edges_ext;       /**< this member is relevant to GPU-based resident
-                                  graphs. in case the edge list is partitioned
-                                  between device memory and mapped memory on 
-                                  the host, this array stores the part of the
-                                  edge list placed on the host as memory mapped,
-                                  while "edges" is the pointer to the partition
-                                  placed on device memory. */
-  vid_t    vertex_ext;       /** in the case the edges list is partitioned
-                                 between device memory and mapped memory on the
-                                 host, this member specifies the boundary after 
-                                 which the vertices should access their edge
-                                 list via "edges_ext" */
-  eid_t    edge_count_ext;    /** in the case the edges list is partitioned
-                                 between device memory and mapped memory on the
-                                 host, this member specifies the number of edges
-                                 placed on the device */
+  eid_t*    vertices;      // The vertices list.
+  vid_t*    edges;         // The edges list.
+  weight_t* weights;       // Stores the weights of the edges.
+  weight_t* values;        // Stores the values of the vertices.
+  vid_t     vertex_count;  // Number of vertices.
+  eid_t     edge_count;    // Number of edges.
+  bool      valued;        // Indicates if vertices have values.
+  bool      weighted;      // Indicates if edges have weights.
+  bool      directed;      // Indicates if the graph is directed.
+  // The type of memory used to allocate the graph data structure of GPU-based
+  // partitions.
+  gpu_graph_mem_t gpu_graph_mem;
+  // Maintains the host pointer of the vertices array in case it is allocated
+  // as a memory mapped buffer for GPU-resident graphs. Keeping this pointer is
+  // necessary when freeing the buffer. Note that in this case, vertices will
+  // maintain the pointer to the buffer in the device address space.
+  eid_t*    mapped_vertices;
+  // Maintains the host pointer of the edges array in case it is allocated as a
+  // memory mapped buffer for GPU-resident graphs. Keeping this pointer is
+  // necessary when freeing the buffer. Note that in this case, "edges" will
+  // maintain the pointer to the buffer in the device address space.
+  eid_t*    mapped_edges;
+  // This member is relevant to GPU-based resident graphs. in case the edge list
+  // is partitioned between device memory and mapped memory on the host, this
+  // array stores the part of the edge list placed on the host as memory mapped,
+  // while "edges" is the pointer to the partition placed on device memory.
+  vid_t*    edges_ext;
+  // In the case the edges list is partitioned between device memory and mapped
+  // memory on the host, this member specifies the boundary after which the
+  // vertices should access their edge list via edges_ext.
+  vid_t    vertex_ext;
+  // In the case the edges list is partitioned between device memory and mapped
+  // memory on the host, this member specifies the number of edges placed on
+  // the device.
+  eid_t    edge_count_ext;
 } graph_t;
 
-/**
- * Defines a data type for a graph's connected components. components are
- * identified by numbers [0 - count). The marker array identifies for each
- * vertex the id of the component the vertex is part of.
- */
+// Defines a data type for a graph's connected components. components are
+// identified by numbers [0 - count). The marker array identifies for each
+// vertex the id of the component the vertex is part of.
 typedef struct component_set_s {
-  graph_t* graph;        /**< the graph which this component set belongs to */
-  vid_t    count;        /**< number of components */
-  vid_t*   vertex_count; /**< vertex count of each component (length: count) */
-  eid_t*   edge_count;   /**< edge count of each component (length: count) */
-  vid_t*   marker;       /**< the component id for each vertex */
-                         /**< (length: graph->vertex_count) */
-  vid_t    biggest;      /**< the id of the biggest component */
+  graph_t* graph;         // The graph which this component set belongs to.
+  vid_t    count;         // Number of components.
+  vid_t*   vertex_count;  // Vertex count of each component.
+  eid_t*   edge_count;    // Edge count of each component.
+  vid_t*   marker;        // The component id for each vertex
+  vid_t    biggest;       // The id of the biggest component.
 } component_set_t;
+
+/**
+ * Allocates space for a graph structure and its buffers, and sets the
+ * various members of the structure.
+ * @param[in] vertex_count number of vertices
+ * @param[in] edge_count number of edges
+ * @param[in] weighted indicates if the edge weights are to be loaded
+ * @param[in] valued indicates if the vertex values are to be loaded
+ * @param[out] graph reference to allocated graph type to store the edge list
+ * @return generic success or failure
+ */
+void graph_allocate(vid_t vertex_count, eid_t edge_count, bool directed,
+                    bool weighted, bool valued, graph_t** graph_ret);
 
 /**
  * reads a graph from the given file and builds a graph data type.
@@ -204,7 +190,7 @@ error_t graph_initialize(const char* graph_file, bool weighted,
 
 /**
  * Frees allocated buffers within the "graph" reference initialized
- * via graph_initialize.
+ * via graph_initialize or graph_allocate.
  * @param[in] graph a reference to graph type to be de-allocated
  * @return generic success or failure
  */
@@ -219,12 +205,12 @@ error_t graph_finalize(graph_t* graph);
  * graph_h.
  * @param[in] graph_h source graph which hosts references to main memory buffers
  * @param[out] graph_d allocated graph that hosts references to device buffers
- * @param[in] gpu_graph_mem an optional parameter that allows to specify the 
+ * @param[in] gpu_graph_mem an optional parameter that allows to specify the
                             type of memory used to place the data structure
  * @return generic success or failure
  */
 error_t graph_initialize_device(const graph_t* graph_h, graph_t** graph_d,
-                                gpu_graph_mem_t gpu_graph_mem = 
+                                gpu_graph_mem_t gpu_graph_mem =
                                 GPU_GRAPH_MEM_DEVICE);
 
 /**
@@ -264,6 +250,12 @@ error_t get_subgraph(const graph_t* graph, bool* mask, graph_t** subgraph);
  * @return generic success or failure
  */
 error_t graph_remove_singletons(const graph_t* graph, graph_t** subgraph);
+
+/**
+ * Sorts the neighbours of each vertex in ascending order.
+ * @param[in] graph the graph to operate on
+ */
+void graph_sort_nbrs(graph_t* graph);
 
 /**
  * Given a given flow graph (ie, a directed graph where for every edge (u,v),

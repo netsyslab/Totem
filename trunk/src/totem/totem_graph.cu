@@ -8,14 +8,15 @@
 // totem includes
 #include "totem_graph.h"
 #include "totem_mem.h"
+#include "totem_util.h"
 
-// common logistics for parsing
+// Common logistics for parsing.
 const uint32_t MAX_LINE_LENGTH = 100;
 PRIVATE const char delimiters[] = " \t\n:";
 PRIVATE uint64_t line_number = 0;
 PRIVATE char line[MAX_LINE_LENGTH];
 
-// common binary parameters
+// Common binary parameters.
 const uint32_t BINARY_MAGIC_WORD = 0x10102048;
 
 /**
@@ -27,22 +28,15 @@ const uint32_t BINARY_MAGIC_WORD = 0x10102048;
  * @return generic success or failure
  */
 PRIVATE error_t parse_metadata(FILE* file_handler, vid_t* vertex_count,
-                               eid_t* edge_count, bool* directed, 
+                               eid_t* edge_count, bool* directed,
                                bool* valued) {
-  // logistics for parsing
-  char*         token          = NULL;
-  uint32_t      metadata_lines = 3;
+  assert(file_handler && vertex_count && edge_count && directed && valued);
 
-  assert(file_handler);
-  assert(vertex_count);
-  assert(edge_count);
-  assert(directed);
-
-  // we assume a directed graph without vertex list unless otherwise set
+  // We assume a directed graph without vertex list unless otherwise set.
   *directed = true;
   *valued   = false;
 
-  // the following are the keywords we expect in the metadata
+  // The following are the keywords we expect in the metadata.
   char keywords[][15] = {"NODES", "EDGES", "DIRECTED", "UNDIRECTED"};
   enum {
     KEYWORD_START = 0,
@@ -53,28 +47,28 @@ PRIVATE error_t parse_metadata(FILE* file_handler, vid_t* vertex_count,
     KEYWORD_COUNT = 4
   };
 
-  // indicates which keywords we got
+  // Indicates which keywords we got.
   bool keywords_found[KEYWORD_COUNT] = {false, false, false, false};
 
-  /* get the metadata, the vertex and edge counts and whether the graph is
-     directed or not. The assumption is that the metadata exists is the
-     first four lines demonstrated below.
-     Note that the flag [Y] after vertex_count indicates that a vertex list
-     should be expected.
-     # Nodes: vertex_count [Y]
-     # Edges: edge_count
-     # DIRECTED|UNDIRECTED
-  */
+  // Get the metadata, which includes the vertex and edge counts and whether the
+  // graph is directed or not. The assumption is that the metadata exists is the
+  // first four lines demonstrated below. Note that the flag [Y] after
+  // vertex_count indicates that a vertex list should be expected.
+  // # Nodes: vertex_count [Y]
+  // # Edges: edge_count
+  // # DIRECTED|UNDIRECTED
+  uint32_t metadata_lines = 3;
   while (metadata_lines--) {
-    // get the line
     CHK(fgets(line, sizeof(line), file_handler) != NULL, err_format);
     line_number++;
 
-    // must be a comment
+    // The metadata lines must start with a "#"
     CHK(line[0] == '#', err_format);
 
-    // first token is one of the keywords. start after the # (hence +1)
-    CHK((token = strtok(line + 1, delimiters)) != NULL, err_format);
+    // The first token is one of the keywords, start after the # (hence +1).
+    char* token;
+    char* saveptr;
+    CHK((token = strtok_r(line + 1, delimiters, &saveptr)) != NULL, err_format);
     to_upper(token);
 
     int keyword;
@@ -86,21 +80,19 @@ PRIVATE error_t parse_metadata(FILE* file_handler, vid_t* vertex_count,
     }
     CHK(keyword != KEYWORD_COUNT, err_format);
 
-    // take action based on the keyword
     switch (keyword) {
       case NODES:
-        // the second token is the value
-        CHK((token = strtok(NULL, delimiters)) != NULL, err_format);
+        // The second token is the value.
+        CHK((token = strtok_r(NULL, delimiters, &saveptr)) != NULL, err_format);
         CHK(is_numeric(token), err_format);
         *vertex_count = atoi(token);
-        if (((token = strtok(NULL, delimiters)) != NULL) &&
+        if (((token = strtok_r(NULL, delimiters, &saveptr)) != NULL) &&
             tolower(*token) == 'y') {
           *valued = true;
         }
         break;
       case EDGES:
-        // the second token is the value
-        CHK((token = strtok(NULL, delimiters)) != NULL, err_format);
+        CHK((token = strtok_r(NULL, delimiters, &saveptr)) != NULL, err_format);
         CHK(is_numeric(token), err_format);
         *edge_count = atoi(token);
         break;
@@ -111,8 +103,8 @@ PRIVATE error_t parse_metadata(FILE* file_handler, vid_t* vertex_count,
         *directed = false;
         break;
       default:
-        // we should not be here
-        assert(0);
+        // We should not be here.
+        assert(false);
     }
   }
 
@@ -135,45 +127,37 @@ PRIVATE error_t parse_metadata(FILE* file_handler, vid_t* vertex_count,
  * @return generic success or failure
  */
 PRIVATE error_t parse_vertex_list(FILE* file_handler, graph_t* graph) {
-  // logistics for parsing
-  char* token        = NULL;
+  if (!graph->valued) { return SUCCESS; }
   vid_t vertex_index = 0;
-
-  if (!graph->valued)
-    return SUCCESS;
-
-  // read line by line
   while (vertex_index < graph->vertex_count) {
-
     if (fgets(line, sizeof(line), file_handler) == NULL) break;
     line_number++;
-    if (line[0] == '#') continue;
+    if (line[0] == '#') { continue; }
 
-    // start tokenizing: first, the vertex id
-    CHK((token = strtok(line, delimiters)) != NULL, err);
+    // Start tokenizing: first, the vertex id.
+    char* token;
+    char* saveptr;
+    CHK((token = strtok_r(line, delimiters, &saveptr)) != NULL, err);
     CHK(is_numeric(token), err);
     uint64_t token_num  = atoll(token);
     CHK((token_num < VERTEX_ID_MAX), err_id_overflow);
     vid_t vertex_id = token_num;
 
-    // second, get the value
-    CHK((token = strtok(NULL, delimiters)) != NULL, err);
-    // TODO(abdullah): isnumeric returns false for negatives, fix this.
-    //CHK(is_numeric(token), err);
+    // Second, get the value.
+    CHK((token = strtok_r(NULL, delimiters, &saveptr)) != NULL, err);
+    // TODO(abdullah): Use isnumeric to verify the value.
     weight_t value = (weight_t)atof(token);
 
     if (vertex_id != vertex_index) {
-      // vertices must be in increasing order and less than the maximum count
+      // Vertices must be in increasing order and less than the maximum count.
       CHK(((vertex_id > vertex_index) &&
            (vertex_id < graph->vertex_count)), err);
 
-      // vertices without values will be assigned a default one
+      // Vertices without values will be assigned a default one.
       while (vertex_index < vertex_id) {
         graph->values[vertex_index++] = DEFAULT_VERTEX_VALUE;
       }
     }
-
-    // set the value
     graph->values[vertex_index++] = value;
   }
 
@@ -194,58 +178,52 @@ PRIVATE error_t parse_vertex_list(FILE* file_handler, graph_t* graph) {
  * @return generic success or failure
  */
 PRIVATE error_t parse_edge_list(FILE* file_handler, graph_t* graph) {
-  // logistics for parsing
-  char* token        = NULL;
   vid_t  vertex_index = 0;
   eid_t  edge_index   = 0;
-
-  // read line by line to create the graph
   while (fgets(line, sizeof(line), file_handler) != NULL) {
-    // we got a new line
     line_number++;
 
-    // comments start with '#', skip them
-    if (line[0] == '#')
-      continue;
+    // Comments start with '#', skip them.
+    if (line[0] == '#') { continue; }
 
-    // start tokenizing: first, the source node
-    CHK((token = strtok(line, delimiters)) != NULL, err);
+    // Start tokenizing: first, the source node.
+    char* token;
+    char* saveptr;
+    CHK((token = strtok_r(line, delimiters, &saveptr)) != NULL, err);
     CHK(is_numeric(token), err);
     uint64_t token_num  = atoll(token);
     CHK((token_num < VERTEX_ID_MAX), err_id_overflow);
     vid_t src_id = token_num;
 
-    // second, the destination node
-    CHK((token = strtok(NULL, delimiters)) != NULL, err);
+    // Second, the destination node.
+    CHK((token = strtok_r(NULL, delimiters, &saveptr)) != NULL, err);
     CHK(is_numeric(token), err);
     token_num  = atoll(token);
     CHK(token_num < VERTEX_ID_MAX, err_id_overflow);
     vid_t dst_id = token_num;
 
-    // third, get the weight if any
+    // Third, get the weight if any.
     weight_t weight = DEFAULT_EDGE_WEIGHT;
-    if (graph->weighted && ((token = strtok(NULL, delimiters)) != NULL)) {
-      // TODO(abdullah): isnumeric returns false for negatives, fix this.
-      //CHK(is_numeric(token), err);
+    if (graph->weighted && ((token = strtok_r(NULL, delimiters, &saveptr))
+                            != NULL)) {
+      // TODO(abdullah): Use isnumeric to verify the value.
       weight = (weight_t)atof(token);
     }
 
     if (src_id != vertex_index - 1) {
-      // add new vertex
-
-      // vertices must be in increasing order and less than the maximum count
+      // Vertices must be in increasing order and less than the maximum count.
       CHK(((src_id >= vertex_index) && (src_id < graph->vertex_count)), err);
 
-      /* IMPORTANT: vertices without edges have the same index in the vertices
-         array as their next vertex, hence their number of edges as zero would
-         be calculated in the same way as every other vertex. hence the
-         following loop. */
+      // IMPORTANT: vertices without edges have the same index in the vertices
+      // array as their next vertex, hence their number of edges as zero would
+      // be calculated in the same way as every other vertex. hence the
+      // following loop.
       while (vertex_index <= src_id) {
         graph->vertices[vertex_index++] = edge_index;
       }
     }
 
-    // add the edge and its weight if any
+    // Add the edge and its weight if any.
     CHK((edge_index < graph->edge_count), err);
     graph->edges[edge_index] = dst_id;
     if (graph->weighted) {
@@ -257,7 +235,7 @@ PRIVATE error_t parse_edge_list(FILE* file_handler, graph_t* graph) {
   CHK((vertex_index <= graph->vertex_count), err);
   CHK((edge_index == graph->edge_count), err);
 
-  // make sure we set the vertices that do not exist at the end
+  // Make sure we set the vertices that do not exist at the end.
   while (vertex_index <= graph->vertex_count) {
     graph->vertices[vertex_index++] = edge_index;
   }
@@ -272,47 +250,11 @@ PRIVATE error_t parse_edge_list(FILE* file_handler, graph_t* graph) {
     return FAILURE;
 }
 
-/**
- * Allocates space for a graph structure and its buffers. It also, sets the
- * various members of the structure.
- * @param[in] vertex_count number of vertices
- * @param[in] edge_count number of edges
- * @param[in] weighted indicates if the edge weights are to be loaded
- * @param[in] valued indicates if the vertex values are to be loaded
- * @param[out] graph reference to allocated graph type to store the edge list
- * @return generic success or failure
- */
-PRIVATE void allocate_graph(vid_t vertex_count, eid_t edge_count, bool directed,
-                            bool weighted, bool valued, graph_t** graph_ret) {
-  // Allocate the main structure
-  graph_t* graph = (graph_t*)calloc(1, sizeof(graph_t));
-  assert(graph);
-  // Allocate the buffers. An extra slot is allocated in the vertices array to
-  // make it easy to calculate the number of neighbors of the last vertex.
-  graph->vertices = (eid_t*)malloc((vertex_count + 1) * sizeof(eid_t));
-  graph->edges    = (vid_t*)malloc(edge_count * sizeof(vid_t));
-  graph->weights  = weighted ?
-    (weight_t*)malloc(edge_count * sizeof(weight_t)) : NULL;
-  graph->values  = valued ?
-    (weight_t*)malloc(vertex_count * sizeof(weight_t)) : NULL;
-  // Ensure buffer allocation
-  assert((graph->vertices && graph->edges) &&
-         ((valued && graph->values) || (!valued && !graph->values)) &&
-         ((weighted && graph->weights) || (!weighted && !graph->weights)));
-  // Set the member variables
-  graph->vertex_count = vertex_count;
-  graph->edge_count = edge_count;
-  graph->directed = directed;
-  graph->weighted = weighted;
-  graph->valued = valued;
-  *graph_ret = graph;
-}
-
 PRIVATE error_t graph_initialize_binary(FILE* fh, bool load_weights,
                                         graph_t** graph) {
   // Read vertex and edge id sizes and make sure they comply with the compiled
-  // version of Totem
-  // TODO(abdullah): have a portable way of reading the graph that does not 
+  // version of Totem.
+  // TODO(abdullah): Have a portable way of reading the graph that does not
   // depend on the compiled types of edge and vertex id.
   uint32_t vid_size;
   CHK(fread(&vid_size, sizeof(uint32_t), 1, fh) == 1, err);
@@ -328,23 +270,23 @@ PRIVATE error_t graph_initialize_binary(FILE* fh, bool load_weights,
   bool weighted;
   CHK(fread(&weighted, sizeof(bool), 1, fh) == 1, err);
   bool directed;
-  CHK(fread(&directed, sizeof(bool), 1, fh) == 1, err);  
-  allocate_graph(vertex_count, edge_count, directed, 
-                 load_weights, valued, graph);
-  
-  // Load the vertices and their values if any
-  for(vid_t vid = 0; vid < vertex_count; vid++) {
+  CHK(fread(&directed, sizeof(bool), 1, fh) == 1, err);
+  graph_allocate(vertex_count, edge_count, directed, load_weights, valued,
+                 graph);
+
+  // Load the vertices and their values if any.
+  for (vid_t vid = 0; vid < vertex_count; vid++) {
     CHK(fread(&((*graph)->vertices[vid]), sizeof(eid_t), 1, fh) == 1, err_free);
     if (valued) {
-      CHK(fread(&((*graph)->values[vid]), sizeof(weight_t), 1, fh) == 1, 
+      CHK(fread(&((*graph)->values[vid]), sizeof(weight_t), 1, fh) == 1,
           err_free);
     }
   }
-  CHK(fread(&((*graph)->vertices[vertex_count]), sizeof(eid_t), 1, fh) == 1, 
+  CHK(fread(&((*graph)->vertices[vertex_count]), sizeof(eid_t), 1, fh) == 1,
       err_free);
-  
-  // Load the edges and their weights if any
-  for(eid_t eid = 0; eid < edge_count; eid++) {
+
+  // Load the edges and their weights if any.
+  for (eid_t eid = 0; eid < edge_count; eid++) {
     CHK(fread(&((*graph)->edges[eid]), sizeof(vid_t), 1, fh) == 1, err_free);
     if (load_weights) {
       weight_t weight = DEFAULT_EDGE_WEIGHT;
@@ -367,33 +309,32 @@ PRIVATE error_t graph_initialize_binary(FILE* fh, bool load_weights,
 
 PRIVATE error_t graph_initialize_text(FILE* file_handler, bool weighted,
                                       graph_t** graph_ret) {
-  /* we had to define those variables here, not within the code, to overcome a
-     compilation problem with using "goto" (used to emulate exceptions). */
+  // We had to define those variables here, not within the code, to overcome a
+  // compilation problem with using "goto" (used to emulate exceptions).
   graph_t* graph        = NULL;
   vid_t    vertex_count = 0;
   eid_t    edge_count   = 0;
   bool     directed     = true;
   bool     valued       = false;
 
-  // get graph characteristics
+  // Get graph characteristics.
   CHK(parse_metadata(file_handler, &vertex_count, &edge_count,
                      &directed, &valued) == SUCCESS, err);
 
-  // allocate the graph and its buffers
-  allocate_graph(vertex_count, edge_count, directed, weighted, valued, &graph);
+  // Allocate the graph and its buffers.
+  graph_allocate(vertex_count, edge_count, directed, weighted, valued, &graph);
 
-  // parse the vertex list
+  // Parse the vertex list.
   CHK(parse_vertex_list(file_handler, graph) == SUCCESS, err_format_clean);
 
-  // parse the edge list
+  // Parse the edge list.
   CHK(parse_edge_list(file_handler, graph) == SUCCESS, err_format_clean);
 
-  // we are done
   fclose(file_handler);
   *graph_ret = graph;
   return SUCCESS;
 
-  // error handling
+  // Error handling.
   err_format_clean:
     fclose(file_handler);
     graph_finalize(graph);
@@ -402,6 +343,42 @@ PRIVATE error_t graph_initialize_text(FILE* file_handler, bool weighted,
             line_number);
   err:
     return FAILURE;
+}
+
+/**
+ * Allocates space for a graph structure and its buffers. It also, sets the
+ * various members of the structure.
+ * @param[in] vertex_count number of vertices
+ * @param[in] edge_count number of edges
+ * @param[in] weighted indicates if the edge weights are to be loaded
+ * @param[in] valued indicates if the vertex values are to be loaded
+ * @param[out] graph reference to allocated graph type to store the edge list
+ * @return generic success or failure
+ */
+void graph_allocate(vid_t vertex_count, eid_t edge_count, bool directed,
+                    bool weighted, bool valued, graph_t** graph_ret) {
+  graph_t* graph = reinterpret_cast<graph_t*>(calloc(1, sizeof(graph_t)));
+  assert(graph);
+  // Allocate the buffers. An extra slot is allocated in the vertices array to
+  // make it easy to calculate the number of neighbors of the last vertex.
+  graph->vertices = reinterpret_cast<eid_t*>(malloc((vertex_count + 1) *
+                                                    sizeof(eid_t)));
+  graph->edges = reinterpret_cast<vid_t*>(malloc(edge_count * sizeof(vid_t)));
+  graph->weights = weighted ?
+      reinterpret_cast<weight_t*>(malloc(edge_count * sizeof(weight_t))) : NULL;
+  graph->values = valued ?
+      reinterpret_cast<weight_t*>(malloc(vertex_count * sizeof(weight_t))) :
+      NULL;
+  assert((graph->vertices && graph->edges) &&
+         ((valued && graph->values) || (!valued && !graph->values)) &&
+         ((weighted && graph->weights) || (!weighted && !graph->weights)));
+  // Set the member variables.
+  graph->vertex_count = vertex_count;
+  graph->edge_count = edge_count;
+  graph->directed = directed;
+  graph->weighted = weighted;
+  graph->valued = valued;
+  *graph_ret = graph;
 }
 
 error_t graph_initialize(const char* graph_file, bool weighted,
@@ -416,10 +393,10 @@ error_t graph_initialize(const char* graph_file, bool weighted,
   if (magic_word == BINARY_MAGIC_WORD) {
     return graph_initialize_binary(file_handler, weighted, graph);
   }
-   
+
   fseek(file_handler, 0, 0);
   return graph_initialize_text(file_handler, weighted, graph);
- 
+
  err_close:
   fclose(file_handler);
  err:
@@ -428,14 +405,14 @@ error_t graph_initialize(const char* graph_file, bool weighted,
 }
 
 error_t get_subgraph(const graph_t* graph, bool* mask, graph_t** subgraph_ret) {
-
   assert(graph && mask);
 
   // Used to map vertices in the graph to the subgraph to maintain the
-  // requirement that vertex ids start from 0 to vertex_count
-  vid_t* map = (vid_t*)calloc(graph->vertex_count, sizeof(vid_t));
+  // requirement that vertex ids start from 0 to vertex_count.
+  vid_t* map = reinterpret_cast<vid_t*>(calloc(graph->vertex_count,
+                                               sizeof(vid_t)));
 
-  // get the number of vertices and edges of the subgraph and build the map
+  // Get the number of vertices and edges of the subgraph and build the map.
   vid_t subgraph_vertex_count = 0;
   eid_t subgraph_edge_count = 0;
   for (vid_t vertex_id = 0; vertex_id < graph->vertex_count; vertex_id++) {
@@ -449,12 +426,12 @@ error_t get_subgraph(const graph_t* graph, bool* mask, graph_t** subgraph_ret) {
     }
   }
 
-  // allocate the subgraph and its buffers
+  // Allocate the subgraph and its buffers.
   graph_t* subgraph = NULL;
-  allocate_graph(subgraph_vertex_count, subgraph_edge_count, graph->directed,
+  graph_allocate(subgraph_vertex_count, subgraph_edge_count, graph->directed,
                  graph->weighted, graph->valued, &subgraph);
 
-  // build the vertex and edge lists
+  // Build the vertex and edge lists.
   eid_t subgraph_edge_index = 0;
   vid_t subgraph_vertex_index = 0;
   for (vid_t vertex_id = 0; vertex_id < graph->vertex_count; vertex_id++) {
@@ -477,21 +454,18 @@ error_t get_subgraph(const graph_t* graph, bool* mask, graph_t** subgraph_ret) {
       }
     }
   }
-  // set the last (fake) vertex
   subgraph->vertices[subgraph_vertex_index] = subgraph_edge_index;
 
-  // clean up
   free(map);
-
-  // set output
   *subgraph_ret = subgraph;
   return SUCCESS;
 }
 
 error_t graph_remove_singletons(const graph_t* graph, graph_t** subgraph) {
-  // TODO(abdullah): change the signature to graph_get_k_degree_nodes
+  // TODO(abdullah): Change the signature to graph_get_k_degree_nodes.
   if (!graph) return FAILURE;
-  bool* mask = (bool*)calloc(graph->vertex_count, sizeof(bool));
+  bool* mask = reinterpret_cast<bool*>(calloc(graph->vertex_count,
+                                              sizeof(bool)));
   for (vid_t vid = 0; vid < graph->vertex_count; vid++) {
     for (eid_t i = graph->vertices[vid]; i < graph->vertices[vid + 1]; i++) {
       mask[graph->edges[i]] = true;
@@ -505,10 +479,10 @@ error_t graph_remove_singletons(const graph_t* graph, graph_t** subgraph) {
 
 PRIVATE
 void graph_match_bidirected_edges(graph_t* graph, eid_t** reverse_indices) {
-  // Calculate the array of indexes matching each edge to its
-  // counterpart reverse edge
-  totem_malloc(graph->edge_count * 2 * sizeof(eid_t), TOTEM_MEM_HOST, 
-               (void**)reverse_indices);
+  // Calculate the array of indexes matching each edge to its counterpart
+  // reverse edge.
+  totem_malloc(graph->edge_count * 2 * sizeof(eid_t), TOTEM_MEM_HOST,
+               reinterpret_cast<void**>(reverse_indices));
   for (vid_t v = 0; v < graph->vertex_count; v++) {
     for (eid_t edge_id = graph->vertices[v];
          edge_id < graph->vertices[v + 1]; edge_id++) {
@@ -539,9 +513,9 @@ void graph_match_bidirected_edges(graph_t* graph, eid_t** reverse_indices) {
  * @return bidirected graph
  */
 graph_t* graph_create_bidirectional(graph_t* graph, eid_t** reverse_indices) {
-  // Create the new graph with the new data
+  // Create the new graph with the new data.
   graph_t* new_graph;
-  allocate_graph(graph->vertex_count, 2 * graph->edge_count, graph->directed,
+  graph_allocate(graph->vertex_count, 2 * graph->edge_count, graph->directed,
                  graph->weighted, graph->valued, &new_graph);
 
   eid_t new_edge_index = 0;
@@ -551,13 +525,13 @@ graph_t* graph_create_bidirectional(graph_t* graph, eid_t** reverse_indices) {
     // Add the forward graph edges in order and any reverse edges that might
     // come before it. Note that this assumes the given edge list is already
     // in order.
-    // TODO: relax this assumption
+    // TODO(abdullah): Relax this assumption.
     eid_t rev_id = 0;
     vid_t rev_src_v = 0;
     for (eid_t edge_id = graph->vertices[v]; edge_id < graph->vertices[v + 1];
          edge_id++) {
       while (rev_id < edge_id) {
-        // If we found a reverse edge, determine its source vertex
+        // If we found a reverse edge, determine its source vertex.
         if (graph->edges[rev_id] == v) {
           while (!(rev_id >= graph->vertices[rev_src_v] &&
                    rev_id < graph->vertices[rev_src_v + 1]) &&
@@ -570,18 +544,17 @@ graph_t* graph_create_bidirectional(graph_t* graph, eid_t** reverse_indices) {
         rev_id++;
       }
 
-      // Add the forward edge
+      // Add the forward edge.
       new_graph->edges[new_edge_index] = graph->edges[edge_id];
       new_graph->weights[new_edge_index] = graph->weights[edge_id];
       new_edge_index++;
     }
-    /**
-     * Handle reverse edges that may come after all forward edges in the graph.
-     * (eg., if (3,2) and (2,1) were forward edges in the graph, (2,3) would
-     * have to be added here).
-     */
+
+    // Handle reverse edges that may come after all forward edges in the graph.
+    // (eg., if (3,2) and (2,1) were forward edges in the graph, (2,3) would
+    // have to be added here).
     while (rev_id < graph->edge_count) {
-      // If we found a reverse edge, determine its source vertex
+      // If we found a reverse edge, determine its source vertex.
       if (graph->edges[rev_id] == v) {
         while (!(rev_id >= graph->vertices[rev_src_v] &&
                  rev_id < graph->vertices[rev_src_v + 1]) &&
@@ -595,11 +568,11 @@ graph_t* graph_create_bidirectional(graph_t* graph, eid_t** reverse_indices) {
     }
   }
 
-  // Add the upper bound to the vertices array
+  // Add the upper bound to the vertices array.
   new_graph->vertices[graph->vertex_count] = new_edge_index;
   assert(new_edge_index == new_graph->edge_count);
 
-  // Index the reverse edges
+  // Index the reverse edges.
   graph_match_bidirected_edges(new_graph, reverse_indices);
 
   return new_graph;
@@ -616,14 +589,14 @@ error_t graph_finalize(graph_t* graph) {
 }
 
 PRIVATE eid_t get_device_edge_count_limit(const graph_t* graph) {
-  // TODO (abdullah): the following constants have been determined
-  // haphazardly. We need a better way to set them.
+  // TODO(abdullah): The following constants have been determined haphazardly,
+  // we need a better way to set them.
   const eid_t max_edge_count_limit = 1024 * 1024 * 1024 * 1.3;
   const size_t state_per_vertex = 4;
   size_t available = 0; size_t total = 0;
   CALL_CU_SAFE(cudaMemGetInfo(&available, &total));
   assert(available > (graph->vertex_count * state_per_vertex));
-  size_t state_edges = available - 
+  size_t state_edges = available -
          (graph->vertex_count * state_per_vertex);
 
   eid_t gpu_edge_count_limit = ((int64_t)state_edges / sizeof(vid_t));
@@ -633,14 +606,13 @@ PRIVATE eid_t get_device_edge_count_limit(const graph_t* graph) {
   return gpu_edge_count_limit;
 }
 
-PRIVATE void
-initialize_device_partitioned_edges(const graph_t* graph_h, graph_t* graph_d) {
-
+PRIVATE void initialize_device_partitioned_edges(const graph_t* graph_h,
+                                                 graph_t* graph_d) {
   eid_t gpu_edge_count_limit = get_device_edge_count_limit(graph_h);
   assert(graph_h->edge_count > gpu_edge_count_limit);
 
-  // calculate the boundaries, vertex id at which the extended edge list should
-  // be used, and the number of edges placed on the device
+  // Calculate the boundaries, vertex id at which the extended edge list should
+  // be used, and the number of edges placed on the device.
   graph_d->vertex_ext = 0;
   while (graph_h->vertices[graph_d->vertex_ext] < gpu_edge_count_limit) {
     graph_d->vertex_ext++;
@@ -648,30 +620,30 @@ initialize_device_partitioned_edges(const graph_t* graph_h, graph_t* graph_d) {
   graph_d->edge_count_ext = graph_h->vertices[graph_d->vertex_ext];
   assert(graph_d->edge_count_ext < graph_d->edge_count);
 
-  // device memory partition
-  CALL_SAFE(totem_malloc(graph_d->edge_count_ext * sizeof(vid_t), 
-                         TOTEM_MEM_DEVICE, (void**)&graph_d->edges));
+  // Device memory partition.
+  CALL_SAFE(totem_malloc(graph_d->edge_count_ext * sizeof(vid_t),
+                         TOTEM_MEM_DEVICE,
+                         reinterpret_cast<void**>(&graph_d->edges)));
   CALL_SAFE(cudaMemcpy(graph_d->edges, graph_h->edges,
                        graph_d->edge_count_ext * sizeof(vid_t),
                        cudaMemcpyDefault));
 
-  // mapped memory partition
+  // Mapped memory partition.
   eid_t mapped_edge_count = graph_d->edge_count - graph_d->edge_count_ext;
   assert(mapped_edge_count);
-  CALL_SAFE(totem_malloc(mapped_edge_count * sizeof(vid_t), 
+  CALL_SAFE(totem_malloc(mapped_edge_count * sizeof(vid_t),
                          TOTEM_MEM_HOST_MAPPED,
-                         (void**)&graph_d->mapped_edges));
-  CALL_CU_SAFE(cudaHostGetDevicePointer((void**)&(graph_d->edges_ext), 
+                         reinterpret_cast<void**>(&graph_d->mapped_edges)));
+  CALL_CU_SAFE(cudaHostGetDevicePointer(reinterpret_cast<void**>
+                                        (&(graph_d->edges_ext)),
                                         graph_d->mapped_edges, 0));
-  CALL_SAFE(cudaMemcpy(graph_d->edges_ext, 
+  CALL_SAFE(cudaMemcpy(graph_d->edges_ext,
                        &graph_h->edges[graph_d->edge_count_ext],
                        mapped_edge_count * sizeof(vid_t),
                        cudaMemcpyDefault));
 }
 
-PRIVATE void 
-initialize_device(const graph_t* graph_h, graph_t* graph_d) {
-
+PRIVATE void initialize_device(const graph_t* graph_h, graph_t* graph_d) {
   gpu_graph_mem_t gpu_graph_mem = graph_d->gpu_graph_mem;
   graph_d->vertex_ext = graph_d->vertex_count;
   if ((gpu_graph_mem == GPU_GRAPH_MEM_PARTITIONED_EDGES) &&
@@ -682,73 +654,86 @@ initialize_device(const graph_t* graph_h, graph_t* graph_d) {
   // Vertices will be processed by each warp in batches. To avoid explicitly
   // checking for end of array boundaries, the vertices array is padded with
   // fake vertices so that its length is multiple of batch size. The fake
-  // vertices has no edges and they don't count in the vertex_count (much
-  // like the extra vertex we used to have which enables calculating the number
-  // of neighbors for the last vertex). Note that this padding does not affect
-  // the algorithms that do not apply the virtual warp technique.
-  vid_t vertex_count_batch_padded = 
+  // vertices has no edges and they don't count in the vertex_count (much like
+  // the extra vertex we used to have which enables calculating the number of
+  // neighbors for the last vertex). Note that this padding does not affect the
+  // algorithms that do not apply the virtual warp technique.
+  vid_t vertex_count_batch_padded =
     vwarp_default_state_length(graph_d->vertex_count);
-  
+
   switch (gpu_graph_mem) {
     case GPU_GRAPH_MEM_DEVICE:
-      CALL_SAFE(totem_malloc((vertex_count_batch_padded + 1) * sizeof(eid_t), 
-                             TOTEM_MEM_DEVICE, (void**)&graph_d->vertices));
+      CALL_SAFE(totem_malloc((vertex_count_batch_padded + 1) * sizeof(eid_t),
+                             TOTEM_MEM_DEVICE,
+                             reinterpret_cast<void**>(&graph_d->vertices)));
       if (graph_d->edge_count) {
-        CALL_SAFE(totem_malloc(graph_d->edge_count * sizeof(vid_t), 
-                               TOTEM_MEM_DEVICE, (void**)&graph_d->edges));
+        CALL_SAFE(totem_malloc(graph_d->edge_count * sizeof(vid_t),
+                               TOTEM_MEM_DEVICE,
+                               reinterpret_cast<void**>(&graph_d->edges)));
       }
       break;
     case GPU_GRAPH_MEM_MAPPED:
       CALL_SAFE(totem_malloc((vertex_count_batch_padded + 1) * sizeof(eid_t),
                              TOTEM_MEM_HOST_MAPPED,
-                             (void**)&graph_d->mapped_vertices));
-      CALL_CU_SAFE(cudaHostGetDevicePointer((void**)&(graph_d->vertices),
+                             reinterpret_cast<void**>
+                             (&graph_d->mapped_vertices)));
+      CALL_CU_SAFE(cudaHostGetDevicePointer(reinterpret_cast<void**>
+                                            (&(graph_d->vertices)),
                                             graph_d->mapped_vertices, 0));
       if (graph_d->edge_count) {
-        CALL_SAFE(totem_malloc(graph_d->edge_count * sizeof(vid_t), 
+        CALL_SAFE(totem_malloc(graph_d->edge_count * sizeof(vid_t),
                                TOTEM_MEM_HOST_MAPPED,
-                               (void**)&graph_d->mapped_edges));
-        CALL_CU_SAFE(cudaHostGetDevicePointer((void**)&(graph_d->edges), 
+                               reinterpret_cast<void**>
+                               (&graph_d->mapped_edges)));
+        CALL_CU_SAFE(cudaHostGetDevicePointer(reinterpret_cast<void**>
+                                              (&(graph_d->edges)),
                                               graph_d->mapped_edges, 0));
       }
       break;
     case GPU_GRAPH_MEM_MAPPED_VERTICES:
       CALL_SAFE(totem_malloc((vertex_count_batch_padded + 1) * sizeof(eid_t),
                              TOTEM_MEM_HOST_MAPPED,
-                             (void**)&graph_d->mapped_vertices));
-      CALL_CU_SAFE(cudaHostGetDevicePointer((void**)&(graph_d->vertices),
+                             reinterpret_cast<void**>
+                             (&graph_d->mapped_vertices)));
+      CALL_CU_SAFE(cudaHostGetDevicePointer(reinterpret_cast<void**>
+                                            (&(graph_d->vertices)),
                                             graph_d->mapped_vertices, 0));
       if (graph_d->edge_count) {
-        CALL_SAFE(totem_malloc(graph_d->edge_count * sizeof(vid_t), 
-                               TOTEM_MEM_DEVICE, (void**)&graph_d->edges));
+        CALL_SAFE(totem_malloc(graph_d->edge_count * sizeof(vid_t),
+                               TOTEM_MEM_DEVICE, reinterpret_cast<void**>
+                               (&graph_d->edges)));
       }
       break;
     case GPU_GRAPH_MEM_MAPPED_EDGES:
-      CALL_SAFE(totem_malloc((vertex_count_batch_padded + 1) * sizeof(eid_t), 
-                             TOTEM_MEM_DEVICE, (void**)&graph_d->vertices));
+      CALL_SAFE(totem_malloc((vertex_count_batch_padded + 1) * sizeof(eid_t),
+                             TOTEM_MEM_DEVICE,
+                             reinterpret_cast<void**>(&graph_d->vertices)));
       if (graph_d->edge_count) {
-        CALL_SAFE(totem_malloc(graph_d->edge_count * sizeof(vid_t), 
+        CALL_SAFE(totem_malloc(graph_d->edge_count * sizeof(vid_t),
                                TOTEM_MEM_HOST_MAPPED,
-                               (void**)&graph_d->mapped_edges));
-        CALL_CU_SAFE(cudaHostGetDevicePointer((void**)&(graph_d->edges), 
+                               reinterpret_cast<void**>
+                               (&graph_d->mapped_edges)));
+        CALL_CU_SAFE(cudaHostGetDevicePointer(reinterpret_cast<void**>
+                                              (&(graph_d->edges)),
                                               graph_d->mapped_edges, 0));
       }
       break;
     case GPU_GRAPH_MEM_PARTITIONED_EDGES:
-      CALL_SAFE(totem_malloc((vertex_count_batch_padded + 1) * sizeof(eid_t), 
-                             TOTEM_MEM_DEVICE, (void**)&graph_d->vertices));
+      CALL_SAFE(totem_malloc((vertex_count_batch_padded + 1) * sizeof(eid_t),
+                             TOTEM_MEM_DEVICE,
+                             reinterpret_cast<void**>(&graph_d->vertices)));
       CALL_SAFE(cudaMemcpy(graph_d->vertices, graph_h->vertices,
                            (graph_h->vertex_count + 1) * sizeof(eid_t),
                            cudaMemcpyDefault));
       initialize_device_partitioned_edges(graph_h, graph_d);
       return;
     default:
-      fprintf(stderr, "Not supported graph memory type %d\n", 
+      fprintf(stderr, "Not supported graph memory type %d\n",
               graph_d->gpu_graph_mem);
       assert(false);
   }
 
-  // Copy data to the GPU graph data structure
+  // Copy data to the GPU graph data structure.
   CALL_SAFE(cudaMemcpy(graph_d->vertices, graph_h->vertices,
                        (graph_h->vertex_count + 1) * sizeof(eid_t),
                        cudaMemcpyDefault));
@@ -763,34 +748,36 @@ error_t graph_initialize_device(const graph_t* graph_h, graph_t** graph_d,
                                 gpu_graph_mem_t gpu_graph_mem) {
   assert(graph_h);
 
-  // Allocate the graph struct that will host references to device buffers
-  CALL_SAFE(totem_malloc(sizeof(graph_t), TOTEM_MEM_HOST, (void**)graph_d));
+  // Allocate the graph struct that will host references to device buffers.
+  CALL_SAFE(totem_malloc(sizeof(graph_t), TOTEM_MEM_HOST,
+                         reinterpret_cast<void**>(graph_d)));
 
   // Copy basic data types within the structure, the buffers pointers will be
-  // overwritten next with device pointers
+  // overwritten next with device pointers.
   **graph_d = *graph_h;
   (*graph_d)->gpu_graph_mem = gpu_graph_mem;
 
-  // Nothing to be done if this is an empty graph
+  // Nothing to be done if this is an empty graph.
   if (!graph_h->vertex_count) return SUCCESS;
 
-  // Allocate device buffers and copy data to the GPU
+  // Allocate device buffers and copy data to the GPU.
   initialize_device(graph_h, *graph_d);
 
   // Set the index of the extra vertices to the last actual vertex. This
   // renders the padded fake vertices with zero edges.
   int pad_size;
-  pad_size = vwarp_default_state_length(graph_h->vertex_count) - 
+  pad_size = vwarp_default_state_length(graph_h->vertex_count) -
     graph_h->vertex_count;
   if (pad_size > 0) {
     totem_memset(&((*graph_d)->vertices[graph_h->vertex_count + 1]),
-                 graph_h->vertices[graph_h->vertex_count], pad_size, 
+                 graph_h->vertices[graph_h->vertex_count], pad_size,
                  TOTEM_MEM_DEVICE);
   }
 
   if (graph_h->weighted) {
-    CALL_SAFE(totem_malloc(graph_h->edge_count * sizeof(weight_t), 
-                           TOTEM_MEM_DEVICE, (void**)&(*graph_d)->weights));
+    CALL_SAFE(totem_malloc(graph_h->edge_count * sizeof(weight_t),
+                           TOTEM_MEM_DEVICE,
+                           reinterpret_cast<void**>(&(*graph_d)->weights)));
     CHK_CU_SUCCESS(cudaMemcpy((*graph_d)->weights, graph_h->weights,
                               graph_h->edge_count * sizeof(weight_t),
                               cudaMemcpyDefault), err);
@@ -819,7 +806,7 @@ void graph_finalize_device(graph_t* graph_d) {
         (graph_d->gpu_graph_mem == GPU_GRAPH_MEM_MAPPED_EDGES)) {
       totem_free(graph_d->mapped_edges, TOTEM_MEM_HOST_MAPPED);
     } else if ((graph_d->gpu_graph_mem == GPU_GRAPH_MEM_DEVICE) ||
-               ((graph_d->gpu_graph_mem == GPU_GRAPH_MEM_PARTITIONED_EDGES) && 
+               ((graph_d->gpu_graph_mem == GPU_GRAPH_MEM_PARTITIONED_EDGES) &&
                 (graph_d->vertex_ext < graph_d->vertex_count))) {
       totem_free(graph_d->edges, TOTEM_MEM_DEVICE);
     } else if (graph_d->gpu_graph_mem == GPU_GRAPH_MEM_PARTITIONED_EDGES) {
@@ -845,8 +832,8 @@ void graph_print(graph_t* graph) {
       fprintf(stdout, "%d %d", vid, graph->edges[i]);
       if (graph->weighted) {
         fprintf(stdout, " %f\n", graph->weights[i]);
-      } else { 
-        fprintf(stdout, "\n"); 
+      } else {
+        fprintf(stdout, "\n");
       }
     }
   }
@@ -856,11 +843,11 @@ error_t graph_store_binary(graph_t* graph, const char* filename) {
   assert(graph);
   FILE* fh = fopen(filename, "wb");
   if (fh == NULL) return FAILURE;
-  
+
   uint32_t word = BINARY_MAGIC_WORD;
   CHK(fwrite(&word, sizeof(uint32_t), 1, fh) == 1, err);
 
-  // Write the graph's parameters
+  // Write the graph's parameters.
   word = sizeof(vid_t);
   CHK(fwrite(&word, sizeof(uint32_t), 1, fh) == 1, err);
   word = sizeof(eid_t);
@@ -870,14 +857,14 @@ error_t graph_store_binary(graph_t* graph, const char* filename) {
   CHK(fwrite(&(graph->valued), sizeof(bool), 1, fh) == 1, err);
   CHK(fwrite(&(graph->weighted), sizeof(bool), 1, fh) == 1, err);
   CHK(fwrite(&(graph->directed), sizeof(bool), 1, fh) == 1, err);
-  
+
   for (vid_t vid = 0; vid < graph->vertex_count; vid++) {
     CHK(fwrite(&(graph->vertices[vid]), sizeof(eid_t), 1, fh) == 1, err);
     if (graph->valued) {
       CHK(fwrite(&(graph->values[vid]), sizeof(weight_t), 1, fh) == 1, err);
     }
   }
-  CHK(fwrite(&(graph->vertices[graph->vertex_count]), 
+  CHK(fwrite(&(graph->vertices[graph->vertex_count]),
              sizeof(eid_t), 1, fh) == 1, err);
 
   for (eid_t eid = 0; eid < graph->edge_count; eid++) {
@@ -885,10 +872,20 @@ error_t graph_store_binary(graph_t* graph, const char* filename) {
     if (graph->weighted) {
       CHK(fwrite(&(graph->weights[eid]), sizeof(weight_t), 1, fh) == 1, err);
     }
-  }  
+  }
   fclose(fh);
   return SUCCESS;
 
  err:
   return FAILURE;
+}
+
+void graph_sort_nbrs(graph_t* graph) {
+  OMP(omp parallel for schedule(guided))
+  for (vid_t v = 0; v < graph->vertex_count; v++) {
+    vid_t* nbrs = &graph->edges[graph->vertices[v]];
+    qsort(nbrs, graph->vertices[v+1] - graph->vertices[v], sizeof(vid_t),
+          compare_ids_asc);
+    // TODO(treza): Required updates for edge-weights.
+  }
 }

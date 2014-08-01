@@ -11,31 +11,31 @@
 
 // Counts the number of vertices in the edge list.
 static int64_t find_nv (const struct packed_edge * IJ, const int64_t nedge) {
-  int64_t maxvtx = -1;  
-  
+  int64_t maxvtx = -1;
+
   // Offers a minimal speed-up by doing a parallel maximum.
   OMP(omp parallel for shared (maxvtx))
   for (int64_t k = 0; k < nedge; k++) {
     int64_t localmax = -1;
-    
+
     if (get_v0_from_edge(&IJ[k]) > maxvtx)
       localmax = get_v0_from_edge(&IJ[k]);
     if (get_v1_from_edge(&IJ[k]) > (localmax > maxvtx ? localmax : maxvtx))
       localmax = get_v1_from_edge(&IJ[k]);
-    
+
     if (localmax > maxvtx) {   // Avoid critical section if possible.
       OMP(omp critical(updatemax))
       {
         if (localmax > maxvtx) // Final update inside critical section.
-          maxvtx = localmax;  
+          maxvtx = localmax;
       }
     }
   }
-  
+
   return 1 + maxvtx;
 }
 
-static void allocate_graph(vid_t vertex_count, eid_t edge_count, 
+static void allocate_graph(vid_t vertex_count, eid_t edge_count,
                            graph_t** graph_ret) {
   // Allocate the main structure.
   graph_t* graph = (graph_t*)calloc(1, sizeof(graph_t));
@@ -56,12 +56,12 @@ static void allocate_graph(vid_t vertex_count, eid_t edge_count,
 }
 
 // Sorts the neighbours in ascending order.
-void sort_nbrs(graph_t* graph) {  
+void sort_nbrs(graph_t* graph) {
 OMP(omp parallel for schedule(guided))
   for (vid_t v = 0; v < graph->vertex_count; v++) {
     vid_t* nbrs = &graph->edges[graph->vertices[v]];
     qsort(nbrs, graph->vertices[v+1] - graph->vertices[v], sizeof(vid_t),
-          compare_ids);
+          compare_ids_asc);
   }
 }
 
@@ -78,7 +78,7 @@ static void create_graph(struct packed_edge* IJ, vid_t vertex_count,
 
   eid_t* degree = (eid_t*)calloc(vertex_count, sizeof(eid_t));
   assert(degree);
-  
+
   // Calculate the degree of each vertex.
   OMP(omp parallel)
   {
@@ -88,7 +88,7 @@ static void create_graph(struct packed_edge* IJ, vid_t vertex_count,
       OMP(omp atomic)
         degree[v0]++;
     }
-    
+
     OMP(omp for nowait)
     for(eid_t i = 0; i < edge_count; i++) {
       vid_t v1 = get_v1_from_edge(&IJ[i]);
@@ -102,7 +102,7 @@ static void create_graph(struct packed_edge* IJ, vid_t vertex_count,
   for (vid_t i = 1; i <= vertex_count; i++) {
     graph->vertices[i] = graph->vertices[i - 1] + degree[i - 1];
   }
-  
+
   // Build the Totem edges, one in each direction.
   OMP(omp parallel)
   {
@@ -115,9 +115,9 @@ static void create_graph(struct packed_edge* IJ, vid_t vertex_count,
       // one direction
       OMP(omp atomic capture)
         { pos = degree[u]; degree[u]--; }
-      graph->edges[graph->vertices[u] + pos - 1] = v;    
+      graph->edges[graph->vertices[u] + pos - 1] = v;
     }
-  
+
     OMP(omp for nowait)
     for (eid_t i = 0; i < edge_count; i++) {
       vid_t u = get_v0_from_edge(&IJ[i]);
@@ -130,7 +130,7 @@ static void create_graph(struct packed_edge* IJ, vid_t vertex_count,
       graph->edges[graph->vertices[v] + pos - 1] = u;
     }
   }
-  
+
   sort_nbrs(graph);
   free(degree);
 }
@@ -139,7 +139,7 @@ extern "C" {
 
 /**
  *  Parses totem flags from a string.
- *  
+ *
  *  @param input_optarg   The input arguments, as a string.
  *  @param program_name   The runtime program name, for the first argument
  *                        to be passed into the next parser.
@@ -149,24 +149,24 @@ void totem_set_options(const char* input_optarg, char* program_name) {
   int   new_argc;
   char* new_argv[32]; // Probably don't need more than 32 arguments?
   char* tokened_args;
-  
+
   new_argv[0] = program_name;              // Copy program name.
   new_argc = 1;                            // argc count starts at 1.
-  
-  totem_args = (char*) malloc(sizeof(char) * strlen(input_optarg)); 
+
+  totem_args = (char*) malloc(sizeof(char) * strlen(input_optarg));
   strcpy(totem_args, input_optarg);        // Since strtok modifies string,
                                            // don't globber the original.
-  
+
   tokened_args = strtok(totem_args, " ");  // Tokenize over spaces.
   while (tokened_args) {
     new_argv[new_argc++] = tokened_args;   // Add all words to the argv.
     tokened_args = strtok(NULL, " ");
     assert(new_argc < 32);
   }
-  
+
   new_argv[new_argc++] = "/dev/null";     // Don't need a graph file.
   new_argv[new_argc] = NULL;              // End of args.
-  
+
   // Parse Totem benchmarking options. No need to retrieve the result here.
   benchmark_cmdline_parse(new_argc, new_argv);
 
@@ -178,7 +178,7 @@ int create_graph_from_edgelist(struct packed_edge* IJ, int64_t nedge) {
   eid_t edge_count   = nedge;
   vid_t vertex_count = find_nv(IJ, nedge);
   create_graph(IJ, vertex_count, edge_count);
-  
+
   // Use the options specified by created benchmark options.
   benchmark_options_t* b_options = totem_benchmark_get_options();
   assert(b_options);
@@ -191,11 +191,11 @@ int create_graph_from_edgelist(struct packed_edge* IJ, int64_t nedge) {
   attr.gpu_graph_mem      = b_options->gpu_graph_mem;
   attr.gpu_par_randomized = b_options->gpu_par_randomized;
   attr.sorted             = b_options->sorted;
-  
+
   // OpenMP attributes.
   omp_set_num_threads(b_options->thread_count);
   omp_set_schedule(b_options->omp_sched, 0);
-  
+
   // Static graph500 attributes.
   attr.push_msg_size      = (sizeof(vid_t) * BITS_PER_BYTE) + 1;
   attr.pull_msg_size      = MSG_SIZE_ZERO;
@@ -213,7 +213,7 @@ int create_graph_from_edgelist(struct packed_edge* IJ, int64_t nedge) {
   print_header(graph, true);
 
   return 0;
-}  
+}
 
 int make_bfs_tree(int64_t* bfs_tree_out, int64_t* max_vtx_out,
                   int64_t srcvtx) {
@@ -225,7 +225,7 @@ int make_bfs_tree(int64_t* bfs_tree_out, int64_t* max_vtx_out,
   print_timing(graph, stopwatch_elapsed(&stopwatch), graph->edge_count, true);
   return 0;
 }
-  
+
 void destroy_graph() {
   totem_finalize();
   graph_finalize(graph);

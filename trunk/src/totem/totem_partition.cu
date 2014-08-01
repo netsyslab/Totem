@@ -532,13 +532,7 @@ PRIVATE void init_sort_nbrs(partition_set_t* pset) {
   uint32_t pcount = pset->partition_count;
   for (uint32_t pid = 0; pid < pcount; pid++) {
     graph_t* subgraph = &pset->partitions[pid].subgraph;
-    OMP(omp parallel for schedule(guided))
-    for (vid_t v = 0; v < subgraph->vertex_count; v++) {
-      vid_t* nbrs = &subgraph->edges[subgraph->vertices[v]];
-      qsort(nbrs, subgraph->vertices[v+1] - subgraph->vertices[v],
-            sizeof(vid_t), compare_ids);
-      // TODO (treza): Required updates for edge-weights.
-    }
+    graph_sort_nbrs(subgraph);
   }
 }
 
