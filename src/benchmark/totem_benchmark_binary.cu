@@ -15,6 +15,8 @@ PRIVATE void benchmark_pagerank(graph_t*, void*, totem_attr_t*);
 PRIVATE void benchmark_dijkstra(graph_t*, void*, totem_attr_t*);
 PRIVATE void benchmark_betweenness(graph_t*, void*, totem_attr_t*);
 PRIVATE void benchmark_graph500(graph_t* graph, void* tree, totem_attr_t* attr);
+PRIVATE void benchmark_clustering_coefficient(graph_t* graph, void*, 
+                                              totem_attr_t* attr);
 const benchmark_attr_t BENCHMARKS[] = {
   {
     benchmark_bfs,
@@ -65,6 +67,16 @@ const benchmark_attr_t BENCHMARKS[] = {
     MSG_SIZE_ZERO,
     graph500_alloc,
     graph500_free
+  }, 
+  {
+    benchmark_clustering_coefficient,
+    "CLUSTERING_COEFFICIENT",
+    sizeof(weight_t),
+    false,
+    MSG_SIZE_ZERO,
+    MSG_SIZE_ZERO,
+    NULL,
+    NULL 
   }
 };
 
@@ -106,6 +118,11 @@ PRIVATE uint64_t get_traversed_edges(graph_t* graph, void* benchmark_output) {
     case BENCHMARK_BETWEENNESS: {
       // The two is for the two phases: forward and backward
       trv_edges = (uint64_t)graph->edge_count * 2;
+      break;
+    }
+    case BENCHMARK_CLUSTERING_COEFFICIENT: {
+      // Each triangle is counted three times
+      trv_edges = (uint64_t)graph->edge_count;
       break;
     }
     default: {
@@ -170,6 +187,24 @@ PRIVATE void benchmark_betweenness(graph_t* graph, void* betweenness_score,
 PRIVATE
 void benchmark_graph500(graph_t* graph, void* tree, totem_attr_t* attr) {
   CALL_SAFE(graph500_hybrid(get_random_src(graph), (bfs_tree_t*)tree));
+}
+
+/**
+ * Runs Clustering Coefficient benchmark
+ */
+
+PRIVATE
+void benchmark_clustering_coefficient(graph_t* graph, void* coefficients, 
+                                      totem_attr_t* attr) {
+  if (options->platform == PLATFORM_CPU) {
+    CALL_SAFE(clustering_coefficient_sorted_neighbours_cpu(
+              graph, (weight_t**)&coefficients));
+  } else if (options->platform == PLATFORM_GPU && options->gpu_count == 1) {
+      CALL_SAFE(clustering_coefficient_sorted_neighbours_gpu(
+              graph, (weight_t**)&coefficients));
+  } else {
+      assert(false);
+  }
 }
 
 /**
