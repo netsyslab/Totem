@@ -152,11 +152,11 @@ TEST_P(ClusteringCoefficientTest, DisconnectedGraph1000Nodes) {
   }  
 }
 
-// Tests ClustreingCoefficinet for an undirected ring center graph with 1K 
-// nodes.
-TEST_P(ClusteringCoefficientTest, RingCenterGraph1000NodesUndirected) {
+// Tests ClustreingCoefficinet for an undirected wheel graph with 1K 
+// nodes. 
+TEST_P(ClusteringCoefficientTest, WheelGraph1000NodesUndirected) {
   EXPECT_EQ(SUCCESS,
-            graph_initialize(DATA_FOLDER("ring_center_graph_1000_nodes.totem"),
+            graph_initialize(DATA_FOLDER("wheel_graph_1000_nodes.totem"),
                              false, &_graph));
 
   CALL_SAFE(totem_malloc(_graph->vertex_count * sizeof(weight_t), _mem_type, 
@@ -184,7 +184,9 @@ TEST_P(ClusteringCoefficientTest, RingCenterGraph1000NodesUndirected) {
 INSTANTIATE_TEST_CASE_P(ClusteringCoefficientGPUandCPUTest, 
                         ClusteringCoefficientTest, 
                         Values(&clustering_coefficient_cpu,
-                        &clustering_coefficient_gpu));
+                        &clustering_coefficient_gpu,
+                        &clustering_coefficient_sorted_neighbours_cpu,
+                        &clustering_coefficient_sorted_neighbours_gpu));
 
 #else
 
