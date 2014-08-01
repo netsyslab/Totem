@@ -53,6 +53,7 @@ PRIVATE void display_help(char* exe_name, int exit_err) {
          "     %d: Dijkstra\n"
          "     %d: Betweenness\n"
          "     %d: Graph500\n"
+         "     %d: Clustering Coefficient\n" 
          "  -gNUM [0-%d] Number of GPUs to use. This is applicable for GPU\n"
          "        and Hybrid platforms only (default 1).\n"
          "  -iNUM Partitioning Algorithm\n"
@@ -82,8 +83,9 @@ PRIVATE void display_help(char* exe_name, int exit_err) {
          "  -tNUM [1-%d] Number of CPU threads to use (default %d).\n" 
          "  -h Print this help message\n",
          exe_name, BENCHMARK_BFS, BENCHMARK_PAGERANK, BENCHMARK_DIJKSTRA, 
-         BENCHMARK_BETWEENNESS, BENCHMARK_GRAPH500, get_gpu_count(), 
-         PAR_RANDOM, PAR_SORTED_ASC, PAR_SORTED_DSC, GPU_GRAPH_MEM_DEVICE, 
+         BENCHMARK_BETWEENNESS, BENCHMARK_GRAPH500, 
+         BENCHMARK_CLUSTERING_COEFFICIENT, get_gpu_count(), PAR_RANDOM, 
+         PAR_SORTED_ASC, PAR_SORTED_DSC, GPU_GRAPH_MEM_DEVICE, 
          GPU_GRAPH_MEM_MAPPED, GPU_GRAPH_MEM_MAPPED_VERTICES, 
          GPU_GRAPH_MEM_MAPPED_EDGES, GPU_GRAPH_MEM_PARTITIONED_EDGES, 
          PLATFORM_CPU, PLATFORM_GPU, PLATFORM_HYBRID, REPEAT_MAX, 
