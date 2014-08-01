@@ -35,7 +35,7 @@ int get_gpu_count();
  * Compares two vertex ids, used by the qsort function.
  * @return 0 if equal; 1, if *a > *b; and -1, if *b > *a
  */
-int compare_ids(const void* a, const void* b);
+int compare_ids_asc(const void* a, const void* b);
 
 /**
  * Compares two vertex ids, used by the tbb parallel qsort function.
@@ -51,4 +51,3 @@ bool compare_ids_tbb(const vid_t& v1, const vid_t& v2);
 int get_mssb(uint32_t word);
 
 #endif  // TOTEM_UTIL_H
-
