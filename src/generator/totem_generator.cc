@@ -257,6 +257,7 @@ PRIVATE error_t check_vertices_sorted(const graph_t* graph,
 // This function modifies the graph by sorting the neighbours. This is done to
 // make it easy to calculate the number of repeated edges.
 PRIVATE void count_repeated_edges(graph_t* graph, std::string* report) {
+  printf("Counting repeated edges... "); fflush(stdout);
   graph_sort_nbrs(graph);
   eid_t repeated_edges = 0;
   OMP(omp parallel for reduction(+ : repeated_edges))
@@ -268,6 +269,7 @@ PRIVATE void count_repeated_edges(graph_t* graph, std::string* report) {
       }
     }
   }
+  printf("done\n"); fflush(stdout);
 
   std::ostringstream stringStream;
   stringStream << "Repeated edges: " << repeated_edges << " ("
@@ -297,6 +299,7 @@ PRIVATE void mark_non_singleton_vertices(const graph_t* graph,
 // one incoming edge.
 PRIVATE void count_singletons_and_leafs(const graph_t* graph,
                                         std::string* report) {
+  printf("Counting singletons and leaf nodes... "); fflush(stdout);
   bool* mask = NULL;
   mark_non_singleton_vertices(graph, &mask);
 
@@ -318,6 +321,7 @@ PRIVATE void count_singletons_and_leafs(const graph_t* graph,
   for (vid_t v = 0; v < graph->vertex_count; v++) {
     if (mask[v]) { leaf_count++; }
   }
+  printf("done\n"); fflush(stdout);
 
   std::ostringstream stringStream;
   stringStream << "Singletons: " << singleton_count << " ("
@@ -451,7 +455,7 @@ error_t generator_check_and_summarize(generator_config_t* config,
   printf("Loading graph from disk... "); fflush(stdout);
   graph_t* graph = NULL;
   CALL_SAFE(graph_initialize(config->input_graph_file.c_str(), false, &graph));
-  printf("done");
+  printf("done\n");
   CHK_SUCCESS(check_edge_and_vertex_count(graph, report), error);
   CHK_SUCCESS(check_direction(graph, config->check_direction, report), error);
   CHK_SUCCESS(check_neighbours_sorted(graph, report), error);

@@ -50,7 +50,7 @@ const std::map<std::string, std::string> help_map = {
   // "Analyze" command and sub-commands handlers.
   {kAnalyzeCommand, ""},
   {kSummarySubCommand,
-   "\tPerforms sanity check on the graph and prints out a number of "
+   "\tPerforms sanity check on the graph and prints out a number of\n"
    "\tcharacteristics such as the number of edges and vertices.\n"},
   {kDegreeDistributionSubCommand,
    "\tGenerates the degree distribution of the graph. The generated file\n"
@@ -129,6 +129,23 @@ PRIVATE void display_help(char* exe_name, int exit_err,
          kSortNeighboursSubCommand, kSortVerticesSubCommand,
          kUndirectedSubCommand, kRmatSubCommand, kUniformSubCommand,
          exe_basename.c_str());
+
+  if (exit_err == 0) {
+    printf("\n\nDetailed descriptions of commands:\n");
+    for (const auto& command : commands) {
+      if (command.second.empty()) {
+        printf("%s\n%s", command.first.c_str(),
+               help_map.find(command.first)->second.c_str());
+      } else {
+        for (const auto& sub_command : command.second) {
+          printf("%s %s\n%s", command.first.c_str(),
+                 sub_command.c_str(),
+                 help_map.find(sub_command)->second.c_str());
+        }
+      }
+    }
+  }
+
   exit(exit_err);
 }
 
@@ -208,7 +225,7 @@ void parse_command_line(int argc, char** argv, generator_config_t* config) {
   parse_command_line_options(argc, argv, config);
   parse_command_line_arguments(argc, argv, config);
   if (config->command_help) {
-    printf("Command %s %s\n", config->command.c_str(),
+    printf("%s %s\n", config->command.c_str(),
            config->sub_command.c_str());
     std::string help_msg = config->sub_command.empty() ?
         help_map.find(config->command)->second :
