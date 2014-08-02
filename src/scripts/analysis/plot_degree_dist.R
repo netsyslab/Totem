@@ -5,7 +5,7 @@
 ## The input is a two columns file, the first is the degree while the second
 ## is the number of nodes with that degree. The assumption is that the file
 ## has a header as follows:
-## degree nnodes
+## degree vertex_count
 ## x      y
 ## .      .
 ## .      .
@@ -31,10 +31,10 @@ library("ggplot2");
 
 # Loads the data
 ddist = data.frame(alpha = numeric(0), degree = numeric(0),
-  nnodes = numeric(0));
+  vertex_count = numeric(0));
 for (dfile in dfiles) {
   my_ddist = read.table(dfile, head=TRUE);
-  a = power.law.fit(rep(my_ddist$degree, my_ddist$nnodes))$alpha
+  a = power.law.fit(rep(my_ddist$degree, my_ddist$vertex_count))$alpha
   alpha = rep(signif(a, digits = 3), length(my_ddist$degree))
   my_ddist = cbind(alpha, my_ddist)
   ddist = rbind(ddist, my_ddist);
@@ -42,7 +42,7 @@ for (dfile in dfiles) {
 
 # log-log plot of vertex-degree distribution
 imgfile = paste(dfiles[1],"_plot.png", sep="");
-plot = ggplot(ddist, aes(degree, nnodes)) +
+plot = ggplot(ddist, aes(degree, vertex_count)) +
   geom_point(aes(shape = factor(alpha)), size = 3) +
   scale_x_log10()     +
   scale_y_log10()     +

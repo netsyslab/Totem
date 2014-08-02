@@ -138,6 +138,9 @@ ALG_DEPS   = $(wildcard $(ALG_PATH)/*.[cuh,h])
 BENCHMARK_PATH   = $(ROOTDIR)/benchmark
 BENCHMARK_DEPS   = $(wildcard $(BENCHMARK_PATH)/*.[cuh,h])
 
+GENERATOR_PATH   = $(ROOTDIR)/generator
+GENERATOR_DEPS   = $(wildcard $(GENERATOR_PATH)/*.[cuh,h])
+
 GRAPH500_PATH   = $(ROOTDIR)/thirdparty/graph500-2.1.4-energy/totem
 GRAPH500_DEPS   = $(wildcard $(GRAPH500_PATH)/*.[cuh,h])
 

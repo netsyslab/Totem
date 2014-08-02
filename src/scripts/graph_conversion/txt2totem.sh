@@ -1,10 +1,10 @@
 #!/bin/bash
 #
-# This script receives as input a txt file that contains a list of
-# edges. The file should contain three columns separated by spaces:
-# <source node id> <destination node id> [weight], these columns are 
-# processed and converted into an edge list where the nodes are
-# assumed to have contiguous IDs.
+# This script receives as input a txt file that contains a list of edges, and 
+# outputs (to stdout) the edge list in Totem's txt graph format. The file should
+# contain three columns separated by spaces:
+# <source node id> <destination node id> [weight], these columns are converted
+# into an edge list where the vertices belong to contiguous ID space.
 #
 # Created on: 2011-03-02
 # Author: Elizeu Santos-Neto (elizeus@ece.ubc.ca)
@@ -80,4 +80,5 @@ paste -d" " SRC.$FTERM.mapped DST.$FTERM.mapped WEIGHT.$FTERM | \
   sed 's/ $//' | sort --key=1,1n --key=2n
 
 # Remove temp files.
-rm -f SRC.$FTERM DST.$FTERM SRC.$FTERM.mapped DST.$FTERM.mapped WEIGHT.$FTERM
+rm -f SRC.$FTERM DST.$FTERM SRC.$FTERM.mapped DST.$FTERM.mapped WEIGHT.$FTERM \
+  $TXT.$FTERM.noheader
