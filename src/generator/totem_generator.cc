@@ -6,6 +6,7 @@
  */
 
 // system includes
+#include <map>
 #include <sstream>
 #include <string>
 
@@ -45,14 +46,52 @@ PRIVATE error_t create_init(generator_config_t* config, vid_t* vertex_count,
   return SUCCESS;
 
 err_overflow:
-  fprintf(stderr, "Vertex or edge count overflow scale:%d, edge_factor:%d!\n",
-          config->scale, config->edge_factor);
+  printf("Vertex or edge count overflow scale:%d, edge_factor:%d!\n",
+         config->scale, config->edge_factor);
   return FAILURE;
 }
 
-PRIVATE void edgelist_to_graph(vid_t* src, vid_t* dst, vid_t vertex_count,
-                               vid_t edge_count, bool weighted, bool directed,
-                               graph_t** graph_ret) {
+PRIVATE void get_output_file_with_extension(generator_config_t* config,
+                                            const std::string& ext,
+                                            std::string* output_file) {
+  if (config->output_directory.empty()) {
+    output_file->assign(config->input_graph_file);
+  } else {
+    const std::string& input_graph_file = config->input_graph_file;
+    std::string basename = input_graph_file.rfind("/") != std::string::npos ?
+        input_graph_file.substr(input_graph_file.rfind("/") + 1) :
+        input_graph_file;
+    output_file->assign(config->output_directory);
+    output_file->append("/");
+    output_file->append(basename);
+  }
+  output_file->append(ext);
+}
+
+PRIVATE void write_graph(graph_t* graph, const std::string& graph_path) {
+  printf("Writing graph file %s ", graph_path.c_str()); fflush(stdout);
+  CALL_SAFE(graph_store_binary(graph, graph_path.c_str()));
+  printf("done.\n"); fflush(stdout);
+  CALL_SAFE(graph_finalize(graph));
+}
+
+PRIVATE void write_graph_with_extension(
+    generator_config_t* config, graph_t* graph, const std::string& ext) {
+  std::string output_graph_file;
+  get_output_file_with_extension(config, ext, &output_graph_file);
+  write_graph(graph, output_graph_file);
+}
+
+PRIVATE void load_graph(
+    const std::string& graph_path, bool weighted, graph_t** graph) {
+  printf("Loading graph file %s ", graph_path.c_str()); fflush(stdout);
+  CALL_SAFE(graph_initialize(graph_path.c_str(), weighted, graph));
+  printf("done.\n"); fflush(stdout);
+}
+
+PRIVATE void edgelist_to_graph(
+    vid_t* src, vid_t* dst, vid_t vertex_count, vid_t edge_count, bool weighted,
+    bool directed, graph_t** graph_ret) {
   // Third, compute the degree of each vertex.
   eid_t* degree = reinterpret_cast<eid_t*>(calloc(vertex_count, sizeof(eid_t)));
   assert(degree);
@@ -85,7 +124,7 @@ PRIVATE void edgelist_to_graph(vid_t* src, vid_t* dst, vid_t vertex_count,
   *graph_ret = graph;
 }
 
-PRIVATE void graph_to_edgelist(graph_t* graph, vid_t** src, vid_t** dst) {
+PRIVATE void graph_to_edgelist(const graph_t* graph, vid_t** src, vid_t** dst) {
   *src = reinterpret_cast<vid_t*>(calloc(graph->edge_count, sizeof(vid_t)));
   *dst = reinterpret_cast<vid_t*>(calloc(graph->edge_count, sizeof(vid_t)));
   assert(*src && *dst);
@@ -101,8 +140,8 @@ PRIVATE void graph_to_edgelist(graph_t* graph, vid_t** src, vid_t** dst) {
 
 // Permutates the vertices so that one can't know the characteristics of the
 // vertex from its vertex id.
-PRIVATE void permute_edgelist(vid_t* src, vid_t* dst, vid_t vertex_count,
-                              vid_t edge_count) {
+PRIVATE void permute_edgelist(
+    vid_t* src, vid_t* dst, vid_t vertex_count, vid_t edge_count) {
   vid_t* p = reinterpret_cast<vid_t*>(calloc(vertex_count, sizeof(vid_t)));
   for (vid_t i = 0; i < vertex_count; i++) { p[i] = i; }
   for (vid_t i = 0; i < vertex_count; i++) {
@@ -119,15 +158,15 @@ PRIVATE void permute_edgelist(vid_t* src, vid_t* dst, vid_t vertex_count,
 }
 
 // Checks that the number of edges is correct.
-PRIVATE error_t check_edge_and_vertex_count(const graph_t* graph,
-                                            std::string* report) {
+PRIVATE error_t check_edge_and_vertex_count(
+    const graph_t* graph, std::string* report) {
   printf("Checking edge count... "); fflush(stdout);
   eid_t edge_count = 0;
   OMP(omp parallel for reduction(+ : edge_count))
   for (vid_t vid = 0; vid < graph->vertex_count; vid++) {
     edge_count += (graph->vertices[vid + 1] - graph->vertices[vid]);
   }
-  printf("done\n"); fflush(stdout);
+  printf("done.\n"); fflush(stdout);
 
   std::ostringstream stringStream;
   if (edge_count != graph->edge_count) {
@@ -145,8 +184,8 @@ PRIVATE error_t check_edge_and_vertex_count(const graph_t* graph,
 
 // Checks that the neighbors ids are within the id space of the graph, and
 // report whether the neighbours are sorted or not.
-PRIVATE error_t check_neighbours_sorted(const graph_t* graph,
-                                        std::string* report) {
+PRIVATE error_t check_neighbours_sorted(
+    const graph_t* graph, std::string* report) {
   printf("Checking neighbours id space and order... "); fflush(stdout);
   bool sorted_asc = true;
   bool sorted_dsc = true;
@@ -164,13 +203,13 @@ PRIVATE error_t check_neighbours_sorted(const graph_t* graph,
       }
     }
   }
-  printf("done\n"); fflush(stdout);
+  printf("done.\n"); fflush(stdout);
 
   if (failed) {
     std::ostringstream stringStream;
     stringStream << "Invalid neighbour id: " << invalid_nbr_id << ", it should "
-                 << "be less than " << graph->vertex_count << "\n";
-    report->append(stringStream.str());
+                 << "be less than " << graph->vertex_count << ".\n";
+    printf("%s", stringStream.str().c_str());
     return FAILURE;
   }
 
@@ -193,11 +232,11 @@ PRIVATE bool check_nbr_exist(const graph_t* graph, vid_t vertex, vid_t nbr) {
 
 // Checks whether the graph is directed or undirected. It reports failure in one
 // case: the graph is labelled undirected while it is directed.
-PRIVATE error_t check_direction(const graph_t* graph, bool detailed_check,
-                                std::string* report) {
+PRIVATE error_t check_direction(
+    const graph_t* graph, bool detailed_check, std::string* report) {
   printf("Checking edge direction... "); fflush(stdout);
   if (!detailed_check) {
-    printf("skipped\n"); fflush(stdout);
+    printf("skipped.\n"); fflush(stdout);
     report->append("Direction: ");
     if (graph->directed) { report->append("Labelled DIRECTED\n");
     } else { report->append("Labelled UNDIRECTED\n"); }
@@ -214,11 +253,11 @@ PRIVATE error_t check_direction(const graph_t* graph, bool detailed_check,
       directed |= !check_nbr_exist(graph, nbr, vid);
     }
   }
-  printf("done\n"); fflush(stdout);
+  printf("done.\n"); fflush(stdout);
 
   if (!graph->directed && directed) {
-    report->append("Direction: Invalid. The graph is labelled UNDIRECTED, "
-                   "but not every edge is present in both directions\n");
+    printf("Invalid direction, the graph is labelled UNDIRECTED, "
+           "but not every edge is present in both directions\n");
     return FAILURE;
   } else if (graph->directed && !directed) {
     report->append("Direction: The graph is labelled DIRECTED, but each edge "
@@ -233,8 +272,8 @@ PRIVATE error_t check_direction(const graph_t* graph, bool detailed_check,
   return SUCCESS;
 }
 
-PRIVATE error_t check_vertices_sorted(const graph_t* graph,
-                                      std::string* report) {
+PRIVATE error_t check_vertices_sorted(
+    const graph_t* graph, std::string* report) {
   printf("Checking if vertices are sorted by degree... "); fflush(stdout);
   bool sorted_asc = true;
   bool sorted_dsc = true;
@@ -245,7 +284,7 @@ PRIVATE error_t check_vertices_sorted(const graph_t* graph,
     sorted_asc &= nbr_count <= next_nbr_count;
     sorted_dsc &= nbr_count >= next_nbr_count;
   }
-  printf("done\n"); fflush(stdout);
+  printf("done.\n"); fflush(stdout);
 
   report->append("Vertices sorted by degree: ");
   if (sorted_asc) { report->append("ASCENDING\n");
@@ -269,17 +308,17 @@ PRIVATE void count_repeated_edges(graph_t* graph, std::string* report) {
       }
     }
   }
-  printf("done\n"); fflush(stdout);
+  printf("done.\n"); fflush(stdout);
 
   std::ostringstream stringStream;
   stringStream << "Repeated edges: " << repeated_edges << " ("
-               << 100 * ((double)repeated_edges/graph->edge_count)
+               << 100 * (static_cast<double>(repeated_edges)/graph->edge_count)
                << "% of edges)\n";
   report->append(stringStream.str());
 }
 
-PRIVATE void mark_non_singleton_vertices(const graph_t* graph,
-                                           bool** mask_ret) {
+PRIVATE void mark_non_singleton_vertices(
+    const graph_t* graph, bool** mask_ret) {
   assert(graph && mask_ret);
   if (graph->vertex_count == 0) { return; }
   bool* mask = reinterpret_cast<bool*>(calloc(graph->vertex_count,
@@ -297,8 +336,8 @@ PRIVATE void mark_non_singleton_vertices(const graph_t* graph,
 // Singletons are defined as the vertices with no outgoing and no incoming
 // edges. Leafs are defined as the vertices with no outgoing edges, but at least
 // one incoming edge.
-PRIVATE void count_singletons_and_leafs(const graph_t* graph,
-                                        std::string* report) {
+PRIVATE void count_singletons_and_leafs(
+    const graph_t* graph, std::string* report) {
   printf("Counting singletons and leaf nodes... "); fflush(stdout);
   bool* mask = NULL;
   mark_non_singleton_vertices(graph, &mask);
@@ -321,14 +360,15 @@ PRIVATE void count_singletons_and_leafs(const graph_t* graph,
   for (vid_t v = 0; v < graph->vertex_count; v++) {
     if (mask[v]) { leaf_count++; }
   }
-  printf("done\n"); fflush(stdout);
+  printf("done.\n"); fflush(stdout);
 
   std::ostringstream stringStream;
   stringStream << "Singletons: " << singleton_count << " ("
-               << 100 * ((double)singleton_count/graph->vertex_count)
+               << 100 * (static_cast<double>(singleton_count) /
+                         graph->vertex_count)
                << "% of vertices)\n";
   stringStream << "Leaf vertices: " << leaf_count << " ("
-               << 100 * ((double)leaf_count/graph->vertex_count)
+               << 100 * (static_cast<double>(leaf_count) / graph->vertex_count)
                << "% of vertices)\n";
   report->append(stringStream.str());
   free(mask);
@@ -336,8 +376,13 @@ PRIVATE void count_singletons_and_leafs(const graph_t* graph,
 
 // The implementation of the following RMAT generation algorithm is based on the
 // one available in the SNAP library.
-error_t generator_create_rmat(generator_config_t* config, double a, double b,
-                              double c, graph_t** graph_ret) {
+PRIVATE error_t create_rmat_handler(
+    generator_config_t* config, graph_t** graph_ret) {
+  const double kA = 0.57;
+  const double kB = 0.19;
+  const double kC = 0.19;
+  const double kD = 1 - (kA + kB + kC);
+
   vid_t vertex_count = 0;
   eid_t edge_count = 0;
   vid_t* src = NULL;
@@ -346,19 +391,18 @@ error_t generator_create_rmat(generator_config_t* config, double a, double b,
     return FAILURE;
   }
 
-  printf("Generating an RMAT graph with %llu vertices and %llu edges\n",
+  printf("Generating an RMAT graph with %llu vertices and %llu edges.\n",
          (uint64_t)vertex_count, (uint64_t)edge_count);
 
   // First, generate the edges.
-  double d = 1 - (a + b + c);
   for (eid_t i = 0; i < edge_count; i++) {
     vid_t u = 1;
     vid_t v = 1;
     vid_t step = vertex_count / 2;
-    double av = a;
-    double bv = b;
-    double cv = c;
-    double dv = d;
+    double av = kA;
+    double bv = kB;
+    double cv = kC;
+    double dv = kD;
     double p = drand48();
     if (p < av) {
     } else if (p < (av + bv)) {
@@ -405,8 +449,8 @@ error_t generator_create_rmat(generator_config_t* config, double a, double b,
 
     // Print out progress so far.
     if (i % (1024 * 1024) == 0) {
-      fprintf(stderr, "%dM edges created\n", i / (1024*1024));
-      fflush(stderr);
+      printf("%dM edges created\n", i / (1024*1024));
+      fflush(stdout);
     }
   }
 
@@ -423,8 +467,8 @@ error_t generator_create_rmat(generator_config_t* config, double a, double b,
   return SUCCESS;
 }
 
-error_t generator_create_uniform(generator_config_t* config,
-                                 graph_t** graph_ret) {
+PRIVATE error_t create_uniform_handler(
+    generator_config_t* config, graph_t** graph_ret) {
   vid_t vertex_count = 0;
   eid_t edge_count = 0;
   vid_t* src = NULL;
@@ -433,7 +477,7 @@ error_t generator_create_uniform(generator_config_t* config,
     return FAILURE;
   }
 
-  printf("Generating a uniform graph with %llu vertices and %llu edges\n",
+  printf("Generating a uniform graph with %llu vertices and %llu edges.\n",
          (uint64_t)vertex_count, (uint64_t)edge_count);
 
   for (eid_t i = 0; i < edge_count; i++) {
@@ -450,32 +494,34 @@ error_t generator_create_uniform(generator_config_t* config,
   return SUCCESS;
 }
 
-error_t generator_check_and_summarize(generator_config_t* config,
-                                      std::string* report) {
-  printf("Loading graph from disk... "); fflush(stdout);
+// Performs sanity check on the graph and produces summary information regarding
+// its characteristics.
+PRIVATE void analyze_summary_handler(generator_config_t* config) {
   graph_t* graph = NULL;
-  CALL_SAFE(graph_initialize(config->input_graph_file.c_str(), false, &graph));
-  printf("done\n");
-  CHK_SUCCESS(check_edge_and_vertex_count(graph, report), error);
-  CHK_SUCCESS(check_direction(graph, config->check_direction, report), error);
-  CHK_SUCCESS(check_neighbours_sorted(graph, report), error);
-  CHK_SUCCESS(check_vertices_sorted(graph, report), error);
-  count_singletons_and_leafs(graph, report);
+  load_graph(config->input_graph_file, false, &graph);
+  std::string report = "";
+  CHK_SUCCESS(check_edge_and_vertex_count(graph, &report), error);
+  CHK_SUCCESS(check_direction(graph, config->check_direction, &report), error);
+  CHK_SUCCESS(check_neighbours_sorted(graph, &report), error);
+  CHK_SUCCESS(check_vertices_sorted(graph, &report), error);
+  count_singletons_and_leafs(graph, &report);
   // IMPORTANT: count_repeated_edges must be the last to call because it
   // modifies the graph.
-  count_repeated_edges(graph, report);
+  count_repeated_edges(graph, &report);
   CALL_SAFE(graph_finalize(graph));
-  return SUCCESS;
+  printf("Passed!\n");
+  printf("\nSummary Report:\n===============\n%s", report.c_str());
+  return;
 
 error:
-  return FAILURE;
+  printf("Failed!\n");
 }
 
-error_t generator_degree_distribution(generator_config_t* config,
-                                      eid_t** degree_distribution_out,
-                                      eid_t* highest_degree_out) {
+PRIVATE error_t generator_degree_distribution(generator_config_t* config,
+                                              eid_t** degree_distribution_out,
+                                              eid_t* highest_degree_out) {
   graph_t* graph = NULL;
-  CALL_SAFE(graph_initialize(config->input_graph_file.c_str(), false, &graph));
+  load_graph(config->input_graph_file, false, &graph);
 
   // Get the highest degree.
   eid_t highest_degree = 0;
@@ -501,12 +547,34 @@ error_t generator_degree_distribution(generator_config_t* config,
   return SUCCESS;
 }
 
-error_t generator_permute(generator_config_t* config,
-                          graph_t** permuted_graph) {
-  // TODO(abdullah): Take weights into consideration.
-  graph_t* graph;
-  CALL_SAFE(graph_initialize(config->input_graph_file.c_str(),
-                             false /* Ignore weights */ , &graph));
+PRIVATE void analyze_degree_distribution_handler(generator_config_t* config) {
+  eid_t highest_degree = 0;
+  eid_t* degree_distribution = NULL;
+  generator_degree_distribution(config, &degree_distribution, &highest_degree);
+  if (!degree_distribution) { return; }
+
+  std::string degree_file;
+  get_output_file_with_extension(config, ".degreeDist", &degree_file);
+
+  printf("Writing file %s ", degree_file.c_str());
+  FILE* file_handler = fopen(degree_file.c_str(), "w");
+  fprintf(file_handler, "degree\tvertex_count\n");
+  for (eid_t degree = 0; degree < highest_degree; degree++) {
+    if (degree_distribution[degree]) {
+      fprintf(file_handler, "%llu\t%llu\n", (uint64_t)degree,
+              (uint64_t)degree_distribution[degree]);
+    }
+  }
+  fclose(file_handler);
+  printf("done.\n");
+  free(degree_distribution);
+}
+
+// Creates a new graph from an existing one after permuting the ids of its
+// vertices.
+// TODO(abdullah): Take weights into consideration.
+PRIVATE error_t alter_permute_handler(
+    generator_config_t* config, graph_t* graph, graph_t** permuted_graph) {
   vid_t* src = NULL;
   vid_t* dst = NULL;
   graph_to_edgelist(graph, &src, &dst);
@@ -523,31 +591,33 @@ error_t generator_permute(generator_config_t* config,
   return SUCCESS;
 }
 
-error_t generator_reverse(generator_config_t* config,
-                          graph_t** reversed_graph) {
-  // TODO(abdullah): Take weights into consideration.
-  graph_t* graph;
-  CALL_SAFE(graph_initialize(config->input_graph_file.c_str(),
-                             false /* Ignore weights */ , &graph));
+PRIVATE void get_reverse_edgelist(
+    const graph_t* graph, vid_t** src, vid_t** dst) {
+  graph_to_edgelist(graph, src, dst);
+  for (eid_t eid = 0; eid < graph->edge_count; eid++) {
+    vid_t tmp = (*src)[eid];
+    (*src)[eid] = (*dst)[eid];
+    (*dst)[eid] = tmp;
+  }
+}
 
+// Creates a new graph from an existing one after reversing the direction of
+// each edge.
+// TODO(abdullah): Take weights into consideration.
+PRIVATE error_t alter_reverse_handler(
+    generator_config_t* config, graph_t* graph, graph_t** reversed_graph) {
   if (!graph->directed) {
-    printf("The graph is labelled as undirected, nothing to do\n");
+    printf("The graph is labelled as undirected, nothing to do.\n");
     return FAILURE;
   }
 
   vid_t* src = NULL;
   vid_t* dst = NULL;
-  graph_to_edgelist(graph, &src, &dst);
+  get_reverse_edgelist(graph, &src, &dst);
+
   vid_t vertex_count = graph->vertex_count;
   vid_t edge_count = graph->edge_count;
   graph_finalize(graph);
-
-  for (eid_t eid = 0; eid < edge_count; eid++) {
-    vid_t tmp = src[eid];
-    src[eid] = dst[eid];
-    dst[eid] = tmp;
-  }
-
   edgelist_to_graph(src, dst, vertex_count, edge_count,
                     false /* Ignore weights */, true /* Directed graph */,
                     reversed_graph);
@@ -557,46 +627,51 @@ error_t generator_reverse(generator_config_t* config,
   return SUCCESS;
 }
 
-error_t generator_undirected(generator_config_t* config,
-                             graph_t** undirected_graph) {
-  // TODO(abdullah): Take weights into consideration.
-  graph_t* graph;
-  CALL_SAFE(graph_initialize(config->input_graph_file.c_str(),
-                             false /* Ignore weights */ , &graph));
-
-  if (!graph->directed) {
-    printf("The graph is labelled as undirected, nothing to do\n");
-    return FAILURE;
-  }
-
-  if (log2(graph->vertex_count) + 1 > kMaxVertexScale ||
-      log2(graph->edge_count) + 1 > kMaxEdgeScale) {
-    fprintf(stderr, "Vertex or edge count overflow. Scale:%d, Edge "
-            "factor:%d!\n", config->scale, config->edge_factor);
-    return FAILURE;
-  }
-
-  vid_t* src = reinterpret_cast<vid_t*>(calloc((graph->edge_count * 2),
-                                               sizeof(vid_t)));
-  vid_t* dst = reinterpret_cast<vid_t*>(calloc((graph->edge_count * 2),
-                                               sizeof(vid_t)));
-  assert(src && dst);
+// TODO(abdullah): Take weights into consideration.
+PRIVATE void get_undirected_edgelist(
+    const graph_t* graph, vid_t** src, vid_t** dst) {
+  *src = reinterpret_cast<vid_t*>(
+      calloc((graph->edge_count * 2), sizeof(vid_t)));
+  *dst = reinterpret_cast<vid_t*>(
+      calloc((graph->edge_count * 2), sizeof(vid_t)));
+  assert(*src && *dst);
 
   eid_t i = 0;
   for (vid_t v = 0; v < graph->vertex_count; v++) {
     for (eid_t e = graph->vertices[v];
          e < graph->vertices[v+1]; e++) {
-      src[i] = v;
-      dst[i] = graph->edges[e];
-      src[i + 1] = graph->edges[e];
-      dst[i + 1] = v;
+      (*src)[i] = v;
+      (*dst)[i] = graph->edges[e];
+      (*src)[i + 1] = graph->edges[e];
+      (*dst)[i + 1] = v;
       i += 2;
     }
   }
+}
+
+// Creates a new undirected graph from an existing directed one.
+// TODO(abdullah): Take weights into consideration.
+PRIVATE error_t alter_undirected_handler(
+    generator_config_t* config, graph_t* graph, graph_t** undirected_graph) {
+  if (!graph->directed) {
+    printf("The graph is labelled as undirected, nothing to do.\n");
+    return FAILURE;
+  }
+
+  if (log2(graph->vertex_count) + 1 > kMaxVertexScale ||
+      log2(graph->edge_count) + 1 > kMaxEdgeScale) {
+    printf("Vertex or edge count overflow. Scale:%d, Edge "
+           "factor:%d!\n", config->scale, config->edge_factor);
+    return FAILURE;
+  }
+
+  vid_t* src = NULL;
+  vid_t* dst = NULL;
+  get_undirected_edgelist(graph, &src, &dst);
+
   vid_t vertex_count = graph->vertex_count * 2;
   vid_t edge_count = graph->edge_count * 2;
   graph_finalize(graph);
-
   edgelist_to_graph(src, dst, vertex_count, edge_count,
                     false /* Ignore weights */, false /* Undirected graph */,
                     undirected_graph);
@@ -606,18 +681,9 @@ error_t generator_undirected(generator_config_t* config,
   return SUCCESS;
 }
 
-error_t generator_sort_vertices_by_degree(generator_config_t* config,
-                                          graph_t** sorted_graph) {
-  // TODO(abdullah): Take weights into consideration.
-  graph_t* graph;
-  CALL_SAFE(graph_initialize(config->input_graph_file.c_str(),
-                             false /* Ignore weights */ , &graph));
-
+PRIVATE void get_sorted_vertices_map(const graph_t* graph, vid_t** map) {
   // Prepare the degree-sorted list of vertices
-  typedef struct {
-    vid_t id;
-    vid_t degree;
-  } vertex_degree_t;
+  typedef struct { vid_t id; vid_t degree; } vertex_degree_t;
   vertex_degree_t* degree = reinterpret_cast<vertex_degree_t*>(calloc(
       graph->vertex_count, sizeof(vertex_degree_t)));
   assert(degree);
@@ -629,45 +695,159 @@ error_t generator_sort_vertices_by_degree(generator_config_t* config,
   // The comparison function is implemented as a lambda function (a new feature
   // in C++ that allows defining anonymous functions).
   tbb::parallel_sort(degree, degree + graph->vertex_count,
-                     [] (const vertex_degree_t& d1,
-                         const vertex_degree_t& d2) {
+                     [] (const vertex_degree_t& d1, const vertex_degree_t& d2) {
                        return (d1.degree < d2.degree);
                      });
 
   // Create a map of old to new vertex id.
-  vid_t* map = reinterpret_cast<vid_t*>(calloc(graph->vertex_count,
-                                               sizeof(vid_t)));
-  assert(map);
+  *map = reinterpret_cast<vid_t*>(calloc(graph->vertex_count, sizeof(vid_t)));
+  assert(*map);
   OMP(omp parallel for)
-  for (vid_t v = 0; v < graph->vertex_count; v++) {
-    map[degree[v].id] = v;
-  }
+  for (vid_t v = 0; v < graph->vertex_count; v++) { (*map)[degree[v].id] = v; }
   free(degree);
+}
 
-  // Prepare an edge list of the graph using the new ids.
-  vid_t* src = reinterpret_cast<vid_t*>(calloc(graph->edge_count,
-                                               sizeof(vid_t)));
-  vid_t* dst = reinterpret_cast<vid_t*>(calloc(graph->edge_count,
-                                               sizeof(vid_t)));
+PRIVATE void get_sorted_vertices_edgelist(
+    const graph_t* graph, vid_t** src, vid_t** dst) {
+  // Create a map of old to new vertex id.
+  vid_t* map;
+  get_sorted_vertices_map(graph, &map);
+
+  *src = reinterpret_cast<vid_t*>(calloc(graph->edge_count, sizeof(vid_t)));
+  *dst = reinterpret_cast<vid_t*>(calloc(graph->edge_count, sizeof(vid_t)));
   eid_t index = 0;
   for (vid_t v = 0; v < graph->vertex_count; v++) {
     for (eid_t e = graph->vertices[v]; e < graph->vertices[v + 1]; e++) {
-      src[index] = map[v];
-      dst[index] = map[graph->edges[e]];
+      (*src)[index] = map[v];
+      (*dst)[index] = map[graph->edges[e]];
       index++;
     }
   }
   free(map);
+}
+
+// Creates a new graph from an existing one after permuting the vertex ids such
+// that they are sorted by degree.
+// TODO(abdullah): Take weights into consideration.
+PRIVATE error_t alter_sort_vertices_handler(
+    generator_config_t* config, graph_t* graph, graph_t** sorted_graph) {
+
+  // Prepare an edge list of the graph using the new ids.
+  vid_t* src = NULL;
+  vid_t* dst = NULL;
+  get_sorted_vertices_edgelist(graph, &src, &dst);
 
   vid_t vertex_count = graph->vertex_count;
   vid_t edge_count = graph->edge_count;
   bool directed = graph->directed;
   graph_finalize(graph);
-
   edgelist_to_graph(src, dst, vertex_count, edge_count,
                     false /* Ignore weights */, directed, sorted_graph);
 
   free(src);
   free(dst);
   return SUCCESS;
+}
+
+PRIVATE error_t alter_binary_handler(
+    generator_config_t* config, graph_t* graph, graph_t** ret_graph) {
+  *ret_graph = graph;
+  return SUCCESS;
+}
+
+// TODO(abdullah): Take weights into consideration.
+PRIVATE error_t alter_remove_singletons_handler(
+    generator_config_t* config, graph_t* graph, graph_t** graph_no_singletons) {
+  error_t err = graph_remove_singletons(graph, graph_no_singletons);
+  graph_finalize(graph);
+  return err;
+}
+
+PRIVATE error_t alter_sort_neighbours_handler(
+    generator_config_t* config, graph_t* graph, graph_t** sorted_graph) {
+  graph_sort_nbrs(graph);
+  *sorted_graph = graph;
+  return SUCCESS;
+}
+
+// TODO(abdullah): Take weights into consideration.
+void alter_handler(generator_config_t* config) {
+  graph_t* graph;
+  load_graph(config->input_graph_file, false /* Ignore weights */ , &graph);
+
+  // Defines the signature of the alert sub-commands handlers.
+  typedef error_t(*alter_sub_command_handler_t)
+      (generator_config_t*, graph_t*, graph_t**);
+
+  // Maps each alter sub-command with its handler.
+  const std::map<std::string, alter_sub_command_handler_t> dispatch_map = {
+    {kBinarySubCommand, alter_binary_handler},
+    {kPermuteSubCommand, alter_permute_handler},
+    {kRemoveSingletonsSubCommand, alter_remove_singletons_handler},
+    {kReverseSubCommand, alter_reverse_handler},
+    {kSortNeighboursSubCommand, alter_sort_neighbours_handler},
+    {kSortVerticesSubCommand, alter_sort_vertices_handler},
+    {kUndirectedSubCommand, alter_undirected_handler},
+  };
+
+  // Maps each alter sub-command with the extension to be used to store
+  // the generated altered graph.
+  const std::map<std::string, std::string> extensions_map = {
+    {kBinarySubCommand, ".tbin"},
+    {kPermuteSubCommand, ".permuted"},
+    {kRemoveSingletonsSubCommand, ".noSingletons"},
+    {kReverseSubCommand, ".reversed"},
+    {kSortNeighboursSubCommand, ".sortedNbrs"},
+    {kSortVerticesSubCommand, ".sortedVertices"},
+    {kUndirectedSubCommand, ".undirected"},
+  };
+
+  assert(dispatch_map.find(config->sub_command) != dispatch_map.end());
+  const alter_sub_command_handler_t handler =
+      dispatch_map.find(config->sub_command)->second;
+
+  printf("Invoking %s sub command handler.\n", config->sub_command.c_str());
+  graph_t* altered_graph = NULL;
+  if (handler(config, graph, &altered_graph) == SUCCESS) {
+    const std::string& ext = extensions_map.find(config->sub_command)->second;
+    write_graph_with_extension(config, altered_graph, ext);
+  }
+}
+
+void create_handler(generator_config_t* config) {
+  // Defines the signature of the create sub-commands handlers.
+  typedef error_t(*create_sub_command_handler_t)
+      (generator_config_t*, graph_t**);
+
+  // Maps each alter sub-command with its handler.
+  const std::map<std::string, create_sub_command_handler_t> dispatch_map = {
+      {kRmatSubCommand, create_rmat_handler},
+      {kUniformSubCommand, create_uniform_handler}
+  };
+
+  const auto& handler = dispatch_map.find(config->sub_command);
+  assert(handler != dispatch_map.end());
+  printf("Invoking %s sub command handler.\n", config->sub_command.c_str());
+  graph_t* created_graph = NULL;
+  if (handler->second(config, &created_graph) == SUCCESS) {
+    write_graph(created_graph, config->input_graph_file.c_str());
+  } else {
+    printf("Creating a graph failed!\n");
+  }
+}
+
+void analyze_handler(generator_config_t* config) {
+  // Defines the signature of the command/sub-command handler function.
+  typedef void(*analyze_sub_command_handler_t)(generator_config_t*);
+
+  // Maps each command/sub-command with its handler.
+  const std::map<std::string, analyze_sub_command_handler_t> dispatch_map = {
+    {kSummarySubCommand, analyze_summary_handler},
+    {kDegreeDistributionSubCommand, analyze_degree_distribution_handler}
+  };
+
+  const auto& handler = dispatch_map.find(config->sub_command);
+  assert(handler != dispatch_map.end());
+  printf("Invoking %s sub command handler.\n", config->sub_command.c_str());
+  handler->second(config);
 }

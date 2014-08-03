@@ -426,6 +426,9 @@ error_t get_subgraph(const graph_t* graph, bool* mask, graph_t** subgraph_ret) {
     }
   }
 
+  assert(subgraph_vertex_count <= graph->vertex_count &&
+         subgraph_edge_count <= graph->edge_count);
+
   // Allocate the subgraph and its buffers.
   graph_t* subgraph = NULL;
   graph_allocate(subgraph_vertex_count, subgraph_edge_count, graph->directed,
@@ -434,16 +437,15 @@ error_t get_subgraph(const graph_t* graph, bool* mask, graph_t** subgraph_ret) {
   // Build the vertex and edge lists.
   eid_t subgraph_edge_index = 0;
   vid_t subgraph_vertex_index = 0;
-  for (vid_t vertex_id = 0; vertex_id < graph->vertex_count; vertex_id++) {
-    if (mask[vertex_id]) {
+  for (vid_t vid = 0; vid < graph->vertex_count; vid++) {
+    if (mask[vid]) {
       subgraph->vertices[subgraph_vertex_index] = subgraph_edge_index;
       if (subgraph->valued) {
-        subgraph->values[subgraph_vertex_index] = graph->values[vertex_id];
+        subgraph->values[subgraph_vertex_index] = graph->values[vid];
       }
       subgraph_vertex_index++;
 
-      for (vid_t i = graph->vertices[vertex_id];
-           i < graph->vertices[vertex_id + 1]; i++) {
+      for (eid_t i = graph->vertices[vid]; i < graph->vertices[vid + 1]; i++) {
         if (mask[graph->edges[i]]) {
           subgraph->edges[subgraph_edge_index] = map[graph->edges[i]];
           if (subgraph->weighted) {
@@ -463,15 +465,17 @@ error_t get_subgraph(const graph_t* graph, bool* mask, graph_t** subgraph_ret) {
 
 error_t graph_remove_singletons(const graph_t* graph, graph_t** subgraph) {
   // TODO(abdullah): Change the signature to graph_get_k_degree_nodes.
-  if (!graph) return FAILURE;
-  bool* mask = reinterpret_cast<bool*>(calloc(graph->vertex_count,
-                                              sizeof(bool)));
+  assert(graph);
+  bool* mask = reinterpret_cast<bool*>(
+      calloc(graph->vertex_count, sizeof(bool)));
+  OMP(omp parallel for schedule(guided))
   for (vid_t vid = 0; vid < graph->vertex_count; vid++) {
     for (eid_t i = graph->vertices[vid]; i < graph->vertices[vid + 1]; i++) {
       mask[graph->edges[i]] = true;
       mask[vid] = true;
     }
   }
+
   error_t err = get_subgraph(graph, mask, subgraph);
   free(mask);
   return err;

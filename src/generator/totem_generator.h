@@ -63,71 +63,21 @@ extern const int kMaxVertexScale;
 void parse_command_line(int argc, char** argv, generator_config_t* config);
 
 /**
- * Performs sanity check on the graph and produces summary information regarding
- * its characteristics.
- * @param[in] config specifies the graph to be checked and the checking options
+ * ALTER command handler. It invokes the specific ALTER sub-command handler.
+ * @param[in] config specifies the options of the specific ALTER operation.
  */
-error_t generator_check_and_summarize(generator_config_t* config,
-                                      std::string* report);
+void alter_handler(generator_config_t* config);
 
 /**
- * Generates the degree distribution of the graph.
- * @param[in] config specifies the graph to be analyzed
- * @param[in] degree_distribution degree distribution array
- * @param[in] highest_degree the highest degree and the length of the degree
- *                           distribution array
+ * ANALYZE command handler. It invokes the specific ANALYZE sub-command handler.
+ * @param[in] config specifies the options of the specific ANALYZE operation.
  */
-error_t generator_degree_distribution(generator_config_t* config,
-                                      eid_t** degree_distribution,
-                                      eid_t* highest_degree);
+void analyze_handler(generator_config_t* config);
 
 /**
- * Creates an RMAT graph.
- * @param[in] config specifies the size of the graph to be generated
- * @param[in] a,b,c RMAT configuration parameters
- * @param[out] graph the generated graph
+ * CREATE command handler. It invokes the specific CREATE sub-command handler.
+ * @param[in] config specifies the options of the specific CREATE operation.
  */
-error_t generator_create_rmat(generator_config_t* config, double a, double b,
-                              double c, graph_t** graph);
-
-/**
- * Creates a graph with uniform edge distribution.
- * @param[in] config specifies the size of the graph to be generated
- * @param[out] graph the generated graph
- */
-error_t generator_create_uniform(generator_config_t* config, graph_t** graph);
-
-/**
- * Creates a new graph from an existing one after permuting the ids of its
- * vertices.
- * @param[in] config specifies the source graph
- * @param[out] graph the permuted graph
- */
-error_t generator_permute(generator_config_t* config, graph_t** permuted_graph);
-
-/**
- * Creates a new graph from an existing one after reversing the direction of
- * each edge.
- * @param[in] config specifies the source graph
- * @param[out] reversed_graph the reversed graph
- */
-error_t generator_reverse(generator_config_t* config, graph_t** reversed_graph);
-
-/**
- * Creates a new graph from an existing one after permuting the vertex ids such
- * that they are sorted by degree.
- * @param[in] config specifies the source graph
- * @param[out] sorted_graph the sorted graph
- */
-error_t generator_sort_vertices_by_degree(generator_config_t* config,
-                                          graph_t** sorted_graph);
-
-/**
- * Creates a new undirected graph from an existing directed one.
- * @param[in] config specifies the source graph
- * @param[out] reversed_graph the reversed graph
- */
-error_t generator_undirected(generator_config_t* config,
-                             graph_t** undirected_graph);
+void create_handler(generator_config_t* config);
 
 #endif  // TOTEM_GENERATOR_H
