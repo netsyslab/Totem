@@ -48,51 +48,70 @@ PRIVATE const std::map<std::string, std::set<std::string> > commands = {
 // Maps each command/sub-command with its specific help message.
 const std::map<std::string, std::string> help_map = {
   // "Analyze" command and sub-commands handlers.
-  {kAnalyzeCommand, ""},
-  {kSummarySubCommand,
-   "\tPerforms sanity check on the graph and prints out a number of\n"
-   "\tcharacteristics such as the number of edges and vertices.\n"},
-  {kDegreeDistributionSubCommand,
-   "\tGenerates the degree distribution of the graph. The generated file\n"
-   "\tcontains for each degree the number of vertices with that degree.\n"},
+  {
+    kSummarySubCommand,
+    "\tPerforms sanity check on the graph and prints out a number of\n"
+    "\tcharacteristics such as the number of edges and vertices.\n"
+  },
+  {
+    kDegreeDistributionSubCommand,
+    "\tGenerates the degree distribution of the graph. The generated file\n"
+    "\tcontains for each degree the number of vertices with that degree.\n"
+  },
 
   // "Alter" command and sub-commands handlers.
-  {kAlterCommand, ""},
-  {kBinarySubCommand,
-   "\tStores the given, presumably text-based, graph file in Totem's binary\n"
-   "\tgraph format.\n"},
-  {kPermuteSubCommand,
-   "\tGenerates a new graph from the given one after randomly permuting the\n"
-   "\tids of its vertices.\n"},
-  {kRemoveSingletonsSubCommand,
-   "\tGenerates a new graph from the given one after removing all vertices\n"
-   "\twith neither incoming nor outgoing edges.\n"},
-  {kReverseSubCommand,
-   "\tGenerates a new graph from the given one after reversing the direction\n"
-   "\tof each edge.\n"},
-  {kSortNeighboursSubCommand,
-   "\tGenerates a new graph from the given one after sorting by id the\n"
-   "\tneighbours of each vertex.\n"},
-  {kSortVerticesSubCommand,
-   "\tGenerates a new graph from the given one after permuting the vertex ids\n"
-   "\tsuch that they are ordered by degree.\n"},
-  {kUndirectedSubCommand,
-   "\tGenerates a new undirected graph from the given one.\n"},
+  {
+    kBinarySubCommand,
+    "\tStores the given, presumably text-based, graph file in Totem's binary\n"
+    "\tgraph format.\n"
+  },
+  {
+    kPermuteSubCommand,
+    "\tGenerates a new graph from the given one after randomly permuting the\n"
+    "\tids of its vertices.\n"
+  },
+  {
+    kRemoveSingletonsSubCommand,
+    "\tGenerates a new graph from the given one after removing all vertices\n"
+    "\twith neither incoming nor outgoing edges.\n"
+  },
+  {
+    kReverseSubCommand,
+    "\tGenerates a new graph from the given one after reversing the direction\n"
+    "\tof each edge.\n"
+  },
+  {
+    kSortNeighboursSubCommand,
+    "\tGenerates a new graph from the given one after sorting by id the\n"
+    "\tneighbours of each vertex.\n"
+  },
+  {
+    kSortVerticesSubCommand,
+    "\tGenerates a new graph from the given one after permuting the vertex\n"
+    "\tids such that they are ordered by degree.\n"
+  },
+  {
+    kUndirectedSubCommand,
+    "\tGenerates a new undirected graph from the given one.\n"
+  },
 
   // "Create" command and sub-commands handlers.
-  {kCreateCommand, ""},
-  {kRmatSubCommand,
-   "\tCreates a new graph using the RMAT graph generation algorithm,\n"
-   "\twhich generates random graphs with power-law degree distribution. The\n"
-   "\tparameters are fixed at a=0.57 b=0.19 c=0.19 d=.05. The -sNUM and\n"
-   "\t-eNUM options allow choosing the scale and the edge factor,\n"
-   "\trespectively. The number of vertices will be 2^scale, while the number\n"
-   "\tof edges is edge_factor*2^scale.\n"},
-  {kUniformSubCommand,
-   "\tCreates a new graph with uniform degree distribution. The -sNUM and\n"
-   "\t-eNUM options allow choosing the scale and the edge factor,\n"
-   "\trespectively. The number of vertices will be 2^scale, while the number\n"
-   "\tof edges is edge_factor * 2^scale.\n"}
+  {
+    kRmatSubCommand,
+    "\tCreates a new graph using the RMAT graph generation algorithm,\n"
+    "\twhich generates random graphs with power-law degree distribution. The\n"
+    "\tparameters are fixed at a=0.57 b=0.19 c=0.19 d=.05. The -sNUM and\n"
+    "\t-eNUM options allow choosing the scale and the edge factor,\n"
+    "\trespectively. The number of vertices will be 2^scale, while the number\n"
+    "\tof edges is edge_factor*2^scale.\n"
+  },
+  {
+    kUniformSubCommand,
+    "\tCreates a new graph with uniform degree distribution. The -sNUM and\n"
+    "\t-eNUM options allow choosing the scale and the edge factor,\n"
+    "\trespectively. The number of vertices will be 2^scale, while the number\n"
+    "\tof edges is edge_factor * 2^scale.\n"
+  }
 };
 
 PRIVATE void display_help(char* exe_name, int exit_err,
