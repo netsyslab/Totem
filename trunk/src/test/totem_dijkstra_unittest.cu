@@ -3,12 +3,13 @@
  * algorithm.
  *
  *  Created on: 2011-03-24
- *      Author: Elizeu Santos-Neto
- */
+ *  Author: Elizeu Santos-Neto
+ *          Tanuj Kr Aasawat 
+*/
 
 // totem includes
 #include "totem_common_unittest.h"
-
+#include<limits.h>
 #if GTEST_HAS_PARAM_TEST
 
 using ::testing::TestWithParam;
@@ -44,7 +45,6 @@ class DijkstraTest : public TestWithParam<DijkstraFunction> {
   weight_t* _distances;
   totem_mem_t _mem_type;
 };
-
 
 // Tests Dijkstra for empty vertex set graph.
 TEST_P(DijkstraTest, EmptyVertexSet) {
@@ -150,6 +150,33 @@ TEST_P(DijkstraTest, Star) {
   EXPECT_EQ(1, _distances[0]);
   for(vid_t vertex_id = 1; vertex_id < _graph->vertex_count - 1; vertex_id++){
     EXPECT_EQ(2, _distances[vertex_id]);
+  }
+
+  // Non existent vertex source
+  EXPECT_EQ(FAILURE, dijkstra(_graph, _graph->vertex_count, _distances));
+}
+
+//  Tests SSSP algorithm a grid graph with 15 nodes.
+TEST_P(DijkstraTest, Grid) {
+  graph_initialize(DATA_FOLDER("grid_graph_sssp_15_nodes_weight.totem"), true, 
+                   &_graph);
+  CALL_SAFE(totem_malloc(_graph->vertex_count * sizeof(weight_t), _mem_type,
+                         (void**)&_distances));
+
+  // First vertex as source
+  vid_t source = 0;
+  EXPECT_EQ(SUCCESS, dijkstra(_graph, source, _distances));
+  EXPECT_EQ(0, _distances[0]);
+  for(vid_t vertex_id = 1; vertex_id < _graph->vertex_count; vertex_id++){
+    EXPECT_EQ(weight_t(vertex_id - source), _distances[vertex_id]);
+  }
+
+  // Last vertex as source
+  source = _graph->vertex_count - 1;
+  EXPECT_EQ(SUCCESS, dijkstra(_graph, source, _distances));
+  EXPECT_EQ(0, _distances[source]);
+  for(vid_t vertex_id = 0; vertex_id < _graph->vertex_count - 1; vertex_id++){
+    EXPECT_EQ(weight_t(source - vertex_id), _distances[vertex_id]);
   }
 
   // Non existent vertex source
