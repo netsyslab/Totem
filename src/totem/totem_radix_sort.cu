@@ -181,21 +181,19 @@ PRIVATE void parallel_binary_radix_sort(vdegree_t* array, int64_t start,
 }
 
 void parallel_radix_sort(vid_t* array, size_t num, size_t size,
-                         bool order, int sorting_precision) {
+                         bool asc, int sorting_precision) {
   uint64_t mask = (uint64_t)1 << (size * 8 - 2);
-  parallel_binary_radix_sort(array, 0, num-1, 0, sorting_precision,
-                             mask);
-  if (!order) {
+  parallel_binary_radix_sort(array, 0, num-1, 0, sorting_precision, mask);
+  if (!asc) {
     reverse(array, num);
   }
 }
 
 void parallel_radix_sort(vdegree_t* array, size_t num, size_t size,
-                         bool order, int sorting_precision) {
+                         bool asc, int sorting_precision) {
   uint64_t mask = static_cast<uint64_t>(1) << (size * 8 - 2);
-  parallel_binary_radix_sort(array, 0, num-1, 0, sorting_precision,
-                            mask);
-  if (!order) {
+  parallel_binary_radix_sort(array, 0, num-1, 0, sorting_precision, mask);
+  if (!asc) {
     reverse(array, num);
   }
 }

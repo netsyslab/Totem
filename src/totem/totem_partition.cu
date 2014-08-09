@@ -11,15 +11,6 @@
 #include "totem_partition.h"
 #include "totem_util.h"
 
-/*
- * A vertex-degree data type used in the partitioning algorithms that depend
- * on sorting the vertices by edge degree.
- */
-typedef struct vdegree_s {
-  vid_t id;     // vertex id
-  vid_t degree; // vertex degree
-} vdegree_t;
-
 // TODO (scott): Non global variables
 vid_t* map_g[MAX_PARTITION_COUNT] = {NULL};
 vid_t* id_in_partition_g = NULL;
