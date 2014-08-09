@@ -20,6 +20,34 @@
 #define REQ_CUDAVERSION_MINOR     0
 
 /**
+ * Swap the value of two elements.
+ *
+ * @param[in] a First element of the swap
+ * @param[in] b Second element of the swap
+ */
+template<typename T>
+inline void swap(T* a, T* b) {
+  T temp = *a;
+  *a = *b;
+  *b = temp;
+}
+
+/**
+ * Reverses an array.
+ *
+ * @param[in] array Array to be reversed
+ * @param[in] len Length of the array
+ */
+template<typename T>
+inline void reverse(T* array, size_t len) {
+  OMP(parallel for)
+  for (int64_t start = 0; start < len / 2; start++) {
+    int64_t end = len - 1 - start;
+    swap(&array[start], &array[end]);
+  }
+}
+
+/**
  * Ensure the device supports the minimum CUDA architecture requirements.
  * @return generic success or failure
  */
