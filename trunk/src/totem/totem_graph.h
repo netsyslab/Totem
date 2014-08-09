@@ -68,6 +68,15 @@ typedef uint64_t eid_t;
 typedef uint32_t eid_t;
 #endif
 
+/**
+ * A vertex-degree data type used in partitioning algorithms that depend
+ * on sorting the vertices by edge degree.
+ */
+typedef struct vdegree_s {
+  vid_t id; // vertex id
+  vid_t degree; // vertex degree
+}vdegree_t;
+
 // Specifies the maximum value an id can hold.
 const vid_t VERTEX_ID_MAX = UINT32_MAX;
 
