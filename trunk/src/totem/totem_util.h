@@ -40,7 +40,7 @@ inline void swap(T* a, T* b) {
  */
 template<typename T>
 inline void reverse(T* array, size_t len) {
-  OMP(parallel for)
+  OMP(omp parallel for)
   for (int64_t start = 0; start < len / 2; start++) {
     int64_t end = len - 1 - start;
     swap(&array[start], &array[end]);
