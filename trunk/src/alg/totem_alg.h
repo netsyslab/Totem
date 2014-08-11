@@ -172,6 +172,18 @@ error_t apsp_cpu(graph_t* graph, weight_t** distances);
 error_t apsp_gpu(graph_t* graph, weight_t** distances);
 
 /**
+ * Implements a version of the Label Propagation algorithm described in
+ * [Xie 2013] for CPU. Algorithm details are described in 
+ * totem_label_propagation.cu.
+ * @param[in] graph an instance of the graph structure
+ * @param[out] labels the computed labels of each vertex
+ * @return generic success or failure
+ * 
+ */
+ // TODO(tanuj): Declare a data type label_t.
+error_t label_propagation_cpu(const graph_t* graph, vid_t* labels);
+
+/**
  * Implements a version of the simple PageRank algorithm described in
  * [Malewicz 2010] for both CPU and CPU. Algorithm details are described in
  * totem_page_rank.cu. Note that the "incoming" postfixed funtions take into
