@@ -275,27 +275,29 @@ PRIVATE error_t graph_initialize_binary(FILE* fh, bool load_weights,
                  graph);
 
   // Load the vertices and their values if any.
-  for (vid_t vid = 0; vid < vertex_count; vid++) {
-    CHK(fread(&((*graph)->vertices[vid]), sizeof(eid_t), 1, fh) == 1, err_free);
-    if (valued) {
-      CHK(fread(&((*graph)->values[vid]), sizeof(weight_t), 1, fh) == 1,
-          err_free);
-    }
+  CHK(fread((*graph)->vertices, sizeof(eid_t), vertex_count + 1, fh) ==
+      (vertex_count + 1), err_free);
+  if (valued) {
+    CHK(fread((*graph)->values, sizeof(weight_t), vertex_count, fh) ==
+        vertex_count, err_free);
   }
-  CHK(fread(&((*graph)->vertices[vertex_count]), sizeof(eid_t), 1, fh) == 1,
-      err_free);
 
   // Load the edges and their weights if any.
-  for (eid_t eid = 0; eid < edge_count; eid++) {
-    CHK(fread(&((*graph)->edges[eid]), sizeof(vid_t), 1, fh) == 1, err_free);
-    if (load_weights) {
-      weight_t weight = DEFAULT_EDGE_WEIGHT;
-      if (weighted) {
-        CHK(fread(&(weight), sizeof(weight_t), 1, fh) == 1, err_free);
+  CHK(fread((*graph)->edges, sizeof(vid_t), edge_count, fh) ==
+      edge_count, err_free);
+  if (load_weights) {
+    if (weighted) {
+      CHK(fread((*graph)->weights, sizeof(weight_t), edge_count, fh) ==
+          edge_count, err_free);
+    } else {
+      // Set weights to the default value.
+      OMP(omp parallel for)
+      for (eid_t e = 0; e < edge_count; e++) {
+        (*graph)->weights[e] = DEFAULT_EDGE_WEIGHT;
       }
-      (*graph)->weights[eid] = weight;
     }
   }
+
   fclose(fh);
   return SUCCESS;
 
@@ -862,21 +864,22 @@ error_t graph_store_binary(graph_t* graph, const char* filename) {
   CHK(fwrite(&(graph->weighted), sizeof(bool), 1, fh) == 1, err);
   CHK(fwrite(&(graph->directed), sizeof(bool), 1, fh) == 1, err);
 
-  for (vid_t vid = 0; vid < graph->vertex_count; vid++) {
-    CHK(fwrite(&(graph->vertices[vid]), sizeof(eid_t), 1, fh) == 1, err);
-    if (graph->valued) {
-      CHK(fwrite(&(graph->values[vid]), sizeof(weight_t), 1, fh) == 1, err);
-    }
+  // Write the vertices array and the vertices values if any.
+  CHK(fwrite(graph->vertices, sizeof(eid_t), graph->vertex_count + 1, fh) ==
+      (graph->vertex_count + 1), err);
+  if (graph->valued) {
+    CHK(fwrite(graph->values, sizeof(weight_t), graph->vertex_count, fh) ==
+        graph->vertex_count, err);
   }
-  CHK(fwrite(&(graph->vertices[graph->vertex_count]),
-             sizeof(eid_t), 1, fh) == 1, err);
 
-  for (eid_t eid = 0; eid < graph->edge_count; eid++) {
-    CHK(fwrite(&(graph->edges[eid]), sizeof(vid_t), 1, fh) == 1, err);
-    if (graph->weighted) {
-      CHK(fwrite(&(graph->weights[eid]), sizeof(weight_t), 1, fh) == 1, err);
-    }
+  // Write the edges array and the edge weights if any.
+  CHK(fwrite(graph->edges, sizeof(vid_t), graph->edge_count, fh) ==
+      graph->edge_count, err);
+  if (graph->weighted) {
+    CHK(fwrite(graph->weights, sizeof(weight_t), graph->edge_count, fh) ==
+        graph->edge_count, err);
   }
+
   fclose(fh);
   return SUCCESS;
 
