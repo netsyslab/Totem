@@ -10,7 +10,7 @@
 #  * edges:<number>\tpartitioning:<RAND|HIGH|LOW>\tplatform:<CPU|GPU|HYBRID>\t
 #  * alpha:<percentage of edges on the CPU>\trepeat:<number of runs>\t
 #  * gpu_count:<number>\tthread_count:<CPU threads>\tthread_bind:<TRUE|FALSE>\t
-#  * time_init:<Totem init time>\ttime_par:<Graph partitoining time>\t"
+#  * time_init:<Totem init time>\ttime_par:<Graph partitioning time>\t"
 #  * rmt_vertex:<% of remote vertices>\trmt_edge:<% of remote edges>\t
 #  * beta:<% of remote edges after aggregation>
 #
@@ -25,7 +25,7 @@
 # exec: Execution time without buffer allocation (comp + comm + aggr)
 # init: Algorithm initialization (mainly buffer allocations)
 # comp: Compute phase
-# comm: Communication phase (inlcudes scatter/gather)
+# comm: Communication phase (includes scatter/gather)
 # finalize: Algorithm finalization (buffer deallocations)
 # gpu_comp: GPU computation (included in comp)
 # scatter: The scatter step in communication (push mode)
@@ -49,7 +49,8 @@
 #
 #
 # Created on: 2013-02-15
-# Author: Abdullah Gharaibeh
+# Authors: Abdullah Gharaibeh
+#          Scott Sallinen
 
 ###################
 # Constants
@@ -61,7 +62,7 @@ SSSP=2
 BC=3
 GRAPH500=4
 BENCHMARK_STR=("BFS" "PAGERANK" "SSSP" "BC" "GRAPH500")
-BENCHMARK_REPEAT=(64 10 64 20 64)
+BENCHMARK_REPEAT=(64 10 64 20 10)
 
 # Platforms
 CPU=0
@@ -99,9 +100,10 @@ TOTEM_EXE="../../build/bin/benchmark"
 MAX_GPU_COUNT=1
 REPEAT_COUNT=
 OMP_SCHED=${OMP_SCHED_GUIDED}
-MAPPED=
 GPU_PAR_RAND=
-SORTED=
+COMPARE_MEMORY=()
+COMPARE_SORTED=()
+
 
 ###########################################
 # Display usage message and exit the script
@@ -121,19 +123,23 @@ function usage() {
   echo "  -e  <totem executable> (default ${TOTEM_EXE})"
   echo "  -g  <max gpu count> maximum number of GPUs to use(default " \
        "${MAX_GPU_COUNT})"
-  echo "  -m Enables allocating the vertices array of the GPU partitions as a"
-  echo "     memory mapped buffer on the host (default FALSE)"
+  echo "  -m <type of memory> Enables allocating the vertex|edge array of the "\
+       "     GPU partitions as a memory mapped buffer on the host. Add " \
+       "     multiple -m flags to compare. If none are set, will default to " \
+       "     only device (0)."
   echo "  -o Enables random placement of vertices across GPU partitions in case"
   echo "     of multi-GPU setups (default FALSE)"
-  echo "  -q The graph is sorted by degree (default FALSE)"
+  echo "  -p Compare original and sorted versions of the graph. (default FALSE)"
+  echo "  -q Sort the graph's vertices by degree. If enabled, will override \
+             the -p flag and only run with the sorted option. (default FALSE)"
   echo "  -r  <repeat count> number of times an experiment is repeated"
   echo "                     (default BFS:${BENCHMARK_REPEAT[$BFS]}," \
-      "PageRank:${BENCHMARK_REPEAT[$PAGERANK]})"
+       "PageRank:${BENCHMARK_REPEAT[$PAGERANK]})"
   echo "  -s  <OMP scheduling>" \
-      "${OMP_SCHED_STR[${OMP_SCHED_STATIC}]}=${OMP_SCHED_STATIC}," \
-      "${OMP_SCHED_STR[${OMP_SCHED_DYNAMIC}]}=${OMP_SCHED_DYNAMIC}," \
-      "${OMP_SCHED_STR[${OMP_SCHED_GUIDED}]}=${OMP_SCHED_GUIDED}" \
-      "(default ${OMP_SCHED_STR[${OMP_SCHED}]})"
+       "${OMP_SCHED_STR[${OMP_SCHED_STATIC}]}=${OMP_SCHED_STATIC}," \
+       "${OMP_SCHED_STR[${OMP_SCHED_DYNAMIC}]}=${OMP_SCHED_DYNAMIC}," \
+       "${OMP_SCHED_STR[${OMP_SCHED_GUIDED}]}=${OMP_SCHED_GUIDED}" \
+       "(default ${OMP_SCHED_STR[${OMP_SCHED}]})"
   echo "  -x  <maximum alpha> maximum value of alpha (the percentage of edges "
   echo "                      in the CPU partition) to use for experiments on"
   echo "                      hybrid platforms (default ${MAX_ALPHA}%)"
@@ -144,7 +150,7 @@ function usage() {
 ###############################
 # Process command line options
 ###############################
-while getopts 'a:b:d:e:g:hmoqr:s:x:' options; do
+while getopts 'a:b:d:e:g:hm:opqr:s:x:' options; do
   case $options in
     a)MIN_ALPHA="$OPTARG"
       ;;
@@ -158,11 +164,13 @@ while getopts 'a:b:d:e:g:hmoqr:s:x:' options; do
       ;;
     h)usage; exit 0;
       ;;
-    m)MAPPED="-m"
+    m)COMPARE_MEMORY+=("$OPTARG")
       ;;
     o)GPU_PAR_RAND="-o"
       ;;
-    q)SORTED="-q"
+    p)COMPARE_SORTED=( 'true' 'false' )
+      ;;
+    q)COMPARE_SORTED=( 'true' )
       ;;
     r)REPEAT_COUNT="$OPTARG"
       ;;
@@ -176,6 +184,15 @@ while getopts 'a:b:d:e:g:hmoqr:s:x:' options; do
 done
 shift $(($OPTIND - 1))
 
+# Add defaults if missing.
+if [ ${#COMPARE_MEMORY[@]} -eq 0 ]; then
+    COMPARE_MEMORY+=( 0 )
+fi
+if [ ${#COMPARE_SORTED[@]} -eq 0 ]; then
+    COMPARE_SORTED+=( 'false' )
+fi
+
+# Check for errors.
 if [ $# -ne 1 ]; then
     printf "Error: Missing workload\n"
     usage
@@ -226,6 +243,8 @@ function run() {
     local GPU_COUNT=$3;
     local PAR=$4;
     local ALPHA=$5;
+    local MEMORY=$6;
+    local SORTED=$7;
 
     # Set the number of threads
     THREAD_COUNT=$(($SOCKET_COUNT*$THREADS_PER_SOCKET))
@@ -234,18 +253,28 @@ function run() {
         THREAD_COUNT=$MAX_THREAD_COUNT
     fi
 
-    # Set the output file where the results will be dumped
-    OUTPUT=${BENCHMARK_STR[$BENCHMARK]}_${SOCKET_COUNT}_${GPU_COUNT};
-    OUTPUT=${OUTPUT}_${PAR_STR[$PAR]}_${ALPHA}_${WORKLOAD_NAME}.dat;
+    # Set the output file where the results will be dumped.
+    OUTPUT=${BENCHMARK_STR[$BENCHMARK]}_${SOCKET_COUNT}_${GPU_COUNT}_${SORTED};
+    OUTPUT+="_MEM"${MEMORY}_${PAR_STR[$PAR]}_${ALPHA}_${WORKLOAD_NAME}.dat;
+    
+    # Build the header for the log.
     DATE=`date`
     printf "${DATE}: ${OUTPUT} b${BENCHMARK} a${ALPHA} p${PLATFORM} " >> ${LOG};
     printf "i${PAR} g${GPU_COUNT} t${THREAD_COUNT} r${REPEAT_COUNT} " >> ${LOG};
-    printf "s${OMP_SCHED} ${MAPPED} ${GPU_PAR_RAND} ${SORTED} "       >> ${LOG};
+    printf "s${OMP_SCHED} m${MEMORY} ${GPU_PAR_RAND} q${SORTED} "     >> ${LOG};
     printf "${WORKLOAD}\n" >> ${LOG};
-    ${TOTEM_EXE} -b${BENCHMARK} -a${ALPHA} -p${PLATFORM} -i${PAR} ${SORTED} \
-        -g${GPU_COUNT} -t${THREAD_COUNT} -r${REPEAT_COUNT} -s${OMP_SCHED} \
-        ${MAPPED} ${GPU_PAR_RAND} ${WORKLOAD} &>> ${RESULT_DIR}/${OUTPUT}
-
+    
+    # Set up the configuration flags for the run.
+    FLAGS="-b${BENCHMARK} -a${ALPHA} -p${PLATFORM} -i${PAR} \
+           -g${GPU_COUNT} -t${THREAD_COUNT} -r${REPEAT_COUNT} -s${OMP_SCHED} \
+           -m${MEMORY} ${GPU_PAR_RAND}"
+    if [ "$SORTED" == true ]; then
+      FLAGS+=" -q"
+    fi
+    
+    # Start executing.
+    ${TOTEM_EXE} ${FLAGS} ${WORKLOAD} &>> ${RESULT_DIR}/${OUTPUT}
+        
     # Check the exit status, and log any problems
     exit_status=$?
     if [ ${exit_status} -ne 0 ]; then
@@ -258,10 +287,23 @@ function run() {
 }
 
 ## CPU Only, alpha and GPU count has no effect when running only on CPU
-alpha=0
+alpha=100
 gpu_count=0
+memory=0
 for socket_count in $(seq 1 ${MAX_SOCKET_COUNT}); do
-    run ${CPU} $socket_count ${gpu_count} ${PAR_RAN} ${alpha}
+    for sorted in "${COMPARE_SORTED[@]}"; do
+        # We can use "Random partitioning" avoid sorting the vertices. 
+        # In addition, we can use "High" to sort the vertices in ascending
+        # order - this decision over descending order is arbitrary and does
+        # not seem to have an effect on the execution rate.
+        if [ "$sorted" == false ]; then
+            run ${CPU} ${socket_count} ${gpu_count} ${PAR_RAN} \
+                ${alpha} ${memory} ${sorted}
+        else
+            run ${CPU} ${socket_count} ${gpu_count} ${PAR_HIGH} \
+                ${alpha} ${memory} ${sorted}
+        fi
+    done
 done
 
 ## Hybrid, iterate over all possible number of GPUs, CPUs and values of alpha
@@ -269,20 +311,28 @@ for gpu_count in $(seq 1 ${MAX_GPU_COUNT}); do
     for socket_count in $(seq 1 ${MAX_SOCKET_COUNT}); do
         for par_algo in ${PAR_LOW} ${PAR_HIGH} ${PAR_RAND}; do
             for alpha in $(seq ${MIN_ALPHA} 5 ${MAX_ALPHA}); do
-                run ${HYBRID} ${socket_count} ${gpu_count} ${par_algo} $alpha
+                for memory in "${COMPARE_MEMORY[@]}"; do
+                    for sorted in "${COMPARE_SORTED[@]}"; do
+                        run ${HYBRID} ${socket_count} ${gpu_count} ${par_algo} \
+                            ${alpha} ${memory} ${sorted}
+                    done
+                done
             done
-       done
+        done
     done
 done
 
 ## GPU Only, note that alpha has no effect when running only on GPU
 if [ ${MAX_GPU_COUNT} -ge 1 ]; then
     alpha=0
-    gpu_count=1
-    run ${GPU} ${MAX_SOCKET_COUNT} ${gpu_count} ${PAR_RAN} ${alpha}
-    for gpu_count in $(seq 2 ${MAX_GPU_COUNT}); do
+    for gpu_count in $(seq 1 ${MAX_GPU_COUNT}); do
         for par_algo in ${PAR_RAN} ${PAR_HIGH} ${PAR_LOW}; do
-            run ${GPU} ${MAX_SOCKET_COUNT} $gpu_count ${par_algo} ${alpha}
+            for memory in "${COMPARE_MEMORY[@]}"; do
+                for sorted in "${COMPARE_SORTED[@]}"; do
+                    run ${GPU} ${MAX_SOCKET_COUNT} ${gpu_count} ${par_algo} \
+                        ${alpha} ${memory} ${sorted}
+                done
+            done
         done
     done
 fi
