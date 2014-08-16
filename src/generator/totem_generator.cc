@@ -90,7 +90,7 @@ PRIVATE void load_graph(
 }
 
 PRIVATE void edgelist_to_graph(
-    vid_t* src, vid_t* dst, vid_t vertex_count, vid_t edge_count, bool weighted,
+    vid_t* src, vid_t* dst, vid_t vertex_count, eid_t edge_count, bool weighted,
     bool directed, graph_t** graph_ret) {
   // Third, compute the degree of each vertex.
   eid_t* degree = reinterpret_cast<eid_t*>(calloc(vertex_count, sizeof(eid_t)));
@@ -141,7 +141,7 @@ PRIVATE void graph_to_edgelist(const graph_t* graph, vid_t** src, vid_t** dst) {
 // Permutates the vertices so that one can't know the characteristics of the
 // vertex from its vertex id.
 PRIVATE void permute_edgelist(
-    vid_t* src, vid_t* dst, vid_t vertex_count, vid_t edge_count) {
+    vid_t* src, vid_t* dst, vid_t vertex_count, eid_t edge_count) {
   vid_t* p = reinterpret_cast<vid_t*>(calloc(vertex_count, sizeof(vid_t)));
   for (vid_t i = 0; i < vertex_count; i++) { p[i] = i; }
   for (vid_t i = 0; i < vertex_count; i++) {
@@ -579,7 +579,7 @@ PRIVATE error_t alter_permute_handler(
   vid_t* dst = NULL;
   graph_to_edgelist(graph, &src, &dst);
   vid_t vertex_count = graph->vertex_count;
-  vid_t edge_count = graph->edge_count;
+  eid_t edge_count = graph->edge_count;
   bool directed = graph->directed;
   graph_finalize(graph);
   permute_edgelist(src, dst, vertex_count, edge_count);
@@ -616,7 +616,7 @@ PRIVATE error_t alter_reverse_handler(
   get_reverse_edgelist(graph, &src, &dst);
 
   vid_t vertex_count = graph->vertex_count;
-  vid_t edge_count = graph->edge_count;
+  eid_t edge_count = graph->edge_count;
   graph_finalize(graph);
   edgelist_to_graph(src, dst, vertex_count, edge_count,
                     false /* Ignore weights */, true /* Directed graph */,
@@ -658,10 +658,8 @@ PRIVATE error_t alter_undirected_handler(
     return FAILURE;
   }
 
-  if (log2(graph->vertex_count) + 1 > kMaxVertexScale ||
-      log2(graph->edge_count) + 1 > kMaxEdgeScale) {
-    printf("Vertex or edge count overflow. Scale:%d, Edge "
-           "factor:%d!\n", config->scale, config->edge_factor);
+  if (log2(graph->edge_count) + 1 > kMaxEdgeScale) {
+    printf("Vertex or edge count overflow");
     return FAILURE;
   }
 
@@ -669,8 +667,8 @@ PRIVATE error_t alter_undirected_handler(
   vid_t* dst = NULL;
   get_undirected_edgelist(graph, &src, &dst);
 
-  vid_t vertex_count = graph->vertex_count * 2;
-  vid_t edge_count = graph->edge_count * 2;
+  vid_t vertex_count = graph->vertex_count;
+  eid_t edge_count = graph->edge_count * 2;
   graph_finalize(graph);
   edgelist_to_graph(src, dst, vertex_count, edge_count,
                     false /* Ignore weights */, false /* Undirected graph */,
@@ -738,7 +736,7 @@ PRIVATE error_t alter_sort_vertices_handler(
   get_sorted_vertices_edgelist(graph, &src, &dst);
 
   vid_t vertex_count = graph->vertex_count;
-  vid_t edge_count = graph->edge_count;
+  eid_t edge_count = graph->edge_count;
   bool directed = graph->directed;
   graph_finalize(graph);
   edgelist_to_graph(src, dst, vertex_count, edge_count,
