@@ -123,15 +123,15 @@ function usage() {
   echo "  -e  <totem executable> (default ${TOTEM_EXE})"
   echo "  -g  <max gpu count> maximum number of GPUs to use(default " \
        "${MAX_GPU_COUNT})"
-  echo "  -m <type of memory> Enables allocating the vertex|edge array of the "\
-       "     GPU partitions as a memory mapped buffer on the host. Add " \
-       "     multiple -m flags to compare. If none are set, will default to " \
-       "     only device (0)."
+  echo "  -m <type of memory> Enables allocating the vertex|edge array of the "
+  echo "     GPU partitions as a memory mapped buffer on the host. Add "
+  echo "     multiple -m flags to compare. If none are set, will default to "
+  echo "     only device (0)."
   echo "  -o Enables random placement of vertices across GPU partitions in case"
   echo "     of multi-GPU setups (default FALSE)"
   echo "  -p Compare original and sorted versions of the graph. (default FALSE)"
-  echo "  -q Sort the graph's vertices by degree. If enabled, will override \
-             the -p flag and only run with the sorted option. (default FALSE)"
+  echo "  -q Sort the graph's vertices by degree. If enabled, will override "
+  echo "     the -p flag and only run with the sorted option. (default FALSE)"
   echo "  -r  <repeat count> number of times an experiment is repeated"
   echo "                     (default BFS:${BENCHMARK_REPEAT[$BFS]}," \
        "PageRank:${BENCHMARK_REPEAT[$PAGERANK]})"
@@ -285,7 +285,7 @@ function run() {
         rm "${RESULT_DIR}/${OUTPUT}"
     fi
 }
-
+echo $GOMP_CPU_AFFINITY
 ## CPU Only, alpha and GPU count has no effect when running only on CPU
 alpha=100
 gpu_count=0
