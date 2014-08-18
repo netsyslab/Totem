@@ -285,7 +285,7 @@ function run() {
         rm "${RESULT_DIR}/${OUTPUT}"
     fi
 }
-echo $GOMP_CPU_AFFINITY
+
 ## CPU Only, alpha and GPU count has no effect when running only on CPU
 alpha=100
 gpu_count=0
