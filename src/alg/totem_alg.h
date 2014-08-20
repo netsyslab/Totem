@@ -102,6 +102,7 @@ const double CENTRALITY_SINGLE = -1.0;
  * @return generic success or failure
 */
 error_t bfs_cpu(graph_t* graph, vid_t src_id, cost_t* cost);
+error_t bfs_bu_cpu(graph_t* graph, vid_t src_id, cost_t* cost);
 error_t bfs_queue_cpu(graph_t* graph, vid_t source_id, cost_t* cost);
 error_t bfs_gpu(graph_t* graph, vid_t src_id, cost_t* cost);
 error_t bfs_vwarp_gpu(graph_t* graph, vid_t src_id, cost_t* cost);
