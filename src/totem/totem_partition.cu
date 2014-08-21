@@ -572,7 +572,7 @@ error_t partition_set_initialize(graph_t* graph, vid_t* plabels,
   init_build_partitions(*pset, plabels, attr);
 
   // Sort nbrs of each each vertex to improve access locality
-  init_sort_nbrs(*pset);
+  //init_sort_nbrs(*pset);
 
   // Initialize grooves' inbox and outbox state
   grooves_initialize(*pset);

@@ -222,10 +222,13 @@ void engine_set_outbox(uint32_t pid, T value) {
     if (!outbox->count) continue;
     T* values = (T*)outbox->push_values;
     if (par->processor.type == PROCESSOR_GPU) {
-      //CALL_SAFE(totem_memset(values, value, outbox->count, TOTEM_MEM_DEVICE,
-      //                       par->streams[1]));
-      cudaMemsetAsync(values, value, outbox->count * sizeof(T), 
-                      par->streams[1]);
+      CALL_SAFE(totem_memset(values, value, outbox->count, TOTEM_MEM_DEVICE,
+                             par->streams[1]));
+      // TOD0(treza): Following memset function is not compatible with several
+      // algorithms as it only accepts byte values. Use of asynchronous memset
+      // requires more investigation.
+      //cudaMemsetAsync(values, value, outbox->count * sizeof(T), 
+      //                par->streams[1]);
     } else {
       assert(par->processor.type == PROCESSOR_CPU);
       OMP(omp parallel for)

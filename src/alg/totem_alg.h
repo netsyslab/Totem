@@ -155,6 +155,7 @@ error_t dijkstra_cpu(const graph_t* graph, vid_t src_id, weight_t* distance);
 error_t dijkstra_gpu(const graph_t* graph, vid_t src_id, weight_t* distance);
 error_t dijkstra_vwarp_gpu(const graph_t* graph, vid_t src_id,
                            weight_t* distance);
+error_t sssp_hybrid(vid_t src_id, weight_t* distance);
 
 /**
  * Given a weighted graph \f$G = (V, E, w)\f$, the All Pairs Shortest Path
