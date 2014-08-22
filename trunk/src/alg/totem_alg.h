@@ -105,6 +105,7 @@ error_t bfs_cpu(graph_t* graph, vid_t src_id, cost_t* cost);
 error_t bfs_bu_cpu(graph_t* graph, vid_t src_id, cost_t* cost);
 error_t bfs_queue_cpu(graph_t* graph, vid_t source_id, cost_t* cost);
 error_t bfs_gpu(graph_t* graph, vid_t src_id, cost_t* cost);
+error_t bfs_bu_gpu(graph_t* graph, vid_t src_id, cost_t* cost);
 error_t bfs_vwarp_gpu(graph_t* graph, vid_t src_id, cost_t* cost);
 error_t bfs_hybrid(vid_t src_id, cost_t* cost);
 

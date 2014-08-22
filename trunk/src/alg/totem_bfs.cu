@@ -503,7 +503,7 @@ bool top_down_step(graph_t* graph, cost_t* cost, bitmap_t* visited,
           // If a new vertex is now visited, we have a new level
           // of frontier - we are not finished.
           finished = false;
-          // Increment the level of this vertex.
+          // Increment the level of this neighbour.
           cost[neighbor_id] = level + 1;
         }
       }
@@ -532,6 +532,7 @@ bool bottom_up_step(graph_t* graph, cost_t* cost, bitmap_t* visited,
         // Add the vertex we are exploring to the next frontier.
         bitmap_set_cpu(*visited, vertex_id);
         finished = false;
+        // Increment the level of this vertex.
         cost[vertex_id] = level + 1;
         break;
       }
@@ -586,4 +587,129 @@ error_t bfs_bu_cpu(graph_t* graph, vid_t source_id, cost_t* cost) {
 
   bitmap_finalize_cpu(visited);
   return SUCCESS;
+}
+
+// A gpu version of the Top-down step as a kernel.
+__global__
+void bfs_td_kernel(graph_t graph, cost_t level, cost_t* cost,
+                   bitmap_t visited, frontier_state_t state) {
+  const vid_t vertex_id = THREAD_GLOBAL_INDEX;
+  if (vertex_id >= graph.vertex_count) { return; }
+
+  // Ignore vertices not in frontier.
+  if (!bitmap_is_set(state.current, vertex_id)) { return; }
+
+  // Iterate across all neighbours of the vertex.
+  for (eid_t i = graph.vertices[vertex_id];
+       i < graph.vertices[vertex_id + 1]; i++) {
+    const vid_t neighbor_id = graph.edges[i];
+
+    // If already visited, ignore neighbour.
+    if (!bitmap_is_set(visited, neighbor_id)) {
+      if (bitmap_set_gpu(visited, neighbor_id)) {
+        // Increment the level of this neighbour.
+        cost[neighbor_id] = level + 1;
+      }
+    }
+  }
+}
+
+// A gpu version of the Bottom-up step as a kernel.
+__global__
+void bfs_bu_kernel(graph_t graph, cost_t level, cost_t* cost,
+                   bitmap_t visited, frontier_state_t state) {
+  const vid_t vertex_id = THREAD_GLOBAL_INDEX;
+  if (vertex_id >= graph.vertex_count) { return; }
+
+  // Ignore vertices that have been visited.
+  if (bitmap_is_set(visited, vertex_id) ) { return; }
+
+  // Iterate across all neighbours of the vertex.
+  for (eid_t i = graph.vertices[vertex_id];
+       i < graph.vertices[vertex_id + 1]; i++) {
+    const vid_t neighbor_id = graph.edges[i];
+
+    // Check if neighbour is in the current frontier.
+    if (bitmap_is_set(state.current, neighbor_id)) {
+      bitmap_set_gpu(visited, vertex_id);
+      // Increment the level of this vertex.
+      cost[vertex_id] = level + 1;
+      break;
+    }
+  }
+}
+
+// A simple kernel to set the source vertex as visited.
+__global__
+void bfs_bu_init_kernel(bitmap_t visited, vid_t vertex_id) {
+  if (THREAD_GLOBAL_INDEX != 0) { return; }
+  bitmap_set_gpu(visited, vertex_id);
+}
+
+// This is a GPU only version of the above Bottom-up/Top-down BFS algorithm.
+// See bfs_bu_cpu for full details.
+__host__
+error_t bfs_bu_gpu(graph_t* graph, vid_t source_id, cost_t* cost) {
+  // TODO(scott): Make this a heuristic instead of a constant.
+  const vid_t SMALL_THRESHOLD = graph->vertex_count/(16*16*16*16);
+
+  // Check for special cases.
+  bool finished = false;
+  error_t rc = check_special_cases(graph, source_id, cost, &finished);
+  if (finished) return rc;
+
+  // Create and initialize state on GPU.
+  graph_t* graph_d;
+  cost_t* cost_d;
+  bool* finished_d;
+  CHK_SUCCESS(initialize_gpu(graph, source_id, graph->vertex_count,
+                             &graph_d, &cost_d, &finished_d), err_free_all);
+
+  // Initialize the visited bitmap on the GPU.
+  bitmap_t visited;
+  visited = bitmap_init_gpu(graph->vertex_count);
+  bfs_bu_init_kernel<<<1, 1>>>(visited, source_id);
+  CALL_CU_SAFE(cudaGetLastError());
+
+  // Initialize the frontier state on the GPU.
+  frontier_state_t state;
+  frontier_init_gpu(&state, graph->vertex_count);
+
+  // {} used to limit scope and avoid problems with error handles.
+  {
+  dim3 blocks;
+  dim3 threads_per_block;
+  KERNEL_CONFIGURE(graph->vertex_count, blocks, threads_per_block);
+
+  // Complete a step for each level, while not finished.
+  for (cost_t level = 0; ; level++) {
+    // Update the frontier.
+    frontier_update_bitmap_gpu(&state, visited, 0);
+
+    if (bitmap_count_gpu(state.current, graph->vertex_count) <
+                         SMALL_THRESHOLD) {
+      // Choose a top-down step if the frontier count is small.
+      bfs_td_kernel<<<blocks, threads_per_block>>>(*graph_d, level,
+                                                   cost_d, visited, state);
+    } else {
+      // Choose a bottom-up step if the frontier count is large.
+      bfs_bu_kernel<<<blocks, threads_per_block>>>(*graph_d, level,
+                                                   cost_d, visited, state);
+    }
+    CHK_CU_SUCCESS(cudaGetLastError(), err_free_all);
+
+    // We are done if the frontier is empty.
+    if (bitmap_count_gpu(state.current, graph->vertex_count) == 0) { break; }
+  }}
+
+  // We are done, get the results back and clean up state.
+  CHK_SUCCESS(finalize_gpu(graph_d, finished_d, cost_d, cost), err_free_all);
+  return SUCCESS;
+
+  // error handlers
+  err_free_all:
+    totem_free(finished_d, TOTEM_MEM_DEVICE);
+    totem_free(cost_d, TOTEM_MEM_DEVICE);
+    graph_finalize_device(graph_d);
+    return FAILURE;
 }
