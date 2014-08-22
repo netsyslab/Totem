@@ -224,7 +224,7 @@ PRIVATE void benchmark_run() {
   totem_attr_t attr = TOTEM_DEFAULT_ATTR;
   if (totem_based) {
     attr.par_algo = options->par_algo;
-    attr.cpu_par_share = reinterpret_cast<float>(options->alpha) / 100.0;
+    attr.cpu_par_share = static_cast<float>(options->alpha) / 100.0;
     attr.platform = options->platform;
     attr.gpu_count = options->gpu_count;
     attr.gpu_graph_mem = options->gpu_graph_mem;
