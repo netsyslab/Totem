@@ -233,6 +233,7 @@ bfs_param_t bfs_params[] = {
   {NULL, &bfs_bu_cpu},
   {NULL, &bfs_queue_cpu},
   {NULL, &bfs_gpu},
+  {NULL, &bfs_bu_gpu},
   {NULL, &bfs_vwarp_gpu},
   {&totem_attrs[0], NULL},
   {&totem_attrs[1], NULL},
@@ -293,7 +294,8 @@ INSTANTIATE_TEST_CASE_P(BFSGPUAndCPUTest, BFSTest, Values(&bfs_params[0],
                                                           &bfs_params[24],
                                                           &bfs_params[25],
                                                           &bfs_params[26],
-                                                          &bfs_params[27] ));
+                                                          &bfs_params[27],
+                                                          &bfs_params[28] ));
 
 #else
 
