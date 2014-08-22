@@ -42,7 +42,7 @@ const benchmark_attr_t BENCHMARKS[] = {
     benchmark_dijkstra,
     "DIJKSTRA",
     sizeof(weight_t),
-    true,
+    false,
     sizeof(weight_t) * BITS_PER_BYTE,
     MSG_SIZE_ZERO,
     NULL,
@@ -165,7 +165,14 @@ PRIVATE void benchmark_pagerank(graph_t* graph, void* rank,
  */
 PRIVATE void benchmark_dijkstra(graph_t* graph, void* distance,
                                 totem_attr_t* attr) {
-  CALL_SAFE(sssp_hybrid(get_random_src(graph), (weight_t*)distance));
+  if (options->platform == PLATFORM_CPU) {
+    CALL_SAFE(dijkstra_cpu(graph, get_random_src(graph), (weight_t*)distance));
+  } else if (options->platform == PLATFORM_GPU && options->gpu_count == 1) {
+    CALL_SAFE(dijkstra_vwarp_gpu(graph, get_random_src(graph), 
+                                 (weight_t*)distance));
+  } else {
+    assert(false);
+  }
 }
 
 /**
