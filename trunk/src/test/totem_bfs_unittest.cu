@@ -295,7 +295,8 @@ INSTANTIATE_TEST_CASE_P(BFSGPUAndCPUTest, BFSTest, Values(&bfs_params[0],
                                                           &bfs_params[25],
                                                           &bfs_params[26],
                                                           &bfs_params[27],
-                                                          &bfs_params[28] ));
+                                                          &bfs_params[28],
+                                                          &bfs_params[29] ));
 
 #else
 
