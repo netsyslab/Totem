@@ -338,12 +338,19 @@ PRIVATE inline void bfs_init_gpu(partition_t* par) {
     }
   }
 
+  /*
   // Set the source vertex as visited, if it is in our partition.
   if (GET_PARTITION_ID(state_g.src) == par->id) {
     bfs_init_bu_kernel<<<1, 1, 0, par->streams[1]>>>
       (state->visited[par->id], GET_VERTEX_ID(state_g.src));
     CALL_CU_SAFE(cudaGetLastError());
   }
+  */
+
+  // Set the source vertex as visited, no matter what partition it is in.
+  bfs_init_bu_kernel<<<1, 1, 0, par->streams[1]>>>
+    (state->visited[GET_PARTITION_ID(state_g.src)], GET_VERTEX_ID(state_g.src));
+  CALL_CU_SAFE(cudaGetLastError());
 
   // Initialize our local frontier.
   frontier_init_gpu(&state->frontier, par->subgraph.vertex_count);
@@ -366,10 +373,16 @@ PRIVATE inline void bfs_init_cpu(partition_t* par) {
     }
   }
 
+  /*
   // Set the source vertex as visited, if it is in our partition.
   if (GET_PARTITION_ID(state_g.src) == par->id) {
     bitmap_set_cpu(state->visited[par->id], GET_VERTEX_ID(state_g.src));
   }
+  */
+
+  // Set the source vertex as visited, no matter what partition it is in.
+  bitmap_set_cpu(state->visited[GET_PARTITION_ID(state_g.src)], 
+                 GET_VERTEX_ID(state_g.src));
 
   // Initialize our local frontier.
   frontier_init_cpu(&state->frontier, par->subgraph.vertex_count);
