@@ -128,26 +128,11 @@ PRIVATE void bfs_bu_step(partition_t* par, bfs_state_t* state) {
  * http://www.eecs.berkeley.edu/Pubs/TechRpts/2011/EECS-2011-117.pdf
  */
 void bfs_stepwise_cpu(partition_t* par, bfs_state_t* state) {
-  // Copy the current state of the remote vertices' bitmaps.
-  for (int pid = 0; pid < engine_partition_count(); pid++) {
-    if ((pid == par->id) || (par->outbox[pid].count == 0)) continue;
-    bitmap_copy_cpu(state->visited[pid], (bitmap_t)par->outbox[pid].pull_values,
-                    par->outbox[pid].count);
-  }
-
   // Update the frontier.
   frontier_update_bitmap_cpu(&state->frontier, state->visited[par->id]);
 
   // Execute a step.
   bfs_bu_step(par, state);
-
-  // Apply our visited status to our outboxes.
-  for (int pid = 0; pid < engine_partition_count(); pid++) {
-    if ((pid == par->id) || (par->outbox[pid].count == 0)) continue;
-    bitmap_copy_cpu(state->visited[par->id],
-                    (bitmap_t)par->outbox[pid].pull_values,
-                    par->outbox[pid].count);
-  }
 }
 
 /* Redacted td kernel.
@@ -213,15 +198,6 @@ void bfs_bu_kernel(partition_t par, bfs_state_t state) {
 // See bfs_bu_cpu for full details.
 __host__
 error_t bfs_stepwise_gpu(partition_t* par, bfs_state_t* state) {
-  // Copy the current state of the remote vertices' bitmaps.
-  for (int pid = 0; pid < engine_partition_count(); pid++) {
-    if ((pid == par->id) || (par->outbox[pid].count == 0)) continue;
-    bitmap_copy_gpu(state->visited[pid], (bitmap_t)par->outbox[pid].pull_values,
-                    par->outbox[pid].count);
-  }
-
-  // {} used to limit scope and avoid problems with error handles.
-  {
   dim3 blocks;
   dim3 threads_per_block;
   KERNEL_CONFIGURE(par->subgraph.vertex_count, blocks, threads_per_block);
@@ -231,15 +207,7 @@ error_t bfs_stepwise_gpu(partition_t* par, bfs_state_t* state) {
                              par->streams[1]);
 
   bfs_bu_kernel<<<blocks, threads_per_block>>>(*par, *state);
-  }
 
-  // Apply our visited status to our outboxes.
-  for (int pid = 0; pid < engine_partition_count(); pid++) {
-    if ((pid == par->id) || (par->outbox[pid].count == 0)) continue;
-    bitmap_copy_gpu(state->visited[par->id],
-                    (bitmap_t)par->outbox[pid].pull_values,
-                    par->outbox[pid].count);
-  }
   return SUCCESS;
 }
 
@@ -261,6 +229,38 @@ PRIVATE void bfs(partition_t* par) {
   state->level++;
 }
 
+// Gather for the CPU bitmap to inbox.
+PRIVATE void bfs_gather_cpu(partition_t* par, bfs_state_t* state,
+                            grooves_box_table_t* inbox) {
+  // Iterate across the items in the inbox.
+  OMP(omp parallel for schedule(static))
+  for (vid_t index = 0; index < inbox->count; index++) {
+    // Lookup the local vertex it points to.
+    vid_t vid = inbox->rmt_nbrs[index];
+
+    // Set the bit state to our local state.
+    if (bitmap_is_set(state->visited[par->id], vid)) {
+      bitmap_set_cpu((bitmap_t)inbox->pull_values, index);
+    }
+  }
+}
+
+// Gather for the GPU bitmap to inbox.
+__global__
+void bfs_gather_gpu(partition_t par, bfs_state_t state,
+                    grooves_box_table_t inbox) {
+  const vid_t index = THREAD_GLOBAL_INDEX;
+  if (index >= inbox.count) { return; }
+
+  // Lookup the local vertex it points to.
+  vid_t vid = inbox.rmt_nbrs[index];
+
+  // Set the bit state to our local state.
+  if (bitmap_is_set(state.visited[par.id], vid)) {
+    bitmap_set_gpu((bitmap_t)inbox.pull_values, index);
+  }
+}
+
 // The gather phase - apply values from the inboxes to the partitions' local
 // variables.
 PRIVATE void bfs_gather(partition_t* par) {
@@ -270,16 +270,19 @@ PRIVATE void bfs_gather(partition_t* par) {
   for (int rmt_pid = 0; rmt_pid < engine_partition_count(); rmt_pid++) {
     if (rmt_pid == par->id) continue;
 
-    // Select the inbox to apply.
+    // Select the inbox to apply to.
     grooves_box_table_t* inbox = &par->inbox[rmt_pid];
 
-    // Launch a bitmap copy based off of the processing unit we are.
+    // Select a method based off of our processor type.
     if (par->processor.type == PROCESSOR_CPU) {
-      bitmap_copy_cpu((bitmap_t)inbox->pull_values, state->visited[par->id],
-                      inbox->count);
+      bfs_gather_cpu(par, state, inbox);
     } else if (par->processor.type == PROCESSOR_GPU) {
-      bitmap_copy_gpu((bitmap_t)inbox->pull_values, state->visited[par->id],
-                      inbox->count);
+      dim3 blocks;
+      dim3 threads_per_block;
+
+      // Set up to iterate across the items in the inbox.
+      KERNEL_CONFIGURE(inbox->count, blocks, threads_per_block);
+      bfs_gather_gpu<<<blocks, threads_per_block>>>(*par, *state, *inbox);
     } else {
       assert(false);
     }
@@ -328,29 +331,27 @@ PRIVATE inline void bfs_init_gpu(partition_t* par) {
   // Initialize our visited bitmap.
   state->visited[par->id] = bitmap_init_gpu(par->subgraph.vertex_count);
 
-  // Initialize other partitions bitmaps - based off of their size.
+  // Initialize other partitions bitmaps.
   for (int pid = 0; pid < engine_partition_count(); pid++) {
     if (pid != par->id && par->outbox[pid].count != 0) {
-      state->visited[pid] = bitmap_init_gpu(par->outbox[pid].count);
-      // Clear our outbox destined for each partition.
-      bitmap_reset_gpu((bitmap_t)par->outbox[pid].pull_values,
-                       par->outbox[pid].count, par->streams[1]);
+      state->visited[pid] =
+        reinterpret_cast<bitmap_t>(par->outbox[pid].pull_values);
     }
   }
 
-  /*
   // Set the source vertex as visited, if it is in our partition.
   if (GET_PARTITION_ID(state_g.src) == par->id) {
     bfs_init_bu_kernel<<<1, 1, 0, par->streams[1]>>>
       (state->visited[par->id], GET_VERTEX_ID(state_g.src));
     CALL_CU_SAFE(cudaGetLastError());
   }
-  */
 
+  /*
   // Set the source vertex as visited, no matter what partition it is in.
   bfs_init_bu_kernel<<<1, 1, 0, par->streams[1]>>>
     (state->visited[GET_PARTITION_ID(state_g.src)], GET_VERTEX_ID(state_g.src));
   CALL_CU_SAFE(cudaGetLastError());
+  */
 
   // Initialize our local frontier.
   frontier_init_gpu(&state->frontier, par->subgraph.vertex_count);
@@ -363,26 +364,24 @@ PRIVATE inline void bfs_init_cpu(partition_t* par) {
   // Initialize our visited bitmap.
   state->visited[par->id] = bitmap_init_cpu(par->subgraph.vertex_count);
 
-  // Initialize other partitions bitmaps - based off of their size.
+  // Initialize other partitions bitmaps.
   for (int pid = 0; pid < engine_partition_count(); pid++) {
     if (pid != par->id && par->outbox[pid].count != 0) {
-      state->visited[pid] = bitmap_init_cpu(par->outbox[pid].count);
-      // Clear our outbox destined for each partition.
-      bitmap_reset_cpu((bitmap_t)par->outbox[pid].pull_values,
-                       par->outbox[pid].count);
+      state->visited[pid] =
+        reinterpret_cast<bitmap_t>(par->outbox[pid].pull_values);
     }
   }
 
-  /*
   // Set the source vertex as visited, if it is in our partition.
   if (GET_PARTITION_ID(state_g.src) == par->id) {
     bitmap_set_cpu(state->visited[par->id], GET_VERTEX_ID(state_g.src));
   }
-  */
 
+  /*
   // Set the source vertex as visited, no matter what partition it is in.
   bitmap_set_cpu(state->visited[GET_PARTITION_ID(state_g.src)], 
                  GET_VERTEX_ID(state_g.src));
+  */
 
   // Initialize our local frontier.
   frontier_init_cpu(&state->frontier, par->subgraph.vertex_count);
