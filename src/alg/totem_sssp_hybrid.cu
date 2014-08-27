@@ -122,13 +122,93 @@ PRIVATE void sssp_gpu(partition_t* par, sssp_state_t* state) {
   CALL_CU_SAFE(cudaGetLastError());
 }
 
+template<int VWARP_WIDTH, int VWARP_BATCH, int THREADS_PER_BLOCK>
+PRIVATE __global__
+void sssp_vwarp_kernel(partition_t par, sssp_state_t state,
+                       const vid_t vertex_count) {
+  if (THREAD_GLOBAL_INDEX >=
+      vwarp_thread_count(vertex_count, VWARP_WIDTH, VWARP_BATCH)) return;
+
+  const eid_t* __restrict vertices = par.subgraph.vertices;
+
+  __shared__ bool finished_block;
+  finished_block = true;
+  __syncthreads();
+
+  vid_t start_vertex = vwarp_block_start_vertex(VWARP_WIDTH, VWARP_BATCH) +
+    vwarp_warp_start_vertex(VWARP_WIDTH, VWARP_BATCH);
+  vid_t end_vertex = start_vertex +
+    vwarp_warp_batch_size(vertex_count, VWARP_WIDTH, VWARP_BATCH);
+  int warp_offset = vwarp_thread_index(VWARP_WIDTH);
+
+  for (vid_t v = start_vertex; v < end_vertex; v++) {
+    if (state.updated[v] == true) {
+      state.updated[v] = false;
+      const eid_t nbr_count = vertices[v + 1] - vertices[v];
+      vid_t* nbrs = par.subgraph.edges + vertices[v];
+      weight_t* weights = par.subgraph.weights + vertices[v];
+      if (v >= par.subgraph.vertex_ext) {
+        nbrs = par.subgraph.edges_ext +
+          (vertices[v] - par.subgraph.edge_count_ext);
+      }
+      for (vid_t i = warp_offset; i < nbr_count; i += VWARP_WIDTH) {
+        int nbr_pid = GET_PARTITION_ID(nbrs[i]);
+        vid_t nbr = GET_VERTEX_ID(nbrs[i]);
+        vid_t nbr_dst = nbrs[i];
+        weight_t* dst = engine_get_dst_ptr(par.id, nbr_dst, par.outbox,
+                                           state.distance);
+        weight_t new_distance = state.distance[v] + weights[i];
+        weight_t old_distance = atomicMin(dst, new_distance);
+        if (new_distance < old_distance) {
+          if (nbr_pid == par.id) {
+            state.updated[nbr] = true;
+          }
+          finished_block = false;
+        }
+      }  // for
+    }  // if
+  }  // for
+  __syncthreads();
+  if (!finished_block && THREAD_BLOCK_INDEX == 0) *state.finished = false;
+}
+
+template<int VWARP_WIDTH, int BATCH_SIZE>
+PRIVATE void
+sssp_gpu_launch(partition_t* par, sssp_state_t* state) {
+  const vid_t vertex_count = par->subgraph.vertex_count;
+  const int threads = MAX_THREADS_PER_BLOCK;
+  dim3 blocks;
+  assert(VWARP_WIDTH <= threads);
+  kernel_configure(vwarp_thread_count(vertex_count, VWARP_WIDTH, BATCH_SIZE),
+                   blocks, threads);
+  sssp_vwarp_kernel<VWARP_WIDTH, BATCH_SIZE, threads>
+    <<<blocks, threads, 0, par->streams[1]>>>(*par, *state, vertex_count);
+}
+
+typedef void(*sssp_gpu_func_t)(partition_t*, sssp_state_t*);
+
+PRIVATE void sssp_vwarp_gpu(partition_t* par, sssp_state_t* state) {
+  PRIVATE const sssp_gpu_func_t SSSP_GPU_FUNC[] = {
+    // RANDOM algorithm
+    sssp_gpu_launch<VWARP_MEDIUM_WARP_WIDTH, VWARP_MEDIUM_BATCH_SIZE>,
+    // HIGH partitioning
+    sssp_gpu_launch<VWARP_MEDIUM_WARP_WIDTH, VWARP_MEDIUM_BATCH_SIZE>,
+    // LOW partitioning
+    // TODO(treza): Some tests may not pass for the following configuration.
+    // This would require further investigation.
+    sssp_gpu_launch<MAX_THREADS_PER_BLOCK, VWARP_MEDIUM_WARP_WIDTH>
+  };
+  int par_alg = engine_partition_algorithm();
+  SSSP_GPU_FUNC[par_alg](par, state);
+}
+
 PRIVATE void sssp(partition_t* par) {
   if (par->subgraph.vertex_count == 0) { return; }
   sssp_state_t* state = reinterpret_cast<sssp_state_t*>(par->algo_state);
   if (par->processor.type == PROCESSOR_CPU) {
     sssp_cpu(par, state);
   } else if (par->processor.type == PROCESSOR_GPU) {
-    sssp_gpu(par, state);
+    sssp_vwarp_gpu(par, state);
   } else {
     assert(false);
   }
