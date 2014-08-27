@@ -155,7 +155,7 @@ error_t finalize_gpu(graph_t* graph_d, weight_t* distances_d, bool* changed_d,
  * @param[out] new_distances an array with distances updated in this round
  */
 __global__
-void dijkstra_kernel(graph_t graph, bool* to_update, weight_t* distances,
+void sssp_kernel(graph_t graph, bool* to_update, weight_t* distances,
                      weight_t* new_distances) {
   const vid_t vertex_id = THREAD_GLOBAL_INDEX;
   if ((vertex_id >= graph.vertex_count) || !to_update[vertex_id]) {
@@ -198,7 +198,7 @@ void vwarp_process_neighbors(vid_t warp_offset, vid_t neighbor_count,
  * technique.
  */
 __global__
-void vwarp_dijkstra_kernel(graph_t graph, bool* to_update, weight_t* distances,
+void vwarp_sssp_kernel(graph_t graph, bool* to_update, weight_t* distances,
                            weight_t* new_distances, uint32_t thread_count) {
 
   if (THREAD_GLOBAL_INDEX >= thread_count) return;
@@ -243,7 +243,7 @@ void vwarp_dijkstra_kernel(graph_t graph, bool* to_update, weight_t* distances,
  * @param[out] new_distances an array with distances updated in this round
  */
 __global__
-void dijkstra_final_kernel(graph_t graph, bool* to_update, weight_t* distances,
+void sssp_final_kernel(graph_t graph, bool* to_update, weight_t* distances,
                            weight_t* new_distances, bool* has_true) {
   const vid_t vertex_id = THREAD_GLOBAL_INDEX;
   if (vertex_id >= graph.vertex_count) {
@@ -257,7 +257,7 @@ void dijkstra_final_kernel(graph_t graph, bool* to_update, weight_t* distances,
   new_distances[vertex_id] = distances[vertex_id];
 }
 
-error_t dijkstra_gpu(const graph_t* graph, vid_t source_id,
+error_t sssp_gpu(const graph_t* graph, vid_t source_id,
                      weight_t* shortest_distances) {
   // Check for special cases
   bool finished = false;
@@ -280,12 +280,12 @@ error_t dijkstra_gpu(const graph_t* graph, vid_t source_id,
   KERNEL_CONFIGURE(graph->vertex_count, block_count, threads_per_block);
   bool has_true = true;
   while (has_true) {
-    dijkstra_kernel<<<block_count, threads_per_block>>>
+    sssp_kernel<<<block_count, threads_per_block>>>
       (*graph_d, changed_d, distances_d, new_distances_d);
     CHK_CU_SUCCESS(cudaMemset(changed_d, false, graph->vertex_count *
                               sizeof(bool)), err_free_all);
     CHK_CU_SUCCESS(cudaMemset(has_true_d, false, sizeof(bool)), err_free_all);
-    dijkstra_final_kernel<<<block_count, threads_per_block>>>
+    sssp_final_kernel<<<block_count, threads_per_block>>>
       (*graph_d, changed_d, distances_d, new_distances_d, has_true_d);
     CHK_CU_SUCCESS(cudaMemcpy(&has_true, has_true_d, sizeof(bool),
                               cudaMemcpyDeviceToHost), err_free_all);
@@ -309,7 +309,7 @@ error_t dijkstra_gpu(const graph_t* graph, vid_t source_id,
     return FAILURE;
 }
 
-error_t dijkstra_vwarp_gpu(const graph_t* graph, vid_t source_id,
+error_t sssp_vwarp_gpu(const graph_t* graph, vid_t source_id,
                            weight_t* shortest_distances) {
 
   // Check for special cases
@@ -334,18 +334,18 @@ error_t dijkstra_vwarp_gpu(const graph_t* graph, vid_t source_id,
   bool has_true = true;
   dim3 block_count, threads_per_block;
   KERNEL_CONFIGURE(thread_count, block_count, threads_per_block);
-  cudaFuncSetCacheConfig(vwarp_dijkstra_kernel, cudaFuncCachePreferShared);
+  cudaFuncSetCacheConfig(vwarp_sssp_kernel, cudaFuncCachePreferShared);
   dim3 block_count_final, threads_per_block_final;
   KERNEL_CONFIGURE(graph->vertex_count, block_count_final,
                    threads_per_block_final);
   while (has_true) {
-    vwarp_dijkstra_kernel<<<block_count, threads_per_block>>>
+    vwarp_sssp_kernel<<<block_count, threads_per_block>>>
       (*graph_d, changed_d, distances_d, new_distances_d, thread_count);
     CHK_CU_SUCCESS(cudaMemset(changed_d, false, 
                               vwarp_default_state_length(graph->vertex_count) *
                               sizeof(bool)), err_free_all);
     CHK_CU_SUCCESS(cudaMemset(has_true_d, false, sizeof(bool)), err_free_all);
-    dijkstra_final_kernel<<<block_count_final, threads_per_block_final>>>
+    sssp_final_kernel<<<block_count_final, threads_per_block_final>>>
       (*graph_d, changed_d, distances_d, new_distances_d, has_true_d);
     CHK_CU_SUCCESS(cudaMemcpy(&has_true, has_true_d, sizeof(bool),
                               cudaMemcpyDeviceToHost), err_free_all);
@@ -368,7 +368,7 @@ error_t dijkstra_vwarp_gpu(const graph_t* graph, vid_t source_id,
     return FAILURE;
 }
 
-__host__ error_t dijkstra_cpu(const graph_t* graph, vid_t source_id,
+__host__ error_t sssp_cpu(const graph_t* graph, vid_t source_id,
                               weight_t* shortest_distances) {
   // Check for special cases
   bool finished = false;
