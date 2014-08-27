@@ -12,7 +12,7 @@
 // Defines attributes of the algorithms available for benchmarking
 PRIVATE void benchmark_bfs(graph_t*, void*, totem_attr_t*);
 PRIVATE void benchmark_pagerank(graph_t*, void*, totem_attr_t*);
-PRIVATE void benchmark_dijkstra(graph_t*, void*, totem_attr_t*);
+PRIVATE void benchmark_sssp(graph_t*, void*, totem_attr_t*);
 PRIVATE void benchmark_betweenness(graph_t*, void*, totem_attr_t*);
 PRIVATE void benchmark_graph500(graph_t* graph, void* tree, totem_attr_t* attr);
 PRIVATE void benchmark_clustering_coefficient(graph_t* graph, void*,
@@ -39,8 +39,8 @@ const benchmark_attr_t BENCHMARKS[] = {
     NULL
   },
   {
-    benchmark_dijkstra,
-    "DIJKSTRA",
+    benchmark_sssp,
+    "SSSP",
     sizeof(weight_t),
     true,
     sizeof(weight_t) * BITS_PER_BYTE,
@@ -101,7 +101,7 @@ PRIVATE uint64_t get_traversed_edges(graph_t* graph, void* benchmark_output) {
       }
       break;
     }
-    case BENCHMARK_DIJKSTRA: {
+    case BENCHMARK_SSSP: {
       OMP(omp parallel for reduction(+ : trv_edges))
       for (vid_t vid = 0; vid < graph->vertex_count; vid++) {
         weight_t* distance = reinterpret_cast<weight_t*>(benchmark_output);
@@ -162,9 +162,9 @@ PRIVATE void benchmark_pagerank(graph_t* graph, void* rank,
 }
 
 /**
- * Runs Dijkstra benchmark
+ * Runs SSSP benchmark
  */
-PRIVATE void benchmark_dijkstra(graph_t* graph, void* distance,
+PRIVATE void benchmark_sssp(graph_t* graph, void* distance,
                                 totem_attr_t* attr) {
   CALL_SAFE(sssp_hybrid(get_random_src(graph),
     reinterpret_cast<weight_t*>(distance)));
@@ -211,7 +211,7 @@ PRIVATE void benchmark_run() {
 
   graph_t* graph = NULL;
   CALL_SAFE(graph_initialize(options->graph_file,
-                             (options->benchmark == BENCHMARK_DIJKSTRA),
+                             (options->benchmark == BENCHMARK_SSSP),
                              &graph));
   print_config(graph, options, BENCHMARKS[options->benchmark].name);
 

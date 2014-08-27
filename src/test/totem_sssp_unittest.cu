@@ -22,7 +22,7 @@ using ::testing::Values;
 // http://code.google.com/p/googletest/source/browse/trunk/samples/
 // sample7_unittest.cc
 
-typedef error_t(*SSSPFunction)(graph_t*, vid_t, weight_t*);
+typedef error_t(*SSSPFunction)(const graph_t*, vid_t, weight_t*);
 
 // This is to allow testing the vanilla sssp functions and the hybrid one
 // that is based on the framework. Note that have a different signature
@@ -322,6 +322,9 @@ TEST_P(SSSPTest, CompleteDiffWeight) {
 // Values() seems to accept only pointers, hence the possible parameters
 // are defined here, and a pointer to each ot them is used.
 sssp_param_t sssp_params[] = {
+  {NULL, &sssp_cpu},
+  {NULL, &sssp_gpu},
+  {NULL, &sssp_vwarp_gpu},
   {&totem_attrs[0], NULL},
   {&totem_attrs[1], NULL},
   {&totem_attrs[2], NULL},
@@ -377,7 +380,10 @@ INSTANTIATE_TEST_CASE_P(SSSPGPUAndCPUTest, SSSPTest, Values(&sssp_params[0],
                                                             &sssp_params[20],
                                                             &sssp_params[21],
                                                             &sssp_params[22],
-                                                            &sssp_params[23]));
+                                                            &sssp_params[23],
+                                                            &sssp_params[24],
+                                                            &sssp_params[25],
+                                                            &sssp_params[26]));
 
 #else
 

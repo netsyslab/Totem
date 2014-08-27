@@ -13,8 +13,8 @@
 #include "totem_alg.h"
 
 // Externed function declarations for dijkstra kernel functions
-__global__ void dijkstra_kernel(graph_t, bool*, weight_t*, weight_t*);
-__global__ void dijkstra_final_kernel(graph_t, bool*, weight_t*, weight_t*,
+__global__ void sssp_kernel(graph_t, bool*, weight_t*, weight_t*);
+__global__ void sssp_final_kernel(graph_t, bool*, weight_t*, weight_t*,
                                       bool* has_true);
 
 
@@ -222,12 +222,12 @@ error_t apsp_gpu(graph_t* graph, weight_t** path_ret) {
                                       new_distances_d), err_free_all);
     bool has_true = true;
     while (has_true) {
-      dijkstra_kernel<<<block_count, threads_per_block>>>
+      sssp_kernel<<<block_count, threads_per_block>>>
         (*graph_d, changed_d, distances_d, new_distances_d);
       CHK_CU_SUCCESS(cudaMemset(changed_d, false, graph->vertex_count *
                                 sizeof(bool)), err_free_all);
       CHK_CU_SUCCESS(cudaMemset(has_true_d, false, sizeof(bool)), err_free_all);
-      dijkstra_final_kernel<<<block_count, threads_per_block>>>
+      sssp_final_kernel<<<block_count, threads_per_block>>>
         (*graph_d, changed_d, distances_d, new_distances_d, has_true_d);
       CHK_CU_SUCCESS(cudaMemcpy(&has_true, has_true_d, sizeof(bool),
                                 cudaMemcpyDeviceToHost), err_free_all);
