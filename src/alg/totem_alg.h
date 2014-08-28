@@ -108,7 +108,7 @@ error_t bfs_gpu(graph_t* graph, vid_t src_id, cost_t* cost);
 error_t bfs_bu_gpu(graph_t* graph, vid_t src_id, cost_t* cost);
 error_t bfs_vwarp_gpu(graph_t* graph, vid_t src_id, cost_t* cost);
 error_t bfs_hybrid(vid_t src_id, cost_t* cost);
-error_t bfs_bu_hybrid(vid_t src_id, cost_t* cost);
+error_t bfs_stepwise_hybrid(vid_t src_id, cost_t* cost);
 
 /**
  * Given an undirected, unweighted graph and a source vertex, compute the 

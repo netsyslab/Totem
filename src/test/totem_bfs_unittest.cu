@@ -20,6 +20,7 @@ using ::testing::Values;
 // http://code.google.com/p/googletest/source/browse/trunk/samples/sample7_unittest.cc
 
 typedef error_t(*BFSFunction)(graph_t*, vid_t, cost_t*);
+typedef error_t(*BFSHybrid)(vid_t, cost_t*);
 
 // This is to allow testing the vanilla bfs functions and the hybrid one
 // that is based on the framework. Note that have a different signature
@@ -27,6 +28,7 @@ typedef error_t(*BFSFunction)(graph_t*, vid_t, cost_t*);
 typedef struct bfs_param_s {
   totem_attr_t* attr;   // totem attributes for totem-based tests
   BFSFunction   func;   // the vanilla bfs function if attr is NULL
+  BFSHybrid     hybrid_func;
 } bfs_param_t;
 
 class BFSTest : public TestWithParam<bfs_param_t*> {
@@ -46,10 +48,11 @@ class BFSTest : public TestWithParam<bfs_param_t*> {
   error_t TestGraph(vid_t src) {
     if (_bfs_param->attr) {
       _bfs_param->attr->push_msg_size = 1;
+      _bfs_param->attr->pull_msg_size = 1;
       if (totem_init(_graph, _bfs_param->attr) == FAILURE) {
         return FAILURE;
       }
-      error_t err = bfs_hybrid(src, _cost);
+      error_t err = _bfs_param->hybrid_func(src, _cost);
       totem_finalize();
       return err;
     }
@@ -61,6 +64,7 @@ class BFSTest : public TestWithParam<bfs_param_t*> {
   graph_t* _graph;
   cost_t* _cost;
 };
+
 
 // Tests BFS for empty graphs.
 TEST_P(BFSTest, Empty) {
@@ -227,39 +231,64 @@ TEST_P(BFSTest, Star) {
 // TODO(lauro): Add test cases for not well defined structures.
 
 // Values() seems to accept only pointers, hence the possible parameters
-// are defined here, and a pointer to each ot them is used.
+// are defined here, and a pointer to each of them is used.
 bfs_param_t bfs_params[] = {
-  {NULL, &bfs_cpu},
-  {NULL, &bfs_bu_cpu},
-  {NULL, &bfs_queue_cpu},
-  {NULL, &bfs_gpu},
-  {NULL, &bfs_bu_gpu},
-  {NULL, &bfs_vwarp_gpu},
-  {&totem_attrs[0], NULL},
-  {&totem_attrs[1], NULL},
-  {&totem_attrs[2], NULL},
-  {&totem_attrs[3], NULL},
-  {&totem_attrs[4], NULL},
-  {&totem_attrs[5], NULL},
-  {&totem_attrs[6], NULL},
-  {&totem_attrs[7], NULL},
-  {&totem_attrs[8], NULL},
-  {&totem_attrs[9], NULL},
-  {&totem_attrs[10], NULL},
-  {&totem_attrs[11], NULL},
-  {&totem_attrs[12], NULL},
-  {&totem_attrs[13], NULL},
-  {&totem_attrs[14], NULL},
-  {&totem_attrs[15], NULL},
-  {&totem_attrs[16], NULL},
-  {&totem_attrs[17], NULL},
-  {&totem_attrs[18], NULL},
-  {&totem_attrs[19], NULL},
-  {&totem_attrs[20], NULL},
-  {&totem_attrs[21], NULL},
-  {&totem_attrs[22], NULL},
-  {&totem_attrs[23], NULL}
+  {NULL, &bfs_cpu, NULL},
+  {NULL, &bfs_bu_cpu, NULL},
+  {NULL, &bfs_queue_cpu, NULL},
+  {NULL, &bfs_gpu, NULL},
+  {NULL, &bfs_bu_gpu, NULL},
+  {NULL, &bfs_vwarp_gpu, NULL},
+  {&totem_attrs[0], NULL, bfs_hybrid},
+  {&totem_attrs[1], NULL, bfs_hybrid},
+  {&totem_attrs[2], NULL, bfs_hybrid},
+  {&totem_attrs[3], NULL, bfs_hybrid},
+  {&totem_attrs[4], NULL, bfs_hybrid},
+  {&totem_attrs[5], NULL, bfs_hybrid},
+  {&totem_attrs[6], NULL, bfs_hybrid},
+  {&totem_attrs[7], NULL, bfs_hybrid},
+  {&totem_attrs[8], NULL, bfs_hybrid},
+  {&totem_attrs[9], NULL, bfs_hybrid},
+  {&totem_attrs[10],NULL, bfs_hybrid},
+  {&totem_attrs[11],NULL, bfs_hybrid},
+  {&totem_attrs[12],NULL, bfs_hybrid},
+  {&totem_attrs[13],NULL, bfs_hybrid},
+  {&totem_attrs[14],NULL, bfs_hybrid},
+  {&totem_attrs[15],NULL, bfs_hybrid},
+  {&totem_attrs[16],NULL, bfs_hybrid},
+  {&totem_attrs[17],NULL, bfs_hybrid},
+  {&totem_attrs[18],NULL, bfs_hybrid},
+  {&totem_attrs[19],NULL, bfs_hybrid},
+  {&totem_attrs[20],NULL, bfs_hybrid},
+  {&totem_attrs[21],NULL, bfs_hybrid},
+  {&totem_attrs[22],NULL, bfs_hybrid},
+  {&totem_attrs[23],NULL, bfs_hybrid},
+  {&totem_attrs[0], NULL, bfs_stepwise_hybrid},
+  {&totem_attrs[1], NULL, bfs_stepwise_hybrid},
+  {&totem_attrs[2], NULL, bfs_stepwise_hybrid},
+  {&totem_attrs[3], NULL, bfs_stepwise_hybrid},
+  {&totem_attrs[4], NULL, bfs_stepwise_hybrid},
+  {&totem_attrs[5], NULL, bfs_stepwise_hybrid},
+  {&totem_attrs[6], NULL, bfs_stepwise_hybrid},
+  {&totem_attrs[7], NULL, bfs_stepwise_hybrid},
+  {&totem_attrs[8], NULL, bfs_stepwise_hybrid},
+  {&totem_attrs[9], NULL, bfs_stepwise_hybrid},
+  {&totem_attrs[10],NULL, bfs_stepwise_hybrid},
+  {&totem_attrs[11],NULL, bfs_stepwise_hybrid},
+  {&totem_attrs[12],NULL, bfs_stepwise_hybrid},
+  {&totem_attrs[13],NULL, bfs_stepwise_hybrid},
+  {&totem_attrs[14],NULL, bfs_stepwise_hybrid},
+  {&totem_attrs[15],NULL, bfs_stepwise_hybrid},
+  {&totem_attrs[16],NULL, bfs_stepwise_hybrid},
+  {&totem_attrs[17],NULL, bfs_stepwise_hybrid},
+  {&totem_attrs[18],NULL, bfs_stepwise_hybrid},
+  {&totem_attrs[19],NULL, bfs_stepwise_hybrid},
+  {&totem_attrs[20],NULL, bfs_stepwise_hybrid},
+  {&totem_attrs[21],NULL, bfs_stepwise_hybrid},
+  {&totem_attrs[22],NULL, bfs_stepwise_hybrid},
+  {&totem_attrs[23],NULL, bfs_stepwise_hybrid}
 };
+
 
 // From Google documentation:
 // In order to run value-parameterized tests, we need to instantiate them,
@@ -267,6 +296,7 @@ bfs_param_t bfs_params[] = {
 //
 // Values() receives a list of parameters and the framework will execute the
 // whole set of tests BFSTest for each element of Values()
+// TODO: We are only able to use 50 test cases, add more to do the last few.
 INSTANTIATE_TEST_CASE_P(BFSGPUAndCPUTest, BFSTest, Values(&bfs_params[0],
                                                           &bfs_params[1],
                                                           &bfs_params[2],
@@ -296,7 +326,32 @@ INSTANTIATE_TEST_CASE_P(BFSGPUAndCPUTest, BFSTest, Values(&bfs_params[0],
                                                           &bfs_params[26],
                                                           &bfs_params[27],
                                                           &bfs_params[28],
-                                                          &bfs_params[29] ));
+                                                          &bfs_params[29],
+                                                          &bfs_params[30],
+                                                          &bfs_params[31],
+                                                          &bfs_params[32],
+                                                          &bfs_params[33],
+                                                          &bfs_params[34],
+                                                          &bfs_params[35],
+                                                          &bfs_params[36],
+                                                          &bfs_params[37],
+                                                          &bfs_params[38],
+                                                          &bfs_params[39],
+                                                          &bfs_params[40],
+                                                          &bfs_params[41],
+                                                          &bfs_params[42],
+                                                          &bfs_params[43],
+                                                          &bfs_params[44],
+                                                          &bfs_params[45],
+                                                          &bfs_params[46],
+                                                          &bfs_params[47],
+                                                          &bfs_params[48],
+                                                          &bfs_params[49]/*,
+                                                          &bfs_params[50],
+                                                          &bfs_params[51],
+                                                          &bfs_params[52],
+                                                          &bfs_params[53]*/
+                                                          ));
 
 #else
 

@@ -2,6 +2,16 @@
  * This file contains an implementation of the breadth-first search (BFS) graph
  * search algorithm using the totem framework. This is a modified version that
  * performs the algorithm in a Bottom Up fashion.
+ * 
+ * This implementation only works for undirected graphs.
+ * 
+ * Based off of the work by Scott Beamer et al.
+ * Searching for a Parent Instead of Fighting Over Children: A Fast
+ * Breadth-First Search Implementation for Graph500.
+ * http://www.eecs.berkeley.edu/Pubs/TechRpts/2011/EECS-2011-117.pdf
+ * 
+ * TODO(scott): Modify the algorithm to swap between top down and bottom up
+ *              steps.
  *
  *  Created on: 2014-08-26
  *  Authors:    Scott Sallinen
@@ -14,10 +24,10 @@
 // Per-partition specific state.
 typedef struct bfs_state_s {
   cost_t*   cost;              // One slot per vertex in the partition.
-  bitmap_t  visited[MAX_PARTITION_COUNT];  // A list of bitmaps, one for each
-                                           // remote partition.
+  bitmap_t  visited[MAX_PARTITION_COUNT];   // A list of bitmaps, one for each
+                                            // remote partition.
   bitmap_t  frontier[MAX_PARTITION_COUNT];  // A list of bitmaps, one for each
-                                           // remote partition.
+                                            // remote partition.
   bool*     finished;          // Points to Totem's finish flag.
   cost_t    level;             // Current level to process by the partition.
   frontier_state_t frontier_state;   // Frontier management state.
@@ -122,14 +132,8 @@ PRIVATE void bfs_bu_step(partition_t* par, bfs_state_t* state) {
   if (!finished) *(state->finished) = false;
 }
 
-/* Similar to the regular BFS for cpu, the difference being choosing
- * a step for each level is now possible.
- * This implementation only works for undirected graphs.
- * Based off of the work by Scott Beamer et al.
- * Searching for a Parent Instead of Fighting Over Children: A Fast
- * Breadth-First Search Implementation for Graph500.
- * http://www.eecs.berkeley.edu/Pubs/TechRpts/2011/EECS-2011-117.pdf
- */
+// This is a CPU version of the Bottom-up/Top-down BFS algorithm.
+// See file header for full details.
 void bfs_stepwise_cpu(partition_t* par, bfs_state_t* state) {
   // Update the frontier.
   frontier_update_bitmap_cpu(&state->frontier_state, state->visited[par->id]);
@@ -182,6 +186,7 @@ void bfs_bu_kernel(partition_t par, bfs_state_t state) {
        i < subgraph.vertices[vertex_id + 1]; i++) {
     int nbr_pid = GET_PARTITION_ID(subgraph.edges[i]);
     int nbr = GET_VERTEX_ID(subgraph.edges[i]);
+
     // Check if neighbour is in the current frontier.
     if (bitmap_is_set(state.frontier[nbr_pid], nbr)) {
       // Add the vertex we are exploring to the next frontier.
@@ -198,8 +203,8 @@ void bfs_bu_kernel(partition_t par, bfs_state_t state) {
   if (!finished) *(state.finished) = false;
 }
 
-// This is a GPU only version of the above Bottom-up/Top-down BFS algorithm.
-// See bfs_bu_cpu for full details.
+// This is a GPU version of the Bottom-up/Top-down BFS algorithm.
+// See file header for full details.
 __host__
 error_t bfs_stepwise_gpu(partition_t* par, bfs_state_t* state) {
   dim3 blocks;
@@ -211,14 +216,24 @@ error_t bfs_stepwise_gpu(partition_t* par, bfs_state_t* state) {
                              par->streams[1]);
   state->frontier[par->id] = state->frontier_state.current;
 
-  bfs_bu_kernel<<<blocks, threads_per_block>>>(*par, *state);
+  // Execute a step.
+  bfs_bu_kernel<<<blocks, threads_per_block, 0, par->streams[1]>>>
+    (*par, *state);
 
   return SUCCESS;
 }
 
 // The execution phase - based off of the partition we are, launch an approach.
 PRIVATE void bfs(partition_t* par) {
-  if (par->subgraph.vertex_count == 0) return;
+  if (par->subgraph.vertex_count == 0) { return; }
+
+  // Ignore the first round - this allows us to communicate the frontier with
+  // an updated visited status of the source vertex.
+  if (engine_superstep() == 1) {
+    engine_report_not_finished();
+    return;
+  }
+
   bfs_state_t* state = reinterpret_cast<bfs_state_t*>(par->algo_state);
 
   // Launch the processor specific algorithm.
@@ -245,7 +260,7 @@ PRIVATE void bfs_gather_cpu(partition_t* par, bfs_state_t* state,
 
     // Set the bit state to our local state.
     if (bitmap_is_set(state->visited[par->id], vid)) {
-      bitmap_set_cpu((bitmap_t)inbox->pull_values, index);
+      bitmap_set_cpu(reinterpret_cast<bitmap_t>(inbox->pull_values), index);
     }
   }
 }
@@ -262,7 +277,7 @@ void bfs_gather_gpu(partition_t par, bfs_state_t state,
 
   // Set the bit state to our local state.
   if (bitmap_is_set(state.visited[par.id], vid)) {
-    bitmap_set_gpu((bitmap_t)inbox.pull_values, index);
+    bitmap_set_gpu(reinterpret_cast<bitmap_t>(inbox.pull_values), index);
   }
 }
 
@@ -287,7 +302,8 @@ PRIVATE void bfs_gather(partition_t* par) {
       dim3 blocks;
       dim3 threads_per_block;
       KERNEL_CONFIGURE(inbox->count, blocks, threads_per_block);
-      bfs_gather_gpu<<<blocks, threads_per_block>>>(*par, *state, *inbox);
+      bfs_gather_gpu<<<blocks, threads_per_block, 0, par->streams[1]>>>
+        (*par, *state, *inbox);
     } else {
       assert(false);
     }
@@ -338,9 +354,19 @@ PRIVATE inline void bfs_init_gpu(partition_t* par) {
 
   // Initialize other partitions frontier bitmaps.
   for (int pid = 0; pid < engine_partition_count(); pid++) {
+    // Assign the outboxes to our frontier bitmap pointers.
     if (pid != par->id && par->outbox[pid].count != 0) {
       state->frontier[pid] =
         reinterpret_cast<bitmap_t>(par->outbox[pid].pull_values);
+    }
+    // Clear the inboxes, and also their shadows.
+    if (pid != par->id && par->inbox[pid].count != 0) {
+      bitmap_reset_gpu(reinterpret_cast<bitmap_t>
+                         (par->inbox[pid].pull_values),
+                       par->inbox[pid].count);
+      bitmap_reset_gpu(reinterpret_cast<bitmap_t>
+                         (par->inbox[pid].pull_values_s),
+                       par->inbox[pid].count);
     }
   }
 
@@ -364,9 +390,19 @@ PRIVATE inline void bfs_init_cpu(partition_t* par) {
 
   // Initialize other partitions bitmaps.
   for (int pid = 0; pid < engine_partition_count(); pid++) {
+    // Assign the outboxes to our frontier bitmap pointers.
     if (pid != par->id && par->outbox[pid].count != 0) {
       state->frontier[pid] =
         reinterpret_cast<bitmap_t>(par->outbox[pid].pull_values);
+    }
+    // Clear the inboxes, and also their shadows.
+    if (pid != par->id && par->inbox[pid].count != 0) {
+      bitmap_reset_cpu(reinterpret_cast<bitmap_t>
+                         (par->inbox[pid].pull_values),
+                       par->inbox[pid].count);
+      bitmap_reset_cpu(reinterpret_cast<bitmap_t>
+                         (par->inbox[pid].pull_values_s),
+                       par->inbox[pid].count);
     }
   }
 
@@ -440,7 +476,7 @@ PRIVATE void bfs_finalize(partition_t* par) {
 }
 
 // The launch point for the algorithm - set up engine, cost, and launch.
-error_t bfs_bu_hybrid(vid_t src, cost_t* cost) {
+error_t bfs_stepwise_hybrid(vid_t src, cost_t* cost) {
   // check for special cases
   bool finished = false;
   error_t rc = check_special_cases(src, cost, &finished);
