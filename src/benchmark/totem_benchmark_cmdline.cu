@@ -50,7 +50,7 @@ PRIVATE void display_help(char* exe_name, int exit_err) {
          "  -bNUM Benchmark\n"
          "     %d: BFS (default)\n"
          "     %d: PageRank\n"
-         "     %d: Dijkstra\n"
+         "     %d: SSSP\n"
          "     %d: Betweenness\n"
          "     %d: Graph500\n"
          "     %d: Clustering Coefficient\n" 
@@ -82,14 +82,14 @@ PRIVATE void display_help(char* exe_name, int exit_err) {
          "     %d: guided\n"
          "  -tNUM [1-%d] Number of CPU threads to use (default %d).\n" 
          "  -h Print this help message\n",
-         exe_name, BENCHMARK_BFS, BENCHMARK_PAGERANK, BENCHMARK_DIJKSTRA, 
-         BENCHMARK_BETWEENNESS, BENCHMARK_GRAPH500, 
-         BENCHMARK_CLUSTERING_COEFFICIENT, get_gpu_count(), PAR_RANDOM, 
-         PAR_SORTED_ASC, PAR_SORTED_DSC, GPU_GRAPH_MEM_DEVICE, 
-         GPU_GRAPH_MEM_MAPPED, GPU_GRAPH_MEM_MAPPED_VERTICES, 
+         exe_name, BENCHMARK_BFS, BENCHMARK_PAGERANK, BENCHMARK_SSSP,
+         BENCHMARK_BETWEENNESS, BENCHMARK_GRAPH500,
+         BENCHMARK_CLUSTERING_COEFFICIENT, get_gpu_count(), PAR_RANDOM,
+         PAR_SORTED_ASC, PAR_SORTED_DSC, GPU_GRAPH_MEM_DEVICE,
+         GPU_GRAPH_MEM_MAPPED, GPU_GRAPH_MEM_MAPPED_VERTICES,
          GPU_GRAPH_MEM_MAPPED_EDGES, GPU_GRAPH_MEM_PARTITIONED_EDGES, 
-         PLATFORM_CPU, PLATFORM_GPU, PLATFORM_HYBRID, REPEAT_MAX, 
-         omp_sched_static, omp_sched_dynamic, omp_sched_guided, 
+         PLATFORM_CPU, PLATFORM_GPU, PLATFORM_HYBRID, REPEAT_MAX,
+         omp_sched_static, omp_sched_dynamic, omp_sched_guided,
          omp_get_max_threads(), omp_get_max_threads());
   exit(exit_err);
 }
