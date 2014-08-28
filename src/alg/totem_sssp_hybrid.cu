@@ -1,5 +1,5 @@
 /**
- * This file contains an implementation of the single source shortest path 
+ * This file contains an implementation of the single source shortest path
  * (SSSP) algorithm using the totem framework.
  *
  *  Created on: 2014-05-10
@@ -70,7 +70,7 @@ void sssp_cpu(partition_t* par, sssp_state_t* state) {
                                          state->distance);
       weight_t new_distance = state->distance[v] + subgraph->weights[i];
       weight_t old_distance =
-         __sync_fetch_and_min_float(dst, new_distance);
+          __sync_fetch_and_min_float(dst, new_distance);
       if (new_distance < old_distance) {
         if (nbr_pid == par->id) {
           state->updated[nbr] = true;
@@ -105,7 +105,7 @@ void sssp_kernel(partition_t par, sssp_state_t state) {
     weight_t old_distance = atomicMin(dst, new_distance);
     if (new_distance < old_distance) {
       if (nbr_pid == par.id) {
-          state.updated[nbr] = true;
+        state.updated[nbr] = true;
       }
       finished_block = false;
     }
@@ -122,12 +122,12 @@ PRIVATE void sssp_gpu(partition_t* par, sssp_state_t* state) {
   CALL_CU_SAFE(cudaGetLastError());
 }
 
-template<int VWARP_WIDTH, int VWARP_BATCH, int THREADS_PER_BLOCK>
+template<int VWARP_WIDTH, int VWARP_BATCH>
 PRIVATE __global__
 void sssp_vwarp_kernel(partition_t par, sssp_state_t state,
                        const vid_t vertex_count) {
   if (THREAD_GLOBAL_INDEX >=
-      vwarp_thread_count(vertex_count, VWARP_WIDTH, VWARP_BATCH)) return;
+      vwarp_thread_count(vertex_count, VWARP_WIDTH, VWARP_BATCH)) { return; }
 
   const eid_t* __restrict vertices = par.subgraph.vertices;
 
@@ -140,9 +140,13 @@ void sssp_vwarp_kernel(partition_t par, sssp_state_t state,
   vid_t end_vertex = start_vertex +
     vwarp_warp_batch_size(vertex_count, VWARP_WIDTH, VWARP_BATCH);
   int warp_offset = vwarp_thread_index(VWARP_WIDTH);
-
   for (vid_t v = start_vertex; v < end_vertex; v++) {
-    if (state.updated[v] == true) {
+    // Make sure that all the threads in the virtual warp see the same
+    // updated state of the vertex being processed.
+    __shared__ bool updated;
+    updated = state.updated[v];
+    if (VWARP_WIDTH > 32) { __syncthreads(); }
+    if (updated == true) {
       state.updated[v] = false;
       const eid_t nbr_count = vertices[v + 1] - vertices[v];
       vid_t* nbrs = par.subgraph.edges + vertices[v];
@@ -181,7 +185,7 @@ sssp_gpu_launch(partition_t* par, sssp_state_t* state) {
   assert(VWARP_WIDTH <= threads);
   kernel_configure(vwarp_thread_count(vertex_count, VWARP_WIDTH, BATCH_SIZE),
                    blocks, threads);
-  sssp_vwarp_kernel<VWARP_WIDTH, BATCH_SIZE, threads>
+  sssp_vwarp_kernel<VWARP_WIDTH, BATCH_SIZE>
     <<<blocks, threads, 0, par->streams[1]>>>(*par, *state, vertex_count);
 }
 
@@ -194,9 +198,7 @@ PRIVATE void sssp_vwarp_gpu(partition_t* par, sssp_state_t* state) {
     // HIGH partitioning
     sssp_gpu_launch<VWARP_MEDIUM_WARP_WIDTH, VWARP_MEDIUM_BATCH_SIZE>,
     // LOW partitioning
-    // TODO(treza): Some tests may not pass for the following configuration.
-    // This would require further investigation.
-    sssp_gpu_launch<MAX_THREADS_PER_BLOCK, VWARP_MEDIUM_WARP_WIDTH>
+    sssp_gpu_launch<MAX_THREADS_PER_BLOCK, VWARP_MEDIUM_BATCH_SIZE>
   };
   int par_alg = engine_partition_algorithm();
   SSSP_GPU_FUNC[par_alg](par, state);
@@ -226,7 +228,7 @@ PRIVATE void sssp_scatter_cpu(grooves_box_table_t* inbox,
       inbox_values[index] < state->distance[vid] ?
       inbox_values[index] : state->distance[vid];
     weight_t new_distance = state->distance[vid];
-    if (old_distance > new_distance)  {
+    if (old_distance > new_distance) {
       state->updated[vid] = true;
     }
   }
