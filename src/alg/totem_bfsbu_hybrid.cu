@@ -4,7 +4,7 @@
  * performs the algorithm in a Bottom Up fashion.
  *
  *  Created on: 2014-08-26
- *  Authors:    Scott Sallinen 
+ *  Authors:    Scott Sallinen
  *              Abdullah Gharaibeh
  */
 
@@ -16,9 +16,11 @@ typedef struct bfs_state_s {
   cost_t*   cost;              // One slot per vertex in the partition.
   bitmap_t  visited[MAX_PARTITION_COUNT];  // A list of bitmaps, one for each
                                            // remote partition.
+  bitmap_t  frontier[MAX_PARTITION_COUNT];  // A list of bitmaps, one for each
+                                           // remote partition.
   bool*     finished;          // Points to Totem's finish flag.
   cost_t    level;             // Current level to process by the partition.
-  frontier_state_t frontier;   // Frontier management state.
+  frontier_state_t frontier_state;   // Frontier management state.
 } bfs_state_t;
 
 // State shared between all partitions.
@@ -100,10 +102,11 @@ PRIVATE void bfs_bu_step(partition_t* par, bfs_state_t* state) {
     for (eid_t i = subgraph->vertices[vertex_id];
          i < subgraph->vertices[vertex_id + 1]; i++) {
       int nbr_pid = GET_PARTITION_ID(subgraph->edges[i]);
+      int nbr = GET_VERTEX_ID(subgraph->edges[i]);
 
       // Check if the bitmap corresponding to the vertices PID is set.
       // This means the partition that the vertex belongs to, has explored it.
-      if (bitmap_is_set(state->visited[nbr_pid], subgraph->edges[i])) {
+      if (bitmap_is_set(state->frontier[nbr_pid], nbr)) {
         // Add the vertex we are exploring to the next frontier.
         bitmap_set_cpu(state->visited[par->id], vertex_id);
 
@@ -123,13 +126,14 @@ PRIVATE void bfs_bu_step(partition_t* par, bfs_state_t* state) {
  * a step for each level is now possible.
  * This implementation only works for undirected graphs.
  * Based off of the work by Scott Beamer et al.
- * Searching for a Parent Instead of Fighting Over Children: A Fast 
+ * Searching for a Parent Instead of Fighting Over Children: A Fast
  * Breadth-First Search Implementation for Graph500.
  * http://www.eecs.berkeley.edu/Pubs/TechRpts/2011/EECS-2011-117.pdf
  */
 void bfs_stepwise_cpu(partition_t* par, bfs_state_t* state) {
   // Update the frontier.
-  frontier_update_bitmap_cpu(&state->frontier, state->visited[par->id]);
+  frontier_update_bitmap_cpu(&state->frontier_state, state->visited[par->id]);
+  state->frontier[par->id] = state->frontier_state.current;
 
   // Execute a step.
   bfs_bu_step(par, state);
@@ -171,15 +175,15 @@ void bfs_bu_kernel(partition_t par, bfs_state_t state) {
   bool finished = true;
 
   // Ignore the local vertex if it has already been visited.
-  if (bitmap_is_set(state.visited[par.id], vertex_id) ) { return; }
+  if (bitmap_is_set(state.visited[par.id], vertex_id)) { return; }
 
   // Iterate across all neighbours of the vertex.
   for (eid_t i = subgraph.vertices[vertex_id];
        i < subgraph.vertices[vertex_id + 1]; i++) {
     int nbr_pid = GET_PARTITION_ID(subgraph.edges[i]);
-
+    int nbr = GET_VERTEX_ID(subgraph.edges[i]);
     // Check if neighbour is in the current frontier.
-    if (bitmap_is_set(state.visited[nbr_pid], subgraph.edges[i])) {
+    if (bitmap_is_set(state.frontier[nbr_pid], nbr)) {
       // Add the vertex we are exploring to the next frontier.
       bitmap_set_gpu(state.visited[par.id], vertex_id);
 
@@ -203,8 +207,9 @@ error_t bfs_stepwise_gpu(partition_t* par, bfs_state_t* state) {
   KERNEL_CONFIGURE(par->subgraph.vertex_count, blocks, threads_per_block);
 
   // Update the frontier.
-  frontier_update_bitmap_gpu(&state->frontier, state->visited[par->id],
+  frontier_update_bitmap_gpu(&state->frontier_state, state->visited[par->id],
                              par->streams[1]);
+  state->frontier[par->id] = state->frontier_state.current;
 
   bfs_bu_kernel<<<blocks, threads_per_block>>>(*par, *state);
 
@@ -268,19 +273,19 @@ PRIVATE void bfs_gather(partition_t* par) {
 
   // Across all partitions that are not us.
   for (int rmt_pid = 0; rmt_pid < engine_partition_count(); rmt_pid++) {
-    if (rmt_pid == par->id) continue;
+    if (rmt_pid == par->id) { continue; }
 
     // Select the inbox to apply to.
     grooves_box_table_t* inbox = &par->inbox[rmt_pid];
+    if (inbox->count == 0) { continue; }
 
     // Select a method based off of our processor type.
     if (par->processor.type == PROCESSOR_CPU) {
       bfs_gather_cpu(par, state, inbox);
     } else if (par->processor.type == PROCESSOR_GPU) {
+      // Set up to iterate across the items in the inbox.
       dim3 blocks;
       dim3 threads_per_block;
-
-      // Set up to iterate across the items in the inbox.
       KERNEL_CONFIGURE(inbox->count, blocks, threads_per_block);
       bfs_gather_gpu<<<blocks, threads_per_block>>>(*par, *state, *inbox);
     } else {
@@ -320,7 +325,7 @@ PRIVATE void bfs_aggregate(partition_t* par) {
 
 // A simple kernel that sets the source vertex to visited on the GPU.
 __global__ void bfs_init_bu_kernel(bitmap_t visited, vid_t src) {
-  if (THREAD_GLOBAL_INDEX != 0) return;
+  if (THREAD_GLOBAL_INDEX != 0) { return; }
   bitmap_set_gpu(visited, src);
 }
 
@@ -331,10 +336,10 @@ PRIVATE inline void bfs_init_gpu(partition_t* par) {
   // Initialize our visited bitmap.
   state->visited[par->id] = bitmap_init_gpu(par->subgraph.vertex_count);
 
-  // Initialize other partitions bitmaps.
+  // Initialize other partitions frontier bitmaps.
   for (int pid = 0; pid < engine_partition_count(); pid++) {
     if (pid != par->id && par->outbox[pid].count != 0) {
-      state->visited[pid] =
+      state->frontier[pid] =
         reinterpret_cast<bitmap_t>(par->outbox[pid].pull_values);
     }
   }
@@ -346,15 +351,8 @@ PRIVATE inline void bfs_init_gpu(partition_t* par) {
     CALL_CU_SAFE(cudaGetLastError());
   }
 
-  /*
-  // Set the source vertex as visited, no matter what partition it is in.
-  bfs_init_bu_kernel<<<1, 1, 0, par->streams[1]>>>
-    (state->visited[GET_PARTITION_ID(state_g.src)], GET_VERTEX_ID(state_g.src));
-  CALL_CU_SAFE(cudaGetLastError());
-  */
-
   // Initialize our local frontier.
-  frontier_init_gpu(&state->frontier, par->subgraph.vertex_count);
+  frontier_init_gpu(&state->frontier_state, par->subgraph.vertex_count);
 }
 
 // Initialize the CPU memory - bitmaps and frontier.
@@ -367,7 +365,7 @@ PRIVATE inline void bfs_init_cpu(partition_t* par) {
   // Initialize other partitions bitmaps.
   for (int pid = 0; pid < engine_partition_count(); pid++) {
     if (pid != par->id && par->outbox[pid].count != 0) {
-      state->visited[pid] =
+      state->frontier[pid] =
         reinterpret_cast<bitmap_t>(par->outbox[pid].pull_values);
     }
   }
@@ -377,27 +375,20 @@ PRIVATE inline void bfs_init_cpu(partition_t* par) {
     bitmap_set_cpu(state->visited[par->id], GET_VERTEX_ID(state_g.src));
   }
 
-  /*
-  // Set the source vertex as visited, no matter what partition it is in.
-  bitmap_set_cpu(state->visited[GET_PARTITION_ID(state_g.src)], 
-                 GET_VERTEX_ID(state_g.src));
-  */
-
   // Initialize our local frontier.
-  frontier_init_cpu(&state->frontier, par->subgraph.vertex_count);
+  frontier_init_cpu(&state->frontier_state, par->subgraph.vertex_count);
 }
 
 // The init phase - Set up the memory and statuses.
 PRIVATE void bfs_init(partition_t* par) {
-  if (par->subgraph.vertex_count == 0) return;
+  if (par->subgraph.vertex_count == 0) { return; }
   bfs_state_t* state =
     reinterpret_cast<bfs_state_t*>(calloc(1, sizeof(bfs_state_t)));
   assert(state);
 
+  // Initialize based off of our processor type.
   par->algo_state = state;
   totem_mem_t type = TOTEM_MEM_HOST;
-
-  // Initialize based off of our processor type.
   if (par->processor.type == PROCESSOR_CPU) {
     bfs_init_cpu(par);
   } else if (par->processor.type == PROCESSOR_GPU) {
@@ -433,11 +424,11 @@ PRIVATE void bfs_finalize(partition_t* par) {
   // Finalize frontiers.
   if (par->processor.type == PROCESSOR_CPU) {
     bitmap_finalize_cpu(state->visited[par->id]);
-    frontier_finalize_cpu(&state->frontier);
+    frontier_finalize_cpu(&state->frontier_state);
   } else if (par->processor.type == PROCESSOR_GPU) {
     bitmap_finalize_gpu(state->visited[par->id]);
     type = TOTEM_MEM_DEVICE;
-    frontier_finalize_gpu(&state->frontier);
+    frontier_finalize_gpu(&state->frontier_state);
   } else {
     assert(false);
   }
