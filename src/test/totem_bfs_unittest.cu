@@ -15,21 +15,14 @@ using ::testing::TestWithParam;
 using ::testing::ValuesIn;
 
 // The following implementation relies on TestWithParam<BFSFunction> to test
-// the two versions of BFS implemented: CPU and GPU.
-// Details on how to use TestWithParam<T> can be found at:
+// the the different versions of BFS. Details on how to use TestWithParam<T>
+// can be found at:
 // http://code.google.com/p/googletest/source/browse/trunk/samples/sample7_unittest.cc
 
 typedef error_t(*BFSFunction)(graph_t*, vid_t, cost_t*);
+typedef error_t(*BFSHybridFunction)(vid_t, cost_t*);
 
-// This is to allow testing the vanilla bfs functions and the hybrid one
-// that is based on the framework. Note that have a different signature
-// of the hybrid algorithm forced this work-around.
-typedef struct bfs_param_s {
-  totem_attr_t* attr;   // totem attributes for totem-based tests
-  BFSFunction   func;   // the vanilla bfs function if attr is NULL
-} bfs_param_t;
-
-class BFSTest : public TestWithParam<bfs_param_t*> {
+class BFSTest : public TestWithParam<test_param_t*> {
  public:
   virtual void SetUp() {
     // Ensure the minimum CUDA architecture is supported
@@ -49,22 +42,26 @@ class BFSTest : public TestWithParam<bfs_param_t*> {
       if (totem_init(_graph, _bfs_param->attr) == FAILURE) {
         return FAILURE;
       }
-      error_t err = bfs_hybrid(src, _cost);
+      BFSHybridFunction func =
+          reinterpret_cast<BFSHybridFunction>(_bfs_param->func);
+      error_t err = func(src, _cost);
       totem_finalize();
       return err;
     }
-    return _bfs_param->func(_graph, src, _cost);
+    BFSFunction func = reinterpret_cast<BFSFunction>(_bfs_param->func);
+    return func(_graph, src, _cost);
   }
+
  protected:
-  bfs_param_t* _bfs_param;
-  totem_mem_t _mem_type;
-  graph_t* _graph;
-  cost_t* _cost;
+  test_param_t* _bfs_param;
+  totem_mem_t   _mem_type;
+  graph_t*      _graph;
+  cost_t*       _cost;
 };
 
 // Tests BFS for empty graphs.
 TEST_P(BFSTest, Empty) {
-  _graph = (graph_t*)calloc(1, sizeof(graph_t));
+  _graph = reinterpret_cast<graph_t*>(calloc(1, sizeof(graph_t)));
   EXPECT_EQ(FAILURE, TestGraph(0));
   EXPECT_EQ(FAILURE, TestGraph(99));
   free(_graph);
@@ -75,7 +72,7 @@ TEST_P(BFSTest, Empty) {
 TEST_P(BFSTest, SingleNode) {
   graph_initialize(DATA_FOLDER("single_node.totem"), false, &_graph);
   CALL_SAFE(totem_malloc(_graph->vertex_count * sizeof(cost_t), _mem_type,
-                         (void**)&_cost));
+                         reinterpret_cast<void**>(&_cost)));
   EXPECT_EQ(SUCCESS, TestGraph(0));
   EXPECT_EQ((cost_t)0, _cost[0]);
   EXPECT_EQ(FAILURE, TestGraph(1));
@@ -84,7 +81,7 @@ TEST_P(BFSTest, SingleNode) {
 TEST_P(BFSTest, SingleNodeLoop) {
   graph_initialize(DATA_FOLDER("single_node_loop.totem"), false, &_graph);
   CALL_SAFE(totem_malloc(_graph->vertex_count * sizeof(cost_t), _mem_type,
-                         (void**)&_cost));
+                         reinterpret_cast<void**>(&_cost)));
   EXPECT_EQ(SUCCESS, TestGraph(0));
   EXPECT_EQ((cost_t)0, _cost[0]);
   EXPECT_EQ(FAILURE, TestGraph(1));
@@ -95,13 +92,13 @@ TEST_P(BFSTest, EmptyEdges) {
   graph_initialize(DATA_FOLDER("disconnected_1000_nodes.totem"), false,
                    &_graph);
   CALL_SAFE(totem_malloc(_graph->vertex_count * sizeof(cost_t), _mem_type,
-                         (void**)&_cost));
+                         reinterpret_cast<void**>(&_cost)));
 
   // First vertex as source
   vid_t source = 0;
   EXPECT_EQ(SUCCESS, TestGraph(source));
   EXPECT_EQ((cost_t)0, _cost[source]);
-  for(vid_t vertex = source + 1; vertex < _graph->vertex_count; vertex++) {
+  for (vid_t vertex = source + 1; vertex < _graph->vertex_count; vertex++) {
     EXPECT_EQ(INF_COST, _cost[vertex]);
   }
 
@@ -109,14 +106,14 @@ TEST_P(BFSTest, EmptyEdges) {
   source = _graph->vertex_count - 1;
   EXPECT_EQ(SUCCESS, TestGraph(source));
   EXPECT_EQ((cost_t)0, _cost[source]);
-  for(vid_t vertex = source; vertex < _graph->vertex_count - 1; vertex++){
+  for (vid_t vertex = source; vertex < _graph->vertex_count - 1; vertex++) {
     EXPECT_EQ(INF_COST, _cost[vertex]);
   }
 
   // A vertex in the middle as source
   source = 199;
   EXPECT_EQ(SUCCESS, TestGraph(source));
-  for(vid_t vertex = 0; vertex < _graph->vertex_count; vertex++) {
+  for (vid_t vertex = 0; vertex < _graph->vertex_count; vertex++) {
     EXPECT_EQ((vertex == source) ? (cost_t)0 : INF_COST, _cost[vertex]);
   }
 
@@ -128,27 +125,28 @@ TEST_P(BFSTest, EmptyEdges) {
 TEST_P(BFSTest, Chain) {
   graph_initialize(DATA_FOLDER("chain_1000_nodes.totem"), false, &_graph);
   CALL_SAFE(totem_malloc(_graph->vertex_count * sizeof(cost_t), _mem_type,
-                         (void**)&_cost));
+                         reinterpret_cast<void**>(&_cost)));
 
   // First vertex as source
   vid_t source = 0;
   EXPECT_EQ(SUCCESS, TestGraph(source));
-  for(vid_t vertex = source; vertex < _graph->vertex_count; vertex++){
+  for (vid_t vertex = source; vertex < _graph->vertex_count; vertex++) {
     EXPECT_EQ(vertex, _cost[vertex]);
   }
 
   // Last vertex as source
   source = _graph->vertex_count - 1;
   EXPECT_EQ(SUCCESS, TestGraph(source));
-  for(vid_t vertex = source; vertex < _graph->vertex_count; vertex++){
+  for (vid_t vertex = source; vertex < _graph->vertex_count; vertex++) {
     EXPECT_EQ(source - vertex, _cost[vertex]);
   }
 
   // A vertex in the middle as source
   source = 199;
   EXPECT_EQ(SUCCESS, TestGraph(source));
-  for(vid_t vertex = 0; vertex < _graph->vertex_count; vertex++) {
-    EXPECT_EQ((cost_t)abs((double)source - (double)vertex), _cost[vertex]);
+  for (vid_t vertex = 0; vertex < _graph->vertex_count; vertex++) {
+    EXPECT_EQ((cost_t)abs(static_cast<int64_t>(source) -
+                          static_cast<int64_t>(vertex)), _cost[vertex]);
   }
 
   // Non existent vertex source
@@ -160,13 +158,13 @@ TEST_P(BFSTest, CompleteGraph) {
   graph_initialize(DATA_FOLDER("complete_graph_300_nodes.totem"), false,
                    &_graph);
   CALL_SAFE(totem_malloc(_graph->vertex_count * sizeof(cost_t), _mem_type,
-                         (void**)&_cost));
+                         reinterpret_cast<void**>(&_cost)));
 
   // First vertex as source
   vid_t source = 0;
   EXPECT_EQ(SUCCESS, TestGraph(source));
   EXPECT_EQ((cost_t)0, _cost[source]);
-  for(vid_t vertex = source + 1; vertex < _graph->vertex_count; vertex++){
+  for (vid_t vertex = source + 1; vertex < _graph->vertex_count; vertex++) {
     EXPECT_EQ((cost_t)1, _cost[vertex]);
   }
 
@@ -174,14 +172,14 @@ TEST_P(BFSTest, CompleteGraph) {
   source = _graph->vertex_count - 1;
   EXPECT_EQ(SUCCESS, TestGraph(source));
   EXPECT_EQ((cost_t)0, _cost[source]);
-  for(vid_t vertex = 0; vertex < source; vertex++) {
+  for (vid_t vertex = 0; vertex < source; vertex++) {
     EXPECT_EQ((cost_t)1, _cost[vertex]);
   }
 
   // A vertex source in the middle
   source = 199;
   EXPECT_EQ(SUCCESS, TestGraph(source));
-  for(vid_t vertex = 0; vertex < _graph->vertex_count; vertex++) {
+  for (vid_t vertex = 0; vertex < _graph->vertex_count; vertex++) {
     EXPECT_EQ((cost_t)((source == vertex) ? 0 : 1), _cost[vertex]);
   }
 
@@ -193,13 +191,13 @@ TEST_P(BFSTest, CompleteGraph) {
 TEST_P(BFSTest, Star) {
   graph_initialize(DATA_FOLDER("star_1000_nodes.totem"), false, &_graph);
   CALL_SAFE(totem_malloc(_graph->vertex_count * sizeof(cost_t), _mem_type,
-                         (void**)&_cost));
+                         reinterpret_cast<void**>(&_cost)));
 
   // First vertex as source
   vid_t source = 0;
   EXPECT_EQ(SUCCESS, TestGraph(source));
   EXPECT_EQ((cost_t)0, _cost[source]);
-  for(vid_t vertex = source + 1; vertex < _graph->vertex_count; vertex++){
+  for (vid_t vertex = source + 1; vertex < _graph->vertex_count; vertex++) {
     EXPECT_EQ((cost_t)1, _cost[vertex]);
   }
 
@@ -208,7 +206,7 @@ TEST_P(BFSTest, Star) {
   EXPECT_EQ(SUCCESS, TestGraph(source));
   EXPECT_EQ((cost_t)0, _cost[source]);
   EXPECT_EQ((cost_t)1, _cost[0]);
-  for(vid_t vertex = 1; vertex < source - 1; vertex++) {
+  for (vid_t vertex = 1; vertex < source - 1; vertex++) {
     EXPECT_EQ((cost_t)2, _cost[vertex]);
   }
 
@@ -216,7 +214,7 @@ TEST_P(BFSTest, Star) {
   source = 199;
   EXPECT_EQ(SUCCESS, TestGraph(source));
   EXPECT_EQ((cost_t)1, _cost[0]);
-  for(vid_t vertex = 1; vertex < _graph->vertex_count; vertex++) {
+  for (vid_t vertex = 1; vertex < _graph->vertex_count; vertex++) {
     EXPECT_EQ((cost_t)((source == vertex) ? 0 : 2), _cost[vertex]);
   }
 
@@ -224,50 +222,30 @@ TEST_P(BFSTest, Star) {
   EXPECT_EQ(FAILURE, TestGraph(_graph->vertex_count));
 }
 
-// TODO(lauro): Add test cases for not well defined structures.
+// Defines the set of BFS vanilla implementations to be tested. To test
+// a new implementation, simply add it to the set below.
+void* bfs_vanilla_funcs[] = {
+  reinterpret_cast<void*>(&bfs_cpu),
+  reinterpret_cast<void*>(&bfs_bu_cpu),
+  reinterpret_cast<void*>(&bfs_queue_cpu),
+  reinterpret_cast<void*>(&bfs_gpu),
+  reinterpret_cast<void*>(&bfs_vwarp_gpu),
+  reinterpret_cast<void*>(&bfs_bu_gpu),
+};
+const int bfs_vanilla_count = STATIC_ARRAY_COUNT(bfs_vanilla_funcs);
 
-// Values() seems to accept only pointers, hence the possible parameters
-// are defined here, and a pointer to each ot them is used.
-static const uint32_t bfs_param_count = hybrid_configurations_count + 6;
-static bfs_param_t* bfs_params[bfs_param_count];
+// Defines the set of BFS hybrid implementations to be tested. To test
+// a new implementation, simply add it to the set below.
+void* bfs_hybrid_funcs[] = {
+  reinterpret_cast<void*>(&bfs_hybrid),
+};
+const int bfs_hybrid_count = STATIC_ARRAY_COUNT(bfs_hybrid_funcs);
 
-void PushBFSParam(std::vector<bfs_param_t>* bfs_params_vector,
-                  totem_attr_t* attr, BFSFunction func) {
-  bfs_param_t bfs_param;
-  bfs_param.attr = attr;
-  bfs_param.func = func;
-  bfs_params_vector->push_back(bfs_param);
-}
-
-bfs_param_t** GetBFSParameters() {
-  static std::vector<bfs_param_t> bfs_params_vector;
-  // When this function is passed as a parameter to "ValuesIn" in the context of
-  // INSTANTIATE_TEST_CASE_P macro below, it gets invoked more than once within
-  // the macro. Therefore, the following hack is used to ensure that
-  // initialization of the parameters array happens once.
-  static bool initialized = false;
-  if (initialized) { return bfs_params; }
-  initialized = true;
-  // Add the non-hybrid implementations.
-  PushBFSParam(&bfs_params_vector, NULL, &bfs_cpu);
-  PushBFSParam(&bfs_params_vector, NULL, &bfs_bu_cpu);
-  PushBFSParam(&bfs_params_vector, NULL, &bfs_queue_cpu);
-  PushBFSParam(&bfs_params_vector, NULL, &bfs_gpu);
-  PushBFSParam(&bfs_params_vector, NULL, &bfs_bu_gpu);
-  PushBFSParam(&bfs_params_vector, NULL, &bfs_vwarp_gpu);
-  // Add the different configurations of the hybrid implementation.
-  for (uint32_t i = 0; i < hybrid_configurations_count; i++) {
-    PushBFSParam(&bfs_params_vector, &totem_attrs[i], NULL);
-  }
-
-  // Fill the bfs_params array with references to the parameters.
-  assert(bfs_param_count == bfs_params_vector.size());
-  for(std::vector<bfs_param_t>::size_type i = 0;
-      i != bfs_params_vector.size(); i++) {
-    bfs_params[i] = &bfs_params_vector[i];
-  }
-  return bfs_params;
-}
+// Maintains references to the different configurations (vanilla and hybrid)
+// that will be tested by the framework.
+static const int bfs_params_count = bfs_vanilla_count +
+    bfs_hybrid_count * hybrid_configurations_count;
+static test_param_t* bfs_params[bfs_params_count];
 
 // From Google documentation:
 // In order to run value-parameterized tests, we need to instantiate them,
@@ -276,8 +254,11 @@ bfs_param_t** GetBFSParameters() {
 // Values() receives a list of parameters and the framework will execute the
 // whole set of tests BFSTest for each element of Values()
 INSTANTIATE_TEST_CASE_P(BFSGPUAndCPUTest, BFSTest,
-                        ValuesIn(GetBFSParameters(),
-                                 bfs_params + bfs_param_count));
+                        ValuesIn(GetParameters(
+                            bfs_params, bfs_params_count,
+                            bfs_vanilla_funcs, bfs_vanilla_count,
+                            bfs_hybrid_funcs, bfs_hybrid_count),
+                                 bfs_params + bfs_params_count));
 #else
 
 // From Google documentation:
