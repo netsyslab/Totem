@@ -1,4 +1,4 @@
-/* 
+/*
  * Contains unit tests for an implementation of the breadth-first search (BFS)
  * graph search algorithm.
  *
@@ -12,7 +12,7 @@
 #if GTEST_HAS_PARAM_TEST
 
 using ::testing::TestWithParam;
-using ::testing::Values;
+using ::testing::ValuesIn;
 
 // The following implementation relies on TestWithParam<BFSFunction> to test
 // the two versions of BFS implemented: CPU and GPU.
@@ -74,7 +74,7 @@ TEST_P(BFSTest, Empty) {
 // Tests BFS for single node graphs.
 TEST_P(BFSTest, SingleNode) {
   graph_initialize(DATA_FOLDER("single_node.totem"), false, &_graph);
-  CALL_SAFE(totem_malloc(_graph->vertex_count * sizeof(cost_t), _mem_type, 
+  CALL_SAFE(totem_malloc(_graph->vertex_count * sizeof(cost_t), _mem_type,
                          (void**)&_cost));
   EXPECT_EQ(SUCCESS, TestGraph(0));
   EXPECT_EQ((cost_t)0, _cost[0]);
@@ -83,7 +83,7 @@ TEST_P(BFSTest, SingleNode) {
 
 TEST_P(BFSTest, SingleNodeLoop) {
   graph_initialize(DATA_FOLDER("single_node_loop.totem"), false, &_graph);
-  CALL_SAFE(totem_malloc(_graph->vertex_count * sizeof(cost_t), _mem_type, 
+  CALL_SAFE(totem_malloc(_graph->vertex_count * sizeof(cost_t), _mem_type,
                          (void**)&_cost));
   EXPECT_EQ(SUCCESS, TestGraph(0));
   EXPECT_EQ((cost_t)0, _cost[0]);
@@ -94,7 +94,7 @@ TEST_P(BFSTest, SingleNodeLoop) {
 TEST_P(BFSTest, EmptyEdges) {
   graph_initialize(DATA_FOLDER("disconnected_1000_nodes.totem"), false,
                    &_graph);
-  CALL_SAFE(totem_malloc(_graph->vertex_count * sizeof(cost_t), _mem_type, 
+  CALL_SAFE(totem_malloc(_graph->vertex_count * sizeof(cost_t), _mem_type,
                          (void**)&_cost));
 
   // First vertex as source
@@ -127,7 +127,7 @@ TEST_P(BFSTest, EmptyEdges) {
 // Tests BFS for a chain of 1000 nodes.
 TEST_P(BFSTest, Chain) {
   graph_initialize(DATA_FOLDER("chain_1000_nodes.totem"), false, &_graph);
-  CALL_SAFE(totem_malloc(_graph->vertex_count * sizeof(cost_t), _mem_type, 
+  CALL_SAFE(totem_malloc(_graph->vertex_count * sizeof(cost_t), _mem_type,
                          (void**)&_cost));
 
   // First vertex as source
@@ -159,7 +159,7 @@ TEST_P(BFSTest, Chain) {
 TEST_P(BFSTest, CompleteGraph) {
   graph_initialize(DATA_FOLDER("complete_graph_300_nodes.totem"), false,
                    &_graph);
-  CALL_SAFE(totem_malloc(_graph->vertex_count * sizeof(cost_t), _mem_type, 
+  CALL_SAFE(totem_malloc(_graph->vertex_count * sizeof(cost_t), _mem_type,
                          (void**)&_cost));
 
   // First vertex as source
@@ -192,7 +192,7 @@ TEST_P(BFSTest, CompleteGraph) {
 // Tests BFS for a complete graph of 1000 nodes.
 TEST_P(BFSTest, Star) {
   graph_initialize(DATA_FOLDER("star_1000_nodes.totem"), false, &_graph);
-  CALL_SAFE(totem_malloc(_graph->vertex_count * sizeof(cost_t), _mem_type, 
+  CALL_SAFE(totem_malloc(_graph->vertex_count * sizeof(cost_t), _mem_type,
                          (void**)&_cost));
 
   // First vertex as source
@@ -228,38 +228,46 @@ TEST_P(BFSTest, Star) {
 
 // Values() seems to accept only pointers, hence the possible parameters
 // are defined here, and a pointer to each ot them is used.
-bfs_param_t bfs_params[] = {
-  {NULL, &bfs_cpu},
-  {NULL, &bfs_bu_cpu},
-  {NULL, &bfs_queue_cpu},
-  {NULL, &bfs_gpu},
-  {NULL, &bfs_bu_gpu},
-  {NULL, &bfs_vwarp_gpu},
-  {&totem_attrs[0], NULL},
-  {&totem_attrs[1], NULL},
-  {&totem_attrs[2], NULL},
-  {&totem_attrs[3], NULL},
-  {&totem_attrs[4], NULL},
-  {&totem_attrs[5], NULL},
-  {&totem_attrs[6], NULL},
-  {&totem_attrs[7], NULL},
-  {&totem_attrs[8], NULL},
-  {&totem_attrs[9], NULL},
-  {&totem_attrs[10], NULL},
-  {&totem_attrs[11], NULL},
-  {&totem_attrs[12], NULL},
-  {&totem_attrs[13], NULL},
-  {&totem_attrs[14], NULL},
-  {&totem_attrs[15], NULL},
-  {&totem_attrs[16], NULL},
-  {&totem_attrs[17], NULL},
-  {&totem_attrs[18], NULL},
-  {&totem_attrs[19], NULL},
-  {&totem_attrs[20], NULL},
-  {&totem_attrs[21], NULL},
-  {&totem_attrs[22], NULL},
-  {&totem_attrs[23], NULL}
-};
+static const uint32_t bfs_param_count = hybrid_configurations_count + 6;
+static bfs_param_t* bfs_params[bfs_param_count];
+
+void PushBFSParam(std::vector<bfs_param_t>* bfs_params_vector,
+                  totem_attr_t* attr, BFSFunction func) {
+  bfs_param_t bfs_param;
+  bfs_param.attr = attr;
+  bfs_param.func = func;
+  bfs_params_vector->push_back(bfs_param);
+}
+
+bfs_param_t** GetBFSParameters() {
+  static std::vector<bfs_param_t> bfs_params_vector;
+  // When this function is passed as a parameter to "ValuesIn" in the context of
+  // INSTANTIATE_TEST_CASE_P macro below, it gets invoked more than once within
+  // the macro. Therefore, the following hack is used to ensure that
+  // initialization of the parameters array happens once.
+  static bool initialized = false;
+  if (initialized) { return bfs_params; }
+  initialized = true;
+  // Add the non-hybrid implementations.
+  PushBFSParam(&bfs_params_vector, NULL, &bfs_cpu);
+  PushBFSParam(&bfs_params_vector, NULL, &bfs_bu_cpu);
+  PushBFSParam(&bfs_params_vector, NULL, &bfs_queue_cpu);
+  PushBFSParam(&bfs_params_vector, NULL, &bfs_gpu);
+  PushBFSParam(&bfs_params_vector, NULL, &bfs_bu_gpu);
+  PushBFSParam(&bfs_params_vector, NULL, &bfs_vwarp_gpu);
+  // Add the different configurations of the hybrid implementation.
+  for (uint32_t i = 0; i < hybrid_configurations_count; i++) {
+    PushBFSParam(&bfs_params_vector, &totem_attrs[i], NULL);
+  }
+
+  // Fill the bfs_params array with references to the parameters.
+  assert(bfs_param_count == bfs_params_vector.size());
+  for(std::vector<bfs_param_t>::size_type i = 0;
+      i != bfs_params_vector.size(); i++) {
+    bfs_params[i] = &bfs_params_vector[i];
+  }
+  return bfs_params;
+}
 
 // From Google documentation:
 // In order to run value-parameterized tests, we need to instantiate them,
@@ -267,37 +275,9 @@ bfs_param_t bfs_params[] = {
 //
 // Values() receives a list of parameters and the framework will execute the
 // whole set of tests BFSTest for each element of Values()
-INSTANTIATE_TEST_CASE_P(BFSGPUAndCPUTest, BFSTest, Values(&bfs_params[0],
-                                                          &bfs_params[1],
-                                                          &bfs_params[2],
-                                                          &bfs_params[3],
-                                                          &bfs_params[4],
-                                                          &bfs_params[5],
-                                                          &bfs_params[6],
-                                                          &bfs_params[7],
-                                                          &bfs_params[8],
-                                                          &bfs_params[9],
-                                                          &bfs_params[10],
-                                                          &bfs_params[11],
-                                                          &bfs_params[12],
-                                                          &bfs_params[13],
-                                                          &bfs_params[14],
-                                                          &bfs_params[15],
-                                                          &bfs_params[16],
-                                                          &bfs_params[17],
-                                                          &bfs_params[18],
-                                                          &bfs_params[19],
-                                                          &bfs_params[20],
-                                                          &bfs_params[21],
-                                                          &bfs_params[22],
-                                                          &bfs_params[23],
-                                                          &bfs_params[24],
-                                                          &bfs_params[25],
-                                                          &bfs_params[26],
-                                                          &bfs_params[27],
-                                                          &bfs_params[28],
-                                                          &bfs_params[29] ));
-
+INSTANTIATE_TEST_CASE_P(BFSGPUAndCPUTest, BFSTest,
+                        ValuesIn(GetBFSParameters(),
+                                 bfs_params + bfs_param_count));
 #else
 
 // From Google documentation:

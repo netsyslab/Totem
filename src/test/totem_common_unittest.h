@@ -163,4 +163,8 @@ PRIVATE totem_attr_t totem_attrs[] = {
    MSG_SIZE_ZERO, MSG_SIZE_ZERO},
 };
 
+// The number of hybrid configurations in the totem_attr array.
+static const uint32_t hybrid_configurations_count =
+    sizeof(totem_attrs) / sizeof(*totem_attrs);
+
 #endif // TOTEM_COMMON_UNITTEST_H
