@@ -150,5 +150,7 @@ GTEST_SRC  = $(GTEST_PATH)/src/gtest_main.cc $(GTEST_PATH)/src/gtest-all.cc
 TEST_PATH   = $(ROOTDIR)/test
 TEST_DEPS   = $(wildcard $(TEST_PATH)/*.[cuh,h])
 
+WATTSUP_PATH   = $(ROOTDIR)/thirdparty/wattsup
+
 TOTEM_PATH   = $(ROOTDIR)/totem
 TOTEM_DEPS   = $(wildcard $(TOTEM_PATH)/*.[cuh,h])
