@@ -63,39 +63,6 @@ PRIVATE error_t check_special_cases(vid_t src, cost_t* cost, bool* finished) {
   return SUCCESS;
 }
 
-/* Redacted td step.
-// A classic top down step that iterates over vertices in the frontier
-// and tries to add their neighbours to the next frontier.
-PRIVATE void bfs_td_step(graph_t* graph, cost_t* cost, bitmap_t* visited,
-                   frontier_state_t* state, cost_t level) {
-  //bool finished = true;
-
-  // Iterate across all vertices in frontier.
-  OMP(omp parallel for schedule(runtime)) // reduction(& : finished))
-  for (vid_t vertex_id = 0; vertex_id < graph->vertex_count; vertex_id++) {
-    if (!bitmap_is_set(state->current, vertex_id)) continue;
-
-    // Iterate across all neighbours of this vertex.
-    for (eid_t i = graph->vertices[vertex_id];
-         i < graph->vertices[vertex_id + 1]; i++) {
-      const vid_t neighbor_id = graph->edges[i];
-
-      // If already visited, ignore neighbour.
-      if (!bitmap_is_set(*visited, neighbor_id)) {
-        if (bitmap_set_cpu(*visited, neighbor_id)) {
-          // If a new vertex is now visited, we have a new level
-          // of frontier - we are not finished.
-          //finished = false;
-          // Increment the level of this neighbour.
-          cost[neighbor_id] = level + 1;
-        }
-      }
-    }
-  }  // End of omp for
-  //return finished;
-}
-*/
-
 // A step that iterates across unvisited vertices and determines
 // their status in the next frontier.
 PRIVATE void bfs_bu_step(partition_t* par, bfs_state_t* state) {
@@ -143,36 +110,8 @@ void bfs_stepwise_cpu(partition_t* par, bfs_state_t* state) {
   bfs_bu_step(par, state);
 }
 
-/* Redacted td kernel.
-// A gpu version of the Top-down step as a kernel.
-__global__
-void bfs_td_kernel(graph_t graph, cost_t level, cost_t* cost,
-                   bitmap_t visited, frontier_state_t state) {
-  const vid_t vertex_id = THREAD_GLOBAL_INDEX;
-  if (vertex_id >= graph.vertex_count) { return; }
-
-  // Ignore vertices not in frontier.
-  if (!bitmap_is_set(state.current, vertex_id)) { return; }
-
-  // Iterate across all neighbours of the vertex.
-  for (eid_t i = graph.vertices[vertex_id];
-       i < graph.vertices[vertex_id + 1]; i++) {
-    const vid_t neighbor_id = graph.edges[i];
-
-    // If already visited, ignore neighbour.
-    if (!bitmap_is_set(visited, neighbor_id)) {
-      if (bitmap_set_gpu(visited, neighbor_id)) {
-        // Increment the level of this neighbour.
-        cost[neighbor_id] = level + 1;
-      }
-    }
-  }
-}
-*/
-
 // A gpu version of the Bottom-up step as a kernel.
-__global__
-void bfs_bu_kernel(partition_t par, bfs_state_t state) {
+__global__ void bfs_bu_kernel(partition_t par, bfs_state_t state) {
   const vid_t vertex_id = THREAD_GLOBAL_INDEX;
   graph_t subgraph = par.subgraph;
   if (vertex_id >= subgraph.vertex_count) { return; }
@@ -205,8 +144,7 @@ void bfs_bu_kernel(partition_t par, bfs_state_t state) {
 
 // This is a GPU version of the Bottom-up/Top-down BFS algorithm.
 // See file header for full details.
-__host__
-error_t bfs_stepwise_gpu(partition_t* par, bfs_state_t* state) {
+__host__ error_t bfs_stepwise_gpu(partition_t* par, bfs_state_t* state) {
   dim3 blocks;
   dim3 threads_per_block;
   KERNEL_CONFIGURE(par->subgraph.vertex_count, blocks, threads_per_block);
@@ -266,9 +204,8 @@ PRIVATE void bfs_gather_cpu(partition_t* par, bfs_state_t* state,
 }
 
 // Gather for the GPU bitmap to inbox.
-__global__
-void bfs_gather_gpu(partition_t par, bfs_state_t state,
-                    grooves_box_table_t inbox) {
+__global__ void bfs_gather_gpu(partition_t par, bfs_state_t state,
+                               grooves_box_table_t inbox) {
   const vid_t index = THREAD_GLOBAL_INDEX;
   if (index >= inbox.count) { return; }
 
@@ -312,7 +249,7 @@ PRIVATE void bfs_gather(partition_t* par) {
 
 // The aggregate phase - combine results to be presented.
 PRIVATE void bfs_aggregate(partition_t* par) {
-  if (!par->subgraph.vertex_count) return;
+  if (!par->subgraph.vertex_count) { return; }
 
   bfs_state_t* state    = reinterpret_cast<bfs_state_t*>(par->algo_state);
   graph_t*     subgraph = &par->subgraph;
@@ -363,10 +300,12 @@ PRIVATE inline void bfs_init_gpu(partition_t* par) {
     if (pid != par->id && par->inbox[pid].count != 0) {
       bitmap_reset_gpu(reinterpret_cast<bitmap_t>
                          (par->inbox[pid].pull_values),
-                       par->inbox[pid].count);
+                       par->inbox[pid].count,
+                       par->streams[1]);
       bitmap_reset_gpu(reinterpret_cast<bitmap_t>
                          (par->inbox[pid].pull_values_s),
-                       par->inbox[pid].count);
+                       par->inbox[pid].count,
+                       par->streams[1]);
     }
   }
 
@@ -453,7 +392,7 @@ PRIVATE void bfs_init(partition_t* par) {
 
 // The finalize phase - clean up.
 PRIVATE void bfs_finalize(partition_t* par) {
-  if (par->subgraph.vertex_count == 0) return;
+  if (par->subgraph.vertex_count == 0) { return; }
   bfs_state_t* state = reinterpret_cast<bfs_state_t*>(par->algo_state);
   totem_mem_t type = TOTEM_MEM_HOST;
 
@@ -477,16 +416,16 @@ PRIVATE void bfs_finalize(partition_t* par) {
 
 // The launch point for the algorithm - set up engine, cost, and launch.
 error_t bfs_stepwise_hybrid(vid_t src, cost_t* cost) {
-  // check for special cases
+  // Check for special cases.
   bool finished = false;
   error_t rc = check_special_cases(src, cost, &finished);
-  if (finished) return rc;
+  if (finished) { return rc; }
 
-  // initialize the global state
+  // Initialize the global state.
   state_g.cost = cost;
   state_g.src  = engine_vertex_id_in_partition(src);
 
-  // initialize the engine
+  // Initialize the engine.
   engine_config_t config = {
     NULL, bfs, NULL, bfs_gather, bfs_init, bfs_finalize, bfs_aggregate,
     GROOVES_PULL
@@ -499,7 +438,7 @@ error_t bfs_stepwise_hybrid(vid_t src, cost_t* cost) {
   }
   engine_execute();
 
-  // clean up and return
+  // Clean up and return.
   if (engine_largest_gpu_partition()) {
     totem_free(state_g.cost_h, TOTEM_MEM_HOST);
   }
