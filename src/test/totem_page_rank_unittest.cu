@@ -128,28 +128,28 @@ TEST_P(PageRankTest, Star) {
 
 // Defines the set of PageRank vanilla implementations to be tested. To test
 // a new implementation, simply add it to the set below.
-void* page_rank_vanilla_funcs[] = {
+static void* vanilla_funcs[] = {
   reinterpret_cast<void*>(&page_rank_cpu),
   reinterpret_cast<void*>(&page_rank_incoming_cpu),
   reinterpret_cast<void*>(&page_rank_gpu),
   reinterpret_cast<void*>(&page_rank_vwarp_gpu),
   reinterpret_cast<void*>(&page_rank_incoming_gpu),
 };
-const int page_rank_vanilla_count = STATIC_ARRAY_COUNT(page_rank_vanilla_funcs);
+static const int vanilla_count = STATIC_ARRAY_COUNT(vanilla_funcs);
 
 // Defines the set of PageRank hybrid implementations to be tested. To test
 // a new implementation, simply add it to the set below.
-void* page_rank_hybrid_funcs[] = {
+static void* hybrid_funcs[] = {
   reinterpret_cast<void*>(&page_rank_hybrid),
   reinterpret_cast<void*>(&page_rank_incoming_hybrid),
 };
-const int page_rank_hybrid_count = STATIC_ARRAY_COUNT(page_rank_hybrid_funcs);
+static const int hybrid_count = STATIC_ARRAY_COUNT(hybrid_funcs);
 
 // Maintains references to the different configurations (vanilla and hybrid)
 // that will be tested by the framework.
-static const int page_rank_params_count = page_rank_vanilla_count +
-    page_rank_hybrid_count * hybrid_configurations_count;
-static test_param_t* page_rank_params[page_rank_params_count];
+static const int params_count = vanilla_count +
+    hybrid_count * hybrid_configurations_count;
+static test_param_t* params[params_count];
 
 // From Google documentation:
 // In order to run value-parameterized tests, we need to instantiate them,
@@ -158,11 +158,10 @@ static test_param_t* page_rank_params[page_rank_params_count];
 // ValuesIn() receives a list of parameters and the framework will execute the
 // whole set of tests for each entry in the array passed to ValuesIn().
 INSTANTIATE_TEST_CASE_P(PageRankGPUAndCPUTest, PageRankTest,
-                        ValuesIn(GetParameters(
-                            page_rank_params, page_rank_params_count,
-                            page_rank_vanilla_funcs, page_rank_vanilla_count,
-                            page_rank_hybrid_funcs, page_rank_hybrid_count),
-                                 page_rank_params + page_rank_params_count));
+                        ValuesIn(GetParameters(params, params_count,
+                                               vanilla_funcs, vanilla_count,
+                                               hybrid_funcs, hybrid_count),
+                                 params + params_count));
 
 #else
 
