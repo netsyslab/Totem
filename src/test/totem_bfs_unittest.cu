@@ -39,6 +39,7 @@ class BFSTest : public TestWithParam<test_param_t*> {
   error_t TestGraph(vid_t src) {
     if (_bfs_param->attr) {
       _bfs_param->attr->push_msg_size = 1;
+      _bfs_param->attr->pull_msg_size = 1;
       if (totem_init(_graph, _bfs_param->attr) == FAILURE) {
         return FAILURE;
       }
@@ -238,6 +239,7 @@ const int bfs_vanilla_count = STATIC_ARRAY_COUNT(bfs_vanilla_funcs);
 // a new implementation, simply add it to the set below.
 void* bfs_hybrid_funcs[] = {
   reinterpret_cast<void*>(&bfs_hybrid),
+  reinterpret_cast<void*>(&bfs_stepwise_hybrid),
 };
 const int bfs_hybrid_count = STATIC_ARRAY_COUNT(bfs_hybrid_funcs);
 
