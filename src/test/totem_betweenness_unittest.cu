@@ -1,5 +1,4 @@
-/* TODO(lauro,abdullah,elizeu): Add license.
- *
+/*
  * Contains unit tests for betweenness centrality.
  *
  *  Created on: 2011-10-21
@@ -12,50 +11,17 @@
 #if GTEST_HAS_PARAM_TEST
 
 using ::testing::TestWithParam;
-using ::testing::Values;
+using ::testing::ValuesIn;
 
-/**
- * Wrapper for betweenness_cpu to provide the singature expected for use in
- * the unit tests with the other Betweenness Centrality algorithms
- */
-PRIVATE error_t betweenness_cpu_exact(const graph_t* graph,
-                                      score_t* betweenness_score) {
-  // call betweenness_cpu for use in unit test framework with exact precision
-  return betweenness_cpu(graph, CENTRALITY_EXACT, betweenness_score);
-}   
+typedef error_t(*BetwCentralityFunction)(const graph_t*, double, score_t*);
+typedef error_t(*BetwCentralityHybridFunction)(double, score_t*);
 
-/**
- * Wrapper for betweenness_gpu to provide the singature expected for use in
- * the unit tests with the other Betweenness Centrality algorithms
- */
-PRIVATE error_t betweenness_gpu_exact(const graph_t* graph,
-                                      score_t* betweenness_score) {
-  // call betweenness_gpu for use in unit test framework with exact precision
-  return betweenness_gpu(graph, CENTRALITY_EXACT, betweenness_score);
-}
-
-// The following implementation relies on
-// TestWithParam<BetwCentralityFunction> to test the two versions of Betweenness
-// Centrality implemented: CPU and GPU.  Details on how to use TestWithParam<T>
-// can be found at:
-// http://code.google.com/p/googletest/source/browse/trunk/samples/sample7_unittest.cc
-
-typedef error_t(*BetwCentralityFunction)(const graph_t*, score_t*);
-
-// This is to allow testing the vanilla BC functions and the hybrid one
-// that is based on the framework. Note that have a different signature
-// of the hybrid algorithm forced this work-around.
-typedef struct betweenness_param_s {
-  totem_attr_t* attr;          // totem attributes for totem-based tests
-  BetwCentralityFunction func; // the vanilla BC function if attr is NULL
-} betweenness_param_t;
-
-class BetweennessCentralityTest : public TestWithParam<betweenness_param_t*> {
+class BetweennessCentralityTest : public TestWithParam<test_param_t*> {
  public:
   virtual void SetUp() {
-    // Ensure the minimum CUDA architecture is supported
+    // Ensure the minimum CUDA architecture is supported.
     CUDA_CHECK_VERSION();
-    _betweenness_param = GetParam();
+    _param = GetParam();
     _graph = NULL;
     _betweenness_score = NULL;
   }
@@ -69,35 +35,40 @@ class BetweennessCentralityTest : public TestWithParam<betweenness_param_t*> {
 
   error_t TestGraph() {
     if (_graph->vertex_count) {
-      totem_malloc(_graph->vertex_count * sizeof(score_t), 
-                   TOTEM_MEM_HOST, (void**)&_betweenness_score);
+      totem_malloc(_graph->vertex_count * sizeof(score_t),
+                   TOTEM_MEM_HOST,
+                   reinterpret_cast<void**>(&_betweenness_score));
     }
-    if (_betweenness_param->attr != NULL) {
-      _betweenness_param->attr->push_msg_size = 
+    if (_param->attr != NULL) {
+      _param->attr->push_msg_size =
         sizeof(uint32_t) * BITS_PER_BYTE;
-      _betweenness_param->attr->pull_msg_size =
+      _param->attr->pull_msg_size =
         sizeof(score_t) * BITS_PER_BYTE;
-      if (totem_init(_graph, _betweenness_param->attr) == FAILURE) {
+      if (totem_init(_graph, _param->attr) == FAILURE) {
         return FAILURE;
       }
 
-      // Will use exact betweenness centrality for test framework
-      error_t err = betweenness_hybrid(CENTRALITY_EXACT, _betweenness_score);
+      BetwCentralityHybridFunction func =
+          reinterpret_cast<BetwCentralityHybridFunction>
+          (_param->func);
+      error_t err = func(CENTRALITY_EXACT, _betweenness_score);
       totem_finalize();
       return err;
     }
-    return _betweenness_param->func(_graph, _betweenness_score);
+    BetwCentralityFunction func =
+        reinterpret_cast<BetwCentralityFunction>(_param->func);
+    return func(_graph, CENTRALITY_EXACT, _betweenness_score);
   }
 
  protected:
-   betweenness_param_t* _betweenness_param;
-   graph_t* _graph;
-   score_t* _betweenness_score;
+  test_param_t* _param;
+  graph_t*      _graph;
+  score_t*      _betweenness_score;
 };
 
 // Tests BetwCentrality for empty graphs.
 TEST_P(BetweennessCentralityTest, Empty) {
-  _graph = (graph_t*)calloc(sizeof(graph_t), 1);
+  _graph = reinterpret_cast<graph_t*>(calloc(sizeof(graph_t), 1));
   EXPECT_EQ(FAILURE, TestGraph());
   free(_graph);
   _graph = NULL;
@@ -115,16 +86,20 @@ TEST_P(BetweennessCentralityTest, SingleNodeUnweighted) {
 TEST_P(BetweennessCentralityTest, Chain100Unweighted) {
   graph_initialize(DATA_FOLDER("chain_100_nodes_weight_directed.totem"), false,
                    &_graph);
-  // First vertex as source
+  // First vertex as source.
   EXPECT_EQ(SUCCESS, TestGraph());
-  score_t centrality[50];
-  for (vid_t i = 0; i < 50; i++) {
-    centrality[i] = (99 - i) * (i);
+  score_t* expected_centrality =
+      reinterpret_cast<score_t*>(calloc(_graph->vertex_count / 2,
+                                        sizeof(score_t)));
+  for (vid_t i = 0; i < (_graph->vertex_count / 2); i++) {
+    expected_centrality[i] = (_graph->vertex_count - 1 - i) * (i);
   }
-  for (vid_t i = 0; i < 50; i++) {
-    EXPECT_EQ(centrality[i], _betweenness_score[i]);
-    EXPECT_EQ(centrality[i], _betweenness_score[99 - i]);
+  for (vid_t i = 0; i < (_graph->vertex_count / 2); i++) {
+    EXPECT_EQ(expected_centrality[i], _betweenness_score[i]);
+    EXPECT_EQ(expected_centrality[i],
+              _betweenness_score[_graph->vertex_count - 1 - i]);
   }
+  free(expected_centrality);
 }
 
 // Tests BetwCentrality for a complete graph of 300 nodes.
@@ -134,7 +109,7 @@ TEST_P(BetweennessCentralityTest, CompleteGraphUnweighted) {
                              false, &_graph));
 
   EXPECT_EQ(SUCCESS, TestGraph());
-  for(vid_t vertex = 0; vertex < _graph->vertex_count; vertex++){
+  for (vid_t vertex = 0; vertex < _graph->vertex_count; vertex++) {
     EXPECT_FLOAT_EQ(0.0, _betweenness_score[vertex]);
   }
 }
@@ -145,82 +120,45 @@ TEST_P(BetweennessCentralityTest, StarGraphUnweighted) {
                                       false, &_graph));
 
   EXPECT_EQ(SUCCESS, TestGraph());
-  EXPECT_FLOAT_EQ((_graph->vertex_count - 1) * (_graph->vertex_count - 2), 
+  EXPECT_FLOAT_EQ((_graph->vertex_count - 1) * (_graph->vertex_count - 2),
                   _betweenness_score[0]);
-  for(vid_t vertex = 1; vertex < _graph->vertex_count; vertex++){
+  for (vid_t vertex = 1; vertex < _graph->vertex_count; vertex++) {
     EXPECT_FLOAT_EQ(0.0, _betweenness_score[vertex]);
   }
 }
 
-// Functions to test in framework
-betweenness_param_t betweenness_params[] = {
-  {NULL, &betweenness_unweighted_cpu},
-  {NULL, &betweenness_unweighted_gpu},
-  {NULL, &betweenness_unweighted_shi_gpu},
-  {NULL, &betweenness_cpu_exact},
-  {NULL, &betweenness_gpu_exact},
-  {&totem_attrs[0], NULL},
-  {&totem_attrs[1], NULL},
-  {&totem_attrs[2], NULL},
-  {&totem_attrs[3], NULL},
-  {&totem_attrs[4], NULL},
-  {&totem_attrs[5], NULL},
-  {&totem_attrs[6], NULL},
-  {&totem_attrs[7], NULL},
-  {&totem_attrs[8], NULL},
-  {&totem_attrs[9], NULL},
-  {&totem_attrs[10], NULL},
-  {&totem_attrs[11], NULL},
-  {&totem_attrs[12], NULL},
-  {&totem_attrs[13], NULL},
-  {&totem_attrs[14], NULL},
-  {&totem_attrs[15], NULL},
-  {&totem_attrs[16], NULL},
-  {&totem_attrs[17], NULL},
-  {&totem_attrs[18], NULL},
-  {&totem_attrs[19], NULL},
-  {&totem_attrs[20], NULL},
-  {&totem_attrs[21], NULL},
-  {&totem_attrs[22], NULL},
-  {&totem_attrs[23], NULL}
+// Defines the set of Betweenness vanilla implementations to be tested. To test
+// a new implementation, simply add it to the set below.
+static void* vanilla_funcs[] = {
+  reinterpret_cast<void*>(&betweenness_cpu),
+  reinterpret_cast<void*>(&betweenness_gpu),
 };
+static const int vanilla_count = STATIC_ARRAY_COUNT(vanilla_funcs);
+
+// Defines the set of PageRank hybrid implementations to be tested. To test
+// a new implementation, simply add it to the set below.
+static void* hybrid_funcs[] = {
+  reinterpret_cast<void*>(&betweenness_hybrid),
+};
+static const int hybrid_count = STATIC_ARRAY_COUNT(hybrid_funcs);
+
+// Maintains references to the different configurations (vanilla and hybrid)
+// that will be tested by the framework.
+static const int params_count = vanilla_count +
+    hybrid_count * hybrid_configurations_count;
+static test_param_t* params[params_count];
 
 // From Google documentation:
 // In order to run value-parameterized tests, we need to instantiate them,
 // or bind them to a list of values which will be used as test parameters.
 //
-// Values() receives a list of parameters and the framework will execute the
-// whole set of tests BetweennessCentralityTest for each element of Values()
-INSTANTIATE_TEST_CASE_P(BetwCentralityGPUAndCPUTest, BetweennessCentralityTest,
-                        Values(&betweenness_params[0],
-                               &betweenness_params[1],
-                               &betweenness_params[2],
-                               &betweenness_params[3],
-                               &betweenness_params[4],
-                               &betweenness_params[5],
-                               &betweenness_params[6],
-                               &betweenness_params[7],
-                               &betweenness_params[8],
-                               &betweenness_params[9],
-                               &betweenness_params[10],
-                               &betweenness_params[11],
-                               &betweenness_params[12],
-                               &betweenness_params[13],
-                               &betweenness_params[14],
-                               &betweenness_params[15],
-                               &betweenness_params[16],
-                               &betweenness_params[17],
-                               &betweenness_params[18],
-                               &betweenness_params[19],
-                               &betweenness_params[20],
-                               &betweenness_params[21],
-                               &betweenness_params[22],
-                               &betweenness_params[23],
-                               &betweenness_params[24],
-                               &betweenness_params[25],
-                               &betweenness_params[26],
-                               &betweenness_params[27],
-                               &betweenness_params[28]));
+// ValuesIn() receives a list of parameters and the framework will execute the
+// whole set of tests for each entry in the array passed to ValuesIn().
+INSTANTIATE_TEST_CASE_P(BetweennessGPUAndCPUTest, BetweennessCentralityTest,
+                        ValuesIn(GetParameters(params, params_count,
+                                               vanilla_funcs, vanilla_count,
+                                               hybrid_funcs, hybrid_count),
+                                 params + params_count));
 #else
 
 // From Google documentation:
