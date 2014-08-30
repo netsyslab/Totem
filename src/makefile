@@ -21,6 +21,9 @@ graph500:
 test:
 	@$(MAKE) -C $(TEST_PATH)
 
+wattsup:
+	@$(MAKE) -C $(WATTSUP_PATH)
+
 clean-build:
 	@rm -rf *~ $(BUILDDIR)
 
