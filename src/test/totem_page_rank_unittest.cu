@@ -11,28 +11,20 @@
 #if GTEST_HAS_PARAM_TEST
 
 using ::testing::TestWithParam;
-using ::testing::Values;
+using ::testing::ValuesIn;
 
 // The following implementation relies on TestWithParam<PageRankFunction> to
-// test the two versions of PageRank implemented: CPU and GPU.
-// Details on how to use TestWithParam<T> can be found at:
-// totem_bfs_unittest.cc and
+// test the different versions of PageRank. Details on how to use
+// TestWithParam<T> can be found at:
 // http://code.google.com/p/googletest/source/browse/trunk/samples/sample7_unittest.cc
 
 typedef error_t(*PageRankFunction)(graph_t*, rank_t*, rank_t*);
+typedef error_t(*PageRankHybridFunction)(rank_t*, rank_t*);
 
-// This is to allow testing the vanilla bfs functions and the hybrid one
-// that is based on the framework. Note that have a different signature
-// of the hybrid algorithm forced this work-around.
-typedef struct page_rank_param_s {
-  totem_attr_t* attr;    // totem attributes for totem-based tests
-  PageRankFunction func; // the vanilla page_rank function if attr is NULL
-} page_rank_param_t;
-
-class PageRankTest : public TestWithParam<page_rank_param_t*> {
+class PageRankTest : public TestWithParam<test_param_t*> {
  public:
   virtual void SetUp() {
-    // Ensure the minimum CUDA architecture is supported
+    // Ensure the minimum CUDA architecture is supported.
     CUDA_CHECK_VERSION();
     _page_rank_param = GetParam();
     _rank = NULL;
@@ -40,39 +32,46 @@ class PageRankTest : public TestWithParam<page_rank_param_t*> {
   }
 
   virtual void TearDown() {
-    if (_graph) graph_finalize(_graph);
-    if (_rank) totem_free(_rank, TOTEM_MEM_HOST_PINNED);
+    if (_graph) { graph_finalize(_graph); }
+    if (_rank) { totem_free(_rank, TOTEM_MEM_HOST_PINNED); }
   }
 
   error_t TestGraph() {
-    // the graph should be undirected because the test is shared between the
+    // The graph should be undirected because the test is shared between the
     // two versions of the PageRank algorithm: incoming- and outgoing- based.
     EXPECT_FALSE(_graph->directed);
     if (_graph->vertex_count != 0) {
-      CALL_SAFE(totem_malloc(_graph->vertex_count * sizeof(rank_t), 
-                             TOTEM_MEM_HOST_PINNED, (void**)&_rank));
+      CALL_SAFE(totem_malloc(_graph->vertex_count * sizeof(rank_t),
+                             TOTEM_MEM_HOST_PINNED,
+                             reinterpret_cast<void**>(&_rank)));
     }
     if (_page_rank_param->attr != NULL) {
       _page_rank_param->attr->pull_msg_size = sizeof(rank_t) * BITS_PER_BYTE;
+      _page_rank_param->attr->push_msg_size = sizeof(rank_t) * BITS_PER_BYTE;
       if (totem_init(_graph, _page_rank_param->attr) == FAILURE) {
         return FAILURE;
       }
-      error_t err = page_rank_incoming_hybrid(NULL, _rank);
+      PageRankHybridFunction func =
+          reinterpret_cast<PageRankHybridFunction>(_page_rank_param->func);
+      error_t err = func(NULL, _rank);
       totem_finalize();
       return err;
+    } else {
+      PageRankFunction func =
+          reinterpret_cast<PageRankFunction>(_page_rank_param->func);
+      return func(_graph, NULL, _rank);
     }
-    return _page_rank_param->func(_graph, NULL, _rank);
   }
 
  protected:
-  page_rank_param_t* _page_rank_param;
+  test_param_t* _page_rank_param;
   rank_t* _rank;
   graph_t* _graph;
 };
 
 // Tests PageRank for empty graphs.
 TEST_P(PageRankTest, Empty) {
-  _graph = (graph_t*)calloc(sizeof(graph_t), 1);
+  _graph = reinterpret_cast<graph_t*>(calloc(sizeof(graph_t), 1));
   EXPECT_EQ(FAILURE, TestGraph());
   free(_graph);
   _graph = NULL;
@@ -92,7 +91,7 @@ TEST_P(PageRankTest, Chain) {
   EXPECT_EQ(SUCCESS, graph_initialize(DATA_FOLDER("chain_1000_nodes.totem"),
                                       false, &_graph));
   EXPECT_EQ(SUCCESS, TestGraph());
-  for(vid_t vertex = 0; vertex < _graph->vertex_count/2; vertex++){
+  for (vid_t vertex = 0; vertex < _graph->vertex_count / 2; vertex++) {
     EXPECT_FLOAT_EQ(_rank[vertex], _rank[_graph->vertex_count - vertex - 1]);
   }
 }
@@ -103,7 +102,7 @@ TEST_P(PageRankTest, CompleteGraph) {
             graph_initialize(DATA_FOLDER("complete_graph_300_nodes.totem"),
                              false, &_graph));
   EXPECT_EQ(SUCCESS, TestGraph());
-  for(vid_t vertex = 0; vertex < _graph->vertex_count; vertex++){
+  for (vid_t vertex = 0; vertex < _graph->vertex_count; vertex++) {
     EXPECT_FLOAT_EQ(_rank[0], _rank[vertex]);
   }
 }
@@ -114,53 +113,49 @@ TEST_P(PageRankTest, Star) {
             graph_initialize(DATA_FOLDER("star_1000_nodes.totem"),
                              false, &_graph));
   EXPECT_EQ(SUCCESS, TestGraph());
-  for(vid_t vertex = 1; vertex < _graph->vertex_count; vertex++){
+  for (vid_t vertex = 1; vertex < _graph->vertex_count; vertex++) {
     EXPECT_FLOAT_EQ(_rank[1], _rank[vertex]);
     EXPECT_GT(_rank[0], _rank[vertex]);
   }
 }
 
-// TODO(abdullah): Add test cases for not well defined structures.
-// TODO(abdullah,lauro): Add test cases for non-empty vertex set and empty edge
-// set.
-
-// Values() seems to accept only pointers, hence the possible parameters
-// are defined here, and a pointer to each ot them is used.
-page_rank_param_t page_rank_params[] = {
-  {NULL, &page_rank_cpu},
-  {NULL, &page_rank_gpu},
-  {NULL, &page_rank_vwarp_gpu},
-  {NULL, &page_rank_incoming_cpu},
-  {NULL, &page_rank_incoming_gpu},
-  {&totem_attrs[0], NULL},
-  {&totem_attrs[1], NULL},
-  {&totem_attrs[2], NULL},
-  {&totem_attrs[3], NULL},
-  {&totem_attrs[4], NULL},
-  {&totem_attrs[5], NULL},
-  {&totem_attrs[6], NULL},
-  {&totem_attrs[7], NULL}
+// Defines the set of PageRank vanilla implementations to be tested. To test
+// a new implementation, simply add it to the set below.
+void* page_rank_vanilla_funcs[] = {
+  reinterpret_cast<void*>(&page_rank_cpu),
+  reinterpret_cast<void*>(&page_rank_incoming_cpu),
+  reinterpret_cast<void*>(&page_rank_gpu),
+  reinterpret_cast<void*>(&page_rank_vwarp_gpu),
+  reinterpret_cast<void*>(&page_rank_incoming_gpu),
 };
+const int page_rank_vanilla_count = STATIC_ARRAY_COUNT(page_rank_vanilla_funcs);
 
-// Values() receives a list of parameters and the framework will execute the
-// whole set of tests PageRankTest for each element of Values()
-// TODO(abdullah): both versions of the PageRank algorithm (the incoming- and
-// outgoing- based) can share the same tests because all the graphs are
-// undirected. Separate the two for cases where the graphs are directed.
+// Defines the set of PageRank hybrid implementations to be tested. To test
+// a new implementation, simply add it to the set below.
+void* page_rank_hybrid_funcs[] = {
+  reinterpret_cast<void*>(&page_rank_hybrid),
+  reinterpret_cast<void*>(&page_rank_incoming_hybrid),
+};
+const int page_rank_hybrid_count = STATIC_ARRAY_COUNT(page_rank_hybrid_funcs);
+
+// Maintains references to the different configurations (vanilla and hybrid)
+// that will be tested by the framework.
+static const int page_rank_params_count = page_rank_vanilla_count +
+    page_rank_hybrid_count * hybrid_configurations_count;
+static test_param_t* page_rank_params[page_rank_params_count];
+
+// From Google documentation:
+// In order to run value-parameterized tests, we need to instantiate them,
+// or bind them to a list of values which will be used as test parameters.
+//
+// ValuesIn() receives a list of parameters and the framework will execute the
+// whole set of tests for each entry in the array passed to ValuesIn().
 INSTANTIATE_TEST_CASE_P(PageRankGPUAndCPUTest, PageRankTest,
-                        Values(&page_rank_params[0],
-                               &page_rank_params[1],
-                               &page_rank_params[2],
-                               &page_rank_params[3],
-                               &page_rank_params[4],
-                               &page_rank_params[5],
-                               &page_rank_params[6],
-                               &page_rank_params[7],
-                               &page_rank_params[8],
-                               &page_rank_params[9],
-                               &page_rank_params[10],
-                               &page_rank_params[11],
-                               &page_rank_params[12]));
+                        ValuesIn(GetParameters(
+                            page_rank_params, page_rank_params_count,
+                            page_rank_vanilla_funcs, page_rank_vanilla_count,
+                            page_rank_hybrid_funcs, page_rank_hybrid_count),
+                                 page_rank_params + page_rank_params_count));
 
 #else
 
