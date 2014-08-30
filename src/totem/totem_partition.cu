@@ -519,11 +519,11 @@ PRIVATE void init_build_partitions(partition_set_t* pset, vid_t* plabels,
   init_build_partitions_edges_array(pset);
 }
 
-PRIVATE void init_sort_nbrs(partition_set_t* pset) {
+PRIVATE void init_sort_nbrs(partition_set_t* pset, totem_attr_t* attr) {
   uint32_t pcount = pset->partition_count;
   for (uint32_t pid = 0; pid < pcount; pid++) {
     graph_t* subgraph = &pset->partitions[pid].subgraph;
-    graph_sort_nbrs(subgraph);
+    graph_sort_nbrs(subgraph, attr->edge_sort_dsc);
   }
 }
 
@@ -572,7 +572,7 @@ error_t partition_set_initialize(graph_t* graph, vid_t* plabels,
   init_build_partitions(*pset, plabels, attr);
 
   // Sort nbrs of each each vertex to improve access locality
-  init_sort_nbrs(*pset);
+  init_sort_nbrs(*pset, attr);
 
   // Initialize grooves' inbox and outbox state
   grooves_initialize(*pset);

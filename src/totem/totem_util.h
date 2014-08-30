@@ -64,6 +64,7 @@ int get_gpu_count();
  * @return 0 if equal; 1, if *a > *b; and -1, if *b > *a
  */
 int compare_ids_asc(const void* a, const void* b);
+int compare_ids_dsc(const void* a, const void* b);
 
 /**
  * Compares two vertex ids, used by the tbb parallel qsort function.
