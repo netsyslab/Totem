@@ -1,5 +1,6 @@
 /*
- * Contains unit tests for an implementation of the PageRank graph algorithm.
+ * Contains unit tests for the different implementations of the PageRank graph
+ * algorithm.
  *
  *  Created on: 2011-03-22
  *      Author: Abdullah Gharaibeh
@@ -12,6 +13,12 @@
 
 using ::testing::TestWithParam;
 using ::testing::ValuesIn;
+
+
+// IMPORTANT NOTE: Some of the unit tests for page_rank_incoming_hybrid will
+// fail if the type rank_t is float due to differences in single precision
+// calculations between the CPU and the GPU. Defining rank_t as double should
+// allow the tests to pass.
 
 // The following implementation relies on TestWithParam<PageRankFunction> to
 // test the different versions of PageRank. Details on how to use
