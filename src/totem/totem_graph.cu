@@ -893,13 +893,8 @@ void graph_sort_nbrs(graph_t* graph, bool edge_sort_dsc) {
     vid_t* nbrs = &graph->edges[graph->vertices[v]];
 
     // Sort based off of direction given.
-    if (edge_sort_dsc) {
-      qsort(nbrs, graph->vertices[v+1] - graph->vertices[v], sizeof(vid_t),
-            compare_ids_dsc);
-    } else {
-      qsort(nbrs, graph->vertices[v+1] - graph->vertices[v], sizeof(vid_t),
-            compare_ids_asc);
-    }
+    qsort(nbrs, graph->vertices[v+1] - graph->vertices[v], sizeof(vid_t),
+          edge_sort_dsc ? compare_ids_dsc : compare_ids_asc);
     // TODO(treza): Required updates for edge-weights.
   }
 }
