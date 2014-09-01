@@ -7,7 +7,9 @@
 ROOTDIR = .
 include $(ROOTDIR)/make.defs
 
-.PHONY: benchmark generator graph500 test
+.PHONY: benchmark generator graph500 test wattsup
+
+all: benchmark generator graph500 test wattsup
 
 benchmark:
 	@$(MAKE) -C $(BENCHMARK_PATH)
