@@ -48,6 +48,12 @@ int compare_ids_asc(const void* a, const void* b) {
   return v1 - v2;
 }
 
+int compare_ids_dsc(const void* a, const void* b) {
+  vid_t v1 = *(reinterpret_cast<const vid_t*>(a));
+  vid_t v2 = *(reinterpret_cast<const vid_t*>(b));
+  return v2 - v1;
+}
+
 bool compare_ids_tbb(const vid_t& v1, const vid_t& v2) {
   return (v1 < v2);
 }

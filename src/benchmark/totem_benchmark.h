@@ -69,6 +69,8 @@ typedef struct benchmark_options_s {
   bool                  sorted;       /**< Maps the vertex ids in sorted order
                                            by edge degree during the
                                            partitioning phase */
+  bool                  edge_sort_dsc;  /**< Makes the direction of edge
+                                             sorting descending order. */
 } benchmark_options_t;
 
 /**

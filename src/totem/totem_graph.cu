@@ -887,12 +887,14 @@ error_t graph_store_binary(graph_t* graph, const char* filename) {
   return FAILURE;
 }
 
-void graph_sort_nbrs(graph_t* graph) {
+void graph_sort_nbrs(graph_t* graph, bool edge_sort_dsc) {
   OMP(omp parallel for schedule(guided))
   for (vid_t v = 0; v < graph->vertex_count; v++) {
     vid_t* nbrs = &graph->edges[graph->vertices[v]];
+
+    // Sort based off of direction given.
     qsort(nbrs, graph->vertices[v+1] - graph->vertices[v], sizeof(vid_t),
-          compare_ids_asc);
+          edge_sort_dsc ? compare_ids_dsc : compare_ids_asc);
     // TODO(treza): Required updates for edge-weights.
   }
 }
