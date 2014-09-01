@@ -265,7 +265,7 @@ error_t graph_remove_singletons(const graph_t* graph, graph_t** subgraph);
  * @param[in] graph the graph to operate on
  * @param[in] edge_sort_dsc Determine the direction of sorting.
  */
-void graph_sort_nbrs(graph_t* graph, bool edge_sort_dsc);
+void graph_sort_nbrs(graph_t* graph, bool edge_sort_dsc = false);
 
 /**
  * Given a given flow graph (ie, a directed graph where for every edge (u,v),
