@@ -763,7 +763,8 @@ PRIVATE error_t alter_remove_singletons_handler(
 
 PRIVATE error_t alter_sort_neighbours_handler(
     generator_config_t* config, graph_t* graph, graph_t** sorted_graph) {
-  graph_sort_nbrs(graph);
+  // TODO(scott): Add an option to the generator to allow descending order here.
+  graph_sort_nbrs(graph, false /* Sort in ascending order. */);
   *sorted_graph = graph;
   return SUCCESS;
 }
