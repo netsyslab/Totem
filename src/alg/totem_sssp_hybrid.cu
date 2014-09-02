@@ -124,8 +124,8 @@ PRIVATE void sssp_gpu(partition_t* par, sssp_state_t* state) {
 
 template<int VWARP_WIDTH, int VWARP_BATCH>
 PRIVATE __global__
-void sssp_vwarp_kernel(partition_t par, sssp_state_t state,
-                       const vid_t vertex_count) {
+void sssp_vwarp_kernel(partition_t par, sssp_state_t state) {
+  const vid_t vertex_count = par.subgraph.vertex_count;
   if (THREAD_GLOBAL_INDEX >=
       vwarp_thread_count(vertex_count, VWARP_WIDTH, VWARP_BATCH)) { return; }
 
@@ -177,8 +177,7 @@ void sssp_vwarp_kernel(partition_t par, sssp_state_t state,
 }
 
 template<int VWARP_WIDTH, int BATCH_SIZE>
-PRIVATE void
-sssp_gpu_launch(partition_t* par, sssp_state_t* state) {
+PRIVATE void sssp_gpu_launch(partition_t* par, sssp_state_t* state) {
   const vid_t vertex_count = par->subgraph.vertex_count;
   const int threads = MAX_THREADS_PER_BLOCK;
   dim3 blocks;
@@ -186,7 +185,7 @@ sssp_gpu_launch(partition_t* par, sssp_state_t* state) {
   kernel_configure(vwarp_thread_count(vertex_count, VWARP_WIDTH, BATCH_SIZE),
                    blocks, threads);
   sssp_vwarp_kernel<VWARP_WIDTH, BATCH_SIZE>
-    <<<blocks, threads, 0, par->streams[1]>>>(*par, *state, vertex_count);
+    <<<blocks, threads, 0, par->streams[1]>>>(*par, *state);
 }
 
 typedef void(*sssp_gpu_func_t)(partition_t*, sssp_state_t*);
