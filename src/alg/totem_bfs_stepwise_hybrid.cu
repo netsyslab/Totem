@@ -2,14 +2,14 @@
  * This file contains an implementation of the breadth-first search (BFS) graph
  * search algorithm using the totem framework. This is a modified version that
  * performs the algorithm in a Bottom Up fashion.
- * 
+ *
  * This implementation only works for undirected graphs.
- * 
+ *
  * Based off of the work by Scott Beamer et al.
  * Searching for a Parent Instead of Fighting Over Children: A Fast
  * Breadth-First Search Implementation for Graph500.
  * http://www.eecs.berkeley.edu/Pubs/TechRpts/2011/EECS-2011-117.pdf
- * 
+ *
  * TODO(scott): Modify the algorithm to swap between top down and bottom up
  *              steps.
  *
@@ -35,12 +35,13 @@ typedef struct bfs_state_s {
 
 // State shared between all partitions.
 typedef struct bfs_global_state_s {
-  cost_t*   cost;    // Final output buffer.
-  cost_t*   cost_h;  // Used as a temporary buffer to receive the final
-                     // result copied back from GPU partitions before being
-                     // copied again to the final output buffer.
-                     // TODO(abdullah): push this buffer to be managed by Totem
-  vid_t     src;     // Source vertex id. (The id after partitioning.)
+  cost_t*   cost;     // Final output buffer.
+  cost_t*   cost_h;   // Used as a temporary buffer to receive the final
+                      // result copied back from GPU partitions before being
+                      // copied again to the final output buffer.
+                      // TODO(abdullah): push this buffer to be managed by Totem
+  vid_t     src;      // Source vertex id. (The id after partitioning.)
+  bool      bu_step;  // Whether or not to perform a bottom up step.
 } bfs_global_state_t;
 PRIVATE bfs_global_state_t state_g = {NULL, NULL, 0};
 
@@ -61,6 +62,41 @@ PRIVATE error_t check_special_cases(vid_t src, cost_t* cost, bool* finished) {
   }
   *finished = false;
   return SUCCESS;
+}
+
+// A step that iterates across the frontier of vertices and adds their
+// neighbours to the next frontier.
+PRIVATE void bfs_td_step(partition_t* par, bfs_state_t* state) {
+  graph_t* subgraph = &par->subgraph;
+  bool finished = true;
+
+  // Iterate across all of our vertices.
+  OMP(omp parallel for schedule(runtime) reduction(& : finished))
+  for (vid_t vertex_id = 0; vertex_id < subgraph->vertex_count; vertex_id++) {
+    // Ignore the local vertex if it is not in the frontier.
+    if (!bitmap_is_set(state->frontier[par->id], vertex_id)) { continue; }
+
+    // Iterate across the neighbours of this vertex.
+    for (eid_t i = subgraph->vertices[vertex_id];
+         i < subgraph->vertices[vertex_id + 1]; i++) {
+      int nbr_pid = GET_PARTITION_ID(subgraph->edges[i]);
+      int nbr = GET_VERTEX_ID(subgraph->edges[i]);
+
+      // Add the neighbour we are exploring to the next frontier.
+      if (!bitmap_is_set(state->visited[nbr_pid], nbr)) {
+        if (bitmap_set_cpu(state->visited[nbr_pid], nbr)) {
+          // Increment the level of this vertex.
+          if (nbr_pid == par->id) {
+            state->cost[nbr] = state->level + 1;
+          }
+          finished = false;
+        }
+      }
+    }  // End of neighbour check - vertex examined.
+  }  // All vertices examined in level.
+
+  // Move over the finished variable.
+  if (!finished) *(state->finished) = false;
 }
 
 // A step that iterates across unvisited vertices and determines
@@ -102,12 +138,71 @@ PRIVATE void bfs_bu_step(partition_t* par, bfs_state_t* state) {
 // This is a CPU version of the Bottom-up/Top-down BFS algorithm.
 // See file header for full details.
 void bfs_stepwise_cpu(partition_t* par, bfs_state_t* state) {
-  // Update the frontier.
-  frontier_update_bitmap_cpu(&state->frontier_state, state->visited[par->id]);
-  state->frontier[par->id] = state->frontier_state.current;
+  if (state_g.bu_step) {
+    // Update the frontier.
+    frontier_update_bitmap_cpu(&state->frontier_state, state->visited[par->id]);
+    state->frontier[par->id] = state->frontier_state.current;
 
-  // Execute a step.
-  bfs_bu_step(par, state);
+    // Execute a bottom up step.
+    bfs_bu_step(par, state);
+
+  } else {
+    // Copy the current state of the remote vertices bitmap.
+    for (int pid = 0; pid < engine_partition_count(); pid++) {
+      if ((pid == par->id) || (par->outbox[pid].count == 0)) continue;
+      bitmap_copy_cpu(state->visited[pid],
+                      (bitmap_t)par->outbox[pid].push_values,
+                      par->outbox[pid].count);
+    }
+
+    // Update the frontier.
+    frontier_update_bitmap_cpu(&state->frontier_state, state->visited[par->id]);
+    state->frontier[par->id] = state->frontier_state.current;
+
+    // Execute a top down step.
+    bfs_td_step(par, state);
+
+    // Diff the remote vertices bitmaps so that only the vertices who got set
+    // in this round are notified.
+    for (int pid = 0; pid < engine_partition_count(); pid++) {
+      if ((pid == par->id) || (par->outbox[pid].count == 0)) continue;
+      bitmap_diff_cpu(state->visited[pid],
+                      (bitmap_t)par->outbox[pid].push_values,
+                      par->outbox[pid].count);
+    }
+  }
+}
+
+// A gpu version of the Top-down step as a kernel.
+__global__ void bfs_td_kernel(partition_t par, bfs_state_t state) {
+  const vid_t vertex_id = THREAD_GLOBAL_INDEX;
+  graph_t subgraph = par.subgraph;
+  if (vertex_id >= subgraph.vertex_count) { return; }
+  bool finished = true;
+
+  // Ignore the local vertex if it is not in the frontier.
+  if (!bitmap_is_set(state.frontier[par.id], vertex_id)) { return; }
+
+  // Iterate across all neighbours of the vertex.
+  for (eid_t i = subgraph.vertices[vertex_id];
+       i < subgraph.vertices[vertex_id + 1]; i++) {
+    int nbr_pid = GET_PARTITION_ID(subgraph.edges[i]);
+    int nbr = GET_VERTEX_ID(subgraph.edges[i]);
+
+    // Add the neighbour we are exploring to the next frontier.
+    if (!bitmap_is_set(state.visited[nbr_pid], nbr)) {
+      if (bitmap_set_gpu(state.visited[nbr_pid], nbr)) {
+        // Increment the level of this vertex.
+        if (nbr_pid == par.id) {
+          state.cost[nbr] = state.level + 1;
+        }
+        finished = false;
+      }
+    }
+  }
+
+  // Move over the finished variable.
+  if (!finished) *(state.finished) = false;
 }
 
 // A gpu version of the Bottom-up step as a kernel.
@@ -149,14 +244,45 @@ __host__ error_t bfs_stepwise_gpu(partition_t* par, bfs_state_t* state) {
   dim3 threads_per_block;
   KERNEL_CONFIGURE(par->subgraph.vertex_count, blocks, threads_per_block);
 
-  // Update the frontier.
-  frontier_update_bitmap_gpu(&state->frontier_state, state->visited[par->id],
-                             par->streams[1]);
-  state->frontier[par->id] = state->frontier_state.current;
+  if (state_g.bu_step) {
+    // Update the frontier.
+    frontier_update_bitmap_gpu(&state->frontier_state, state->visited[par->id],
+                               par->streams[1]);
+    state->frontier[par->id] = state->frontier_state.current;
 
-  // Execute a step.
-  bfs_bu_kernel<<<blocks, threads_per_block, 0, par->streams[1]>>>
-    (*par, *state);
+    // Execute a bottom up step.
+    bfs_bu_kernel<<<blocks, threads_per_block, 0, par->streams[1]>>>
+                 (*par, *state);
+
+  } else {
+    // Copy the current state of the remote vertices bitmap.
+    for (int pid = 0; pid < engine_partition_count(); pid++) {
+      if ((pid == par->id) || (par->outbox[pid].count == 0)) continue;
+      bitmap_copy_gpu(state->visited[pid],
+                      (bitmap_t)par->outbox[pid].push_values,
+                      par->outbox[pid].count,
+                      par->streams[1]);
+    }
+
+    // Update the frontier.
+    frontier_update_bitmap_gpu(&state->frontier_state, state->visited[par->id],
+                               par->streams[1]);
+    state->frontier[par->id] = state->frontier_state.current;
+
+    // Execute a top down step.
+    bfs_td_kernel<<<blocks, threads_per_block, 0, par->streams[1]>>>
+                 (*par, *state);
+
+    // Diff the remote vertices bitmaps so that only the vertices who got set
+    // in this round are notified.
+    for (int pid = 0; pid < engine_partition_count(); pid++) {
+      if ((pid == par->id) || (par->outbox[pid].count == 0)) continue;
+      bitmap_diff_gpu(state->visited[pid],
+                      (bitmap_t)par->outbox[pid].push_values,
+                      par->outbox[pid].count,
+                      par->streams[1]);
+    }
+  }
 
   return SUCCESS;
 }
@@ -169,6 +295,11 @@ PRIVATE void bfs(partition_t* par) {
   // an updated visited status of the source vertex.
   if (engine_superstep() == 1) {
     engine_report_not_finished();
+    return;
+  }
+
+  // TODO(scott): Make this not hardcoded - this swaps statically on step 3.
+  if (engine_superstep() == 4 && state_g.bu_step == false) {
     return;
   }
 
@@ -247,6 +378,87 @@ PRIVATE void bfs_gather(partition_t* par) {
   }
 }
 
+// This is a scatter for CPU - copied from the original bfs_hybrid algorithm.
+PRIVATE inline void bfs_scatter_cpu(grooves_box_table_t* inbox,
+                                    bfs_state_t* state, bitmap_t visited) {
+  bitmap_t remotely_visited = (bitmap_t)inbox->push_values;
+  OMP(omp parallel for schedule(runtime))
+  for (vid_t word_index = 0; word_index < bitmap_bits_to_words(inbox->count);
+       word_index++) {
+    if (remotely_visited[word_index]) {
+      vid_t bit_index = word_index * BITMAP_BITS_PER_WORD;
+      vid_t bit_last_index = (word_index + 1) * BITMAP_BITS_PER_WORD;
+      for (; bit_index < bit_last_index; bit_index++) {
+        if (bitmap_is_set(remotely_visited, bit_index)) {
+          vid_t vid = inbox->rmt_nbrs[bit_index];
+          if (!bitmap_is_set(visited, vid)) {
+            bitmap_set_cpu(visited, vid);
+            state->cost[vid] = state->level;
+          }
+        }
+      }
+    }
+  }
+}
+
+// This is a scatter for GPU - copied from the original bfs_hybrid algorithm.
+template<int VWARP_WIDTH, int BATCH_SIZE, int THREADS_PER_BLOCK>
+__global__ void
+bfs_scatter_kernel(const bitmap_t __restrict rmt_visited,
+                   const vid_t* __restrict rmt_nbrs, vid_t word_count,
+                   bitmap_t visited, cost_t* cost, cost_t level) {
+  if (THREAD_GLOBAL_INDEX >=
+      vwarp_thread_count(word_count, VWARP_WIDTH, BATCH_SIZE)) return;
+  vid_t start_word = vwarp_warp_start_vertex(VWARP_WIDTH, BATCH_SIZE) +
+    vwarp_block_start_vertex(VWARP_WIDTH, BATCH_SIZE, THREADS_PER_BLOCK);
+  vid_t end_word = start_word +
+    vwarp_warp_batch_size(word_count, VWARP_WIDTH, BATCH_SIZE,
+                          THREADS_PER_BLOCK);
+  int warp_offset = vwarp_thread_index(VWARP_WIDTH);
+  for (vid_t k = start_word; k < end_word; k++) {
+    bitmap_word_t word = rmt_visited[k];
+    if (word == 0) continue;
+    vid_t start_vertex = k * BITMAP_BITS_PER_WORD;
+    for (vid_t i = warp_offset; i < BITMAP_BITS_PER_WORD;
+        i += VWARP_WIDTH) {
+      if (bitmap_is_set(word, i)) {
+        vid_t vid = rmt_nbrs[start_vertex + i];
+        if (!bitmap_is_set(visited, vid)) {
+          bitmap_set_gpu(visited, vid);
+          cost[vid] = level;
+        }
+      }
+    }
+  }
+}
+
+// The main scatter function, used in the top down phases.
+PRIVATE void bfs_scatter(partition_t* par) {
+  bfs_state_t* state = reinterpret_cast<bfs_state_t*>(par->algo_state);
+  for (int rmt_pid = 0; rmt_pid < engine_partition_count(); rmt_pid++) {
+    if (rmt_pid == par->id) continue;
+    grooves_box_table_t* inbox = &par->inbox[rmt_pid];
+    if (!inbox->count) continue;
+    if (par->processor.type == PROCESSOR_CPU) {
+      bfs_scatter_cpu(inbox, state, state->visited[par->id]);
+    } else if (par->processor.type == PROCESSOR_GPU) {
+      vid_t word_count = bitmap_bits_to_words(inbox->count);
+      dim3 blocks;
+      const int batch_size = 8; const int warp_size = 16;
+      const int threads = DEFAULT_THREADS_PER_BLOCK;
+      kernel_configure(vwarp_thread_count(word_count, warp_size, batch_size),
+                       blocks, threads);
+      bfs_scatter_kernel<warp_size, batch_size, threads>
+        <<<blocks, threads, 0, par->streams[1]>>>
+        ((bitmap_t)inbox->push_values, inbox->rmt_nbrs, word_count,
+         state->visited[par->id], state->cost, state->level);
+      CALL_CU_SAFE(cudaGetLastError());
+    } else {
+      assert(false);
+    }
+  }
+}
+
 // The aggregate phase - combine results to be presented.
 PRIVATE void bfs_aggregate(partition_t* par) {
   if (!par->subgraph.vertex_count) { return; }
@@ -295,8 +507,18 @@ PRIVATE inline void bfs_init_gpu(partition_t* par) {
     if (pid != par->id && par->outbox[pid].count != 0) {
       state->frontier[pid] =
         reinterpret_cast<bitmap_t>(par->outbox[pid].pull_values);
+
+      // Allocate the visited bitmaps for other partitions.
+      state->visited[pid] = bitmap_init_gpu(par->outbox[pid].count);
+
+      // Clear the outboxes (push values).
+      bitmap_reset_gpu(reinterpret_cast<bitmap_t>
+                         (par->outbox[pid].push_values),
+                       par->outbox[pid].count,
+                       par->streams[1]);
     }
-    // Clear the inboxes, and also their shadows.
+
+    // Clear the inboxes (pull values), and also their shadows.
     if (pid != par->id && par->inbox[pid].count != 0) {
       bitmap_reset_gpu(reinterpret_cast<bitmap_t>
                          (par->inbox[pid].pull_values),
@@ -333,7 +555,16 @@ PRIVATE inline void bfs_init_cpu(partition_t* par) {
     if (pid != par->id && par->outbox[pid].count != 0) {
       state->frontier[pid] =
         reinterpret_cast<bitmap_t>(par->outbox[pid].pull_values);
+
+      // Allocate the visited bitmaps for other partitions.
+      state->visited[pid] = bitmap_init_cpu(par->outbox[pid].count);
+
+      // Clear the push values.
+      bitmap_reset_cpu(reinterpret_cast<bitmap_t>
+                         (par->outbox[pid].push_values),
+                      par->outbox[pid].count);
     }
+
     // Clear the inboxes, and also their shadows.
     if (pid != par->id && par->inbox[pid].count != 0) {
       bitmap_reset_cpu(reinterpret_cast<bitmap_t>
@@ -425,17 +656,33 @@ error_t bfs_stepwise_hybrid(vid_t src, cost_t* cost) {
   state_g.cost = cost;
   state_g.src  = engine_vertex_id_in_partition(src);
 
-  // Initialize the engine.
-  engine_config_t config = {
-    NULL, bfs, NULL, bfs_gather, bfs_init, bfs_finalize, bfs_aggregate,
+  // Initialize the engines - one for the first top down step, and a second
+  // to complete the algorithm with bottom up steps.
+  // TODO(scott): Modify the swapping to flip back and forth simpler.
+  engine_config_t config_td = {
+    NULL, bfs, bfs_scatter, NULL, bfs_init, NULL, NULL,
+    GROOVES_PUSH
+  };
+
+  engine_config_t config_bu = {
+    NULL, bfs, NULL, bfs_gather, NULL, bfs_finalize, bfs_aggregate,
     GROOVES_PULL
   };
-  engine_config(&config);
+
+  engine_config(&config_td);
   if (engine_largest_gpu_partition()) {
     CALL_SAFE(totem_malloc(engine_largest_gpu_partition() * sizeof(cost_t),
                            TOTEM_MEM_HOST,
                            reinterpret_cast<void**>(&state_g.cost_h)));
   }
+
+  // Begin by executing with top down steps.
+  state_g.bu_step = false;
+  engine_execute();
+
+  // Continue execution with bottom up steps.
+  state_g.bu_step = true;
+  engine_config(&config_bu);
   engine_execute();
 
   // Clean up and return.
