@@ -141,12 +141,7 @@ void sssp_vwarp_kernel(partition_t par, sssp_state_t state) {
     vwarp_warp_batch_size(vertex_count, VWARP_WIDTH, VWARP_BATCH);
   int warp_offset = vwarp_thread_index(VWARP_WIDTH);
   for (vid_t v = start_vertex; v < end_vertex; v++) {
-    // Make sure that all the threads in the virtual warp see the same
-    // updated state of the vertex being processed.
-    __shared__ bool updated;
-    updated = state.updated[v];
-    if (VWARP_WIDTH > 32) { __syncthreads(); }
-    if (updated == true) {
+    if (state.updated[v] == true) {
       state.updated[v] = false;
       const eid_t nbr_count = vertices[v + 1] - vertices[v];
       vid_t* nbrs = par.subgraph.edges + vertices[v];
@@ -197,7 +192,10 @@ PRIVATE void sssp_vwarp_gpu(partition_t* par, sssp_state_t* state) {
     // HIGH partitioning
     sssp_gpu_launch<VWARP_MEDIUM_WARP_WIDTH, VWARP_MEDIUM_BATCH_SIZE>,
     // LOW partitioning
-    sssp_gpu_launch<MAX_THREADS_PER_BLOCK, VWARP_MEDIUM_BATCH_SIZE>
+    // If the virtual warp width is larger than the hardware warp width, the
+    // algorithm behaves inconsistantly. Therefore, we are unable to use a warp
+    // width larger than the hardware warp width.
+    sssp_gpu_launch<VWARP_HARDWARE_WARP_WIDTH, VWARP_MEDIUM_BATCH_SIZE>
   };
   int par_alg = engine_partition_algorithm();
   SSSP_GPU_FUNC[par_alg](par, state);
