@@ -192,9 +192,13 @@ PRIVATE void sssp_vwarp_gpu(partition_t* par, sssp_state_t* state) {
     // HIGH partitioning
     sssp_gpu_launch<VWARP_MEDIUM_WARP_WIDTH, VWARP_MEDIUM_BATCH_SIZE>,
     // LOW partitioning
-    // If the virtual warp width is larger than the hardware warp width, the
-    // algorithm behaves inconsistantly. Therefore, we are unable to use a warp
-    // width larger than the hardware warp width.
+    // Note that it is not possible to use a virtual warp width longer than the
+    // hardware warp width. This is because a vertex may switch from inactive
+    // to active state (maintained by the updated array) during the execution
+    // of a round. This may lead to the situation where the threads of a
+    // virtual warp, which are all supposed to process the neighbours of a
+    // vertex, evaluate the vertex's active state differently, and hence part
+    // of the neighbours of that vertex will not get processed.
     sssp_gpu_launch<VWARP_HARDWARE_WARP_WIDTH, VWARP_MEDIUM_BATCH_SIZE>
   };
   int par_alg = engine_partition_algorithm();
