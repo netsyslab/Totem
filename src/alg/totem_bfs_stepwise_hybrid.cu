@@ -251,7 +251,7 @@ __global__ void bfs_td_vwarp_kernel(partition_t par, bfs_state_t state,
 
     // If USE_FRONTIER is true, this if-statement will be removed at compile
     // time.
-    if (USE_FRONTIER || bitmap_is_set(state.frontier[par.id], v)) {
+    if (USE_FRONTIER || (cost[v] == state.level)) {
       assert(cost[v] == state.level);
       const eid_t nbr_count = vertices[v + 1] - vertices[v];
       vid_t* nbrs = par.subgraph.edges + vertices[v];
@@ -280,20 +280,58 @@ __global__ void bfs_td_vwarp_kernel(partition_t par, bfs_state_t state,
 }
 
 template<int VWARP_WIDTH, int BATCH_SIZE, bool USE_FRONTIER>
-PRIVATE void bfs_td_launch_gpu(partition_t* par, bfs_state_t* state,
-                               vid_t* frontier_list, vid_t vertex_count) {
-  if (!USE_FRONTIER) vertex_count = par->subgraph.vertex_count;
+#ifdef FEATURE_SM35
+PRIVATE __host__ __device__
+#else
+PRIVATE __host__
+#endif /* FEATURE_SM35  */
+void bfs_td_launch_gpu(partition_t* par, bfs_state_t* state,
+                       vid_t* frontier_list, vid_t vertex_count,
+                       cudaStream_t stream) {
+  if (!USE_FRONTIER) { vertex_count = par->subgraph.vertex_count; }
   const int threads = MAX_THREADS_PER_BLOCK;
   dim3 blocks;
   assert(VWARP_WIDTH <= threads);
   kernel_configure(vwarp_thread_count(vertex_count, VWARP_WIDTH, BATCH_SIZE),
                    blocks, threads);
   bfs_td_vwarp_kernel<VWARP_WIDTH, BATCH_SIZE, USE_FRONTIER>
-      <<<blocks, threads, 0, par->streams[1]>>>(*par, *state, frontier_list,
-                                                vertex_count);
+      <<<blocks, threads, 0, stream>>>(*par, *state, frontier_list,
+                                       vertex_count);
 }
 
-typedef void(*bfs_td_gpu_func_t)(partition_t*, bfs_state_t*, vid_t*, vid_t);
+typedef void(*bfs_td_gpu_func_t)(partition_t*, bfs_state_t*, vid_t*, vid_t,
+                                 cudaStream_t);
+
+#ifdef FEATURE_SM35
+PRIVATE __global__
+void bfs_launch_at_boundary_kernel(partition_t par, bfs_state_t state) {
+  if (THREAD_GLOBAL_INDEX > 0 || (*state.frontier_state.count == 0)) {
+    return;
+  }
+  const bfs_td_gpu_func_t BFS_GPU_FUNC[] = {
+    bfs_td_launch_gpu<1,   2,  true>,   // (0) < 8
+    bfs_td_launch_gpu<8,   8,  true>,   // (1) > 8    && < 32
+    bfs_td_launch_gpu<32,  32, true>,   // (2) > 32   && < 128
+    bfs_td_launch_gpu<128, 32, true>,   // (3) > 128  && < 256
+    bfs_td_launch_gpu<256, 32, true>,   // (4) > 256  && < 1K
+    bfs_td_launch_gpu<512, 32, true>,   // (5) > 1K   && < 2K
+    bfs_td_launch_gpu<MAX_THREADS_PER_BLOCK, 8, true>,  // (6) > 2k
+  };
+
+  int64_t end = *(state.frontier_state.count);
+  for (int i = FRONTIER_BOUNDARY_COUNT; i >= 0; i--) {
+    int64_t start = state.frontier_state.boundaries[i];
+    int64_t count = end - start;
+    if (count > 0) {
+      cudaStream_t s;
+      cudaStreamCreateWithFlags(&s, cudaStreamNonBlocking);
+      BFS_GPU_FUNC[i](&par, &state, state.frontier_state.list + start,
+                      count, s);
+      end = start;
+    }
+  }
+}
+#endif /* FEATURE_SM35  */
 
 PRIVATE void bfs_tuned_td_launch_gpu(partition_t* par, bfs_state_t* state) {
   vid_t frontier_count = frontier_count_gpu(&state->frontier_state,
@@ -305,6 +343,16 @@ PRIVATE void bfs_tuned_td_launch_gpu(partition_t* par, bfs_state_t* state) {
     frontier_update_list_gpu(&state->frontier_state, state->level, state->cost,
                              par->streams[1]);
   }
+
+#ifdef FEATURE_SM35
+  if (engine_sorted() && use_frontier) {
+    frontier_update_boundaries_gpu(&state->frontier_state, &par->subgraph,
+                                   par->streams[1]);
+    bfs_launch_at_boundary_kernel<<<1, 1, 0, par->streams[1]>>>(*par, *state);
+    CALL_CU_SAFE(cudaGetLastError());
+    return;
+  }
+#endif /* FEATURE_SM35 */
 
   // Call the BFS kernel
   const bfs_td_gpu_func_t BFS_GPU_FUNC[][2] = {
@@ -325,7 +373,7 @@ PRIVATE void bfs_tuned_td_launch_gpu(partition_t* par, bfs_state_t* state) {
   };
   int par_alg = engine_partition_algorithm();
   BFS_GPU_FUNC[par_alg][use_frontier]
-    (par, state, state->frontier_state.list, frontier_count);
+      (par, state, state->frontier_state.list, frontier_count, par->streams[1]);
   CALL_CU_SAFE(cudaGetLastError());
 }
 
