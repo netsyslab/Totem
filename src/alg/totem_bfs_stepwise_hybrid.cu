@@ -467,32 +467,56 @@ PRIVATE void bfs(partition_t* par) {
 // Gather for the CPU bitmap to inbox.
 PRIVATE void bfs_gather_cpu(partition_t* par, bfs_state_t* state,
                             grooves_box_table_t* inbox) {
-  // Iterate across the items in the inbox.
-  OMP(omp parallel for schedule(static))
-  for (vid_t index = 0; index < inbox->count; index++) {
-    // Lookup the local vertex it points to.
-    vid_t vid = inbox->rmt_nbrs[index];
+  const vid_t words = bitmap_bits_to_words(inbox->count);
+  bitmap_t bitmap = reinterpret_cast<bitmap_t>(inbox->pull_values);
 
-    // Set the bit state to our local state.
-    if (state->cost[vid] == state->level) {
-      bitmap_set_cpu(reinterpret_cast<bitmap_t>(inbox->pull_values), index);
+  // Iterate across the items in the inbox.
+  OMP(omp parallel for schedule(runtime))
+  for (vid_t word_index = 0; word_index < words; word_index++) {
+    vid_t index = word_index * BITMAP_BITS_PER_WORD;
+    bitmap_word_t word = bitmap[word_index];
+    for (int i = 0; i < BITMAP_BITS_PER_WORD; i++) {
+      if (index >= inbox->count) { break; }
+      bitmap_word_t mask = ((bitmap_word_t)1) << i;
+      if (word & mask) { continue; }
+      vid_t vid = inbox->rmt_nbrs[index];
+      if (state->cost[vid] == state->level) { word |= mask; }
+      index++;
     }
+    bitmap[word_index] = word;
   }
 }
 
 // Gather for the GPU bitmap to inbox.
+template<int THREADS_PER_BLOCK>
 __global__ void bfs_gather_gpu(partition_t par, bfs_state_t state,
                                grooves_box_table_t inbox) {
-  const vid_t index = THREAD_GLOBAL_INDEX;
-  if (index >= inbox.count) { return; }
+  __shared__ cost_t cost[BITMAP_BITS_PER_WORD * THREADS_PER_BLOCK];
 
-  // Lookup the local vertex it points to.
-  vid_t vid = inbox.rmt_nbrs[index];
-
-  // Set the bit state to our local state.
-  if (state.cost[vid] == state.level) {
-    bitmap_set_gpu(reinterpret_cast<bitmap_t>(inbox.pull_values), index);
+  vid_t block_start_index = BLOCK_GLOBAL_INDEX * THREADS_PER_BLOCK;
+  int block_count = THREADS_PER_BLOCK * BITMAP_BITS_PER_WORD;
+  if (block_start_index + block_count > inbox.count) {
+    block_count = inbox.count - block_start_index;
   }
+  for (int i = THREAD_BLOCK_INDEX; i < block_count; i += THREADS_PER_BLOCK) {
+    cost[i] = state.cost[inbox.rmt_nbrs[block_start_index + i]];
+  }
+  __syncthreads();
+
+  cost_t* my_cost = &cost[THREAD_BLOCK_INDEX * BITMAP_BITS_PER_WORD];
+  const vid_t word_index = THREAD_GLOBAL_INDEX;
+  vid_t start_index = word_index * BITMAP_BITS_PER_WORD;
+  if (start_index >= inbox.count) { return; }
+
+  bitmap_t bitmap = reinterpret_cast<bitmap_t>(inbox.pull_values);
+  bitmap_word_t word = 0;
+  vid_t batch = start_index + BITMAP_BITS_PER_WORD <= inbox.count ?
+      BITMAP_BITS_PER_WORD : inbox.count - start_index;
+  for (int i = 0; i < batch; i++) {
+    bitmap_word_t mask = ((bitmap_word_t)1) << i;
+    if (my_cost[i] == state.level) { word |= mask; }
+  }
+  bitmap[word_index] = word;
 }
 
 // The gather phase - apply values from the inboxes to the partitions' local
@@ -514,14 +538,11 @@ PRIVATE void bfs_gather(partition_t* par) {
     if (par->processor.type == PROCESSOR_CPU) {
       bfs_gather_cpu(par, state, inbox);
     } else if (par->processor.type == PROCESSOR_GPU) {
-      stopwatch_t stopwatch;
-      stopwatch_start(&stopwatch);
-      // Set up to iterate across the items in the inbox.
       dim3 blocks;
-      dim3 threads_per_block;
-      KERNEL_CONFIGURE(inbox->count, blocks, threads_per_block);
-      bfs_gather_gpu<<<blocks, threads_per_block, 0, par->streams[1]>>>
-        (*par, *state, *inbox);
+      const int threads = DEFAULT_THREADS_PER_BLOCK;
+      kernel_configure(bitmap_bits_to_words(inbox->count), blocks, threads);
+      bfs_gather_gpu<threads><<<blocks, threads, 0, par->streams[1]>>>
+          (*par, *state, *inbox);
     } else {
       assert(false);
     }
@@ -631,7 +652,7 @@ PRIVATE void bfs_aggregate(partition_t* par) {
 
   // Aggregate the results.
   assert(state_g.cost);
-  OMP(omp parallel for schedule(runtime))
+  OMP(omp parallel for schedule(static))
   for (vid_t v = 0; v < subgraph->vertex_count; v++) {
     state_g.cost[par->map[v]] = src_cost[v];
   }
