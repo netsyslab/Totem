@@ -175,29 +175,38 @@ void bfs_stepwise_cpu(partition_t* par, bfs_state_t* state) {
 }
 
 // A gpu version of the Bottom-up step as a kernel.
-__global__ void bfs_bu_kernel(partition_t par, bfs_state_t state) {
-  const vid_t vertex_id = THREAD_GLOBAL_INDEX;
-  if (vertex_id >= par.subgraph.vertex_count) { return; }
+template<int VWARP_WIDTH, int VWARP_BATCH, int THREADS_PER_BLOCK>
+__global__ void bfs_bu_vwarp_kernel(partition_t par, bfs_state_t state) {
+  const vid_t vertex_count = par.subgraph.vertex_count;
+  if (THREAD_GLOBAL_INDEX >=
+      vwarp_thread_count(vertex_count, VWARP_WIDTH, VWARP_BATCH)) { return; }
 
   __shared__ bool finished_block;
   finished_block = true;
   __syncthreads();
 
-  if (state.cost[vertex_id] == INF_COST) {
-    // Iterate across all neighbours of the vertex.
-    graph_t subgraph = par.subgraph;
-    for (eid_t i = subgraph.vertices[vertex_id];
-         i < subgraph.vertices[vertex_id + 1]; i++) {
-      int nbr_pid = GET_PARTITION_ID(subgraph.edges[i]);
-      int nbr = GET_VERTEX_ID(subgraph.edges[i]);
+  vid_t start_vertex = vwarp_block_start_vertex(VWARP_WIDTH, VWARP_BATCH) +
+      vwarp_warp_start_vertex(VWARP_WIDTH, VWARP_BATCH);
+  vid_t end_vertex = start_vertex + vwarp_warp_batch_size(
+      vertex_count, VWARP_WIDTH, VWARP_BATCH);
+  int warp_index = vwarp_warp_index(VWARP_WIDTH);
 
+  const eid_t* __restrict vertices = par.subgraph.vertices;
+
+  for (vid_t v = start_vertex; v < end_vertex; v++) {
+    if (state.cost[v] != INF_COST) { continue; }
+    const vid_t* __restrict edges = par.subgraph.edges + vertices[v];
+    const eid_t nbr_count = vertices[v + 1] - vertices[v];
+    for (eid_t i = 0; i < nbr_count; i++) {
+      int nbr_pid = GET_PARTITION_ID(edges[i]);
+      vid_t nbr = GET_VERTEX_ID(edges[i]);
       // Check if neighbour is in the current frontier.
       if (bitmap_is_set(state.frontier[nbr_pid], nbr)) {
         // Add the vertex we are exploring to the next frontier.
-        bitmap_set_gpu(state.visited[par.id], vertex_id);
+        bitmap_set_gpu(state.visited[par.id], v);
 
         // Increment the level of this vertex.
-        state.cost[vertex_id] = state.level + 1;
+        state.cost[v] = state.level + 1;
         finished_block = false;
         break;
       }
@@ -209,13 +218,14 @@ __global__ void bfs_bu_kernel(partition_t par, bfs_state_t state) {
   if (!finished_block && THREAD_BLOCK_INDEX == 0) *state.finished = false;
 }
 
+template<int VWARP_WIDTH, int VWARP_BATCH>
 PRIVATE void bfs_bu_launch_gpu(partition_t* par, bfs_state_t* state) {
+  const int threads = MAX_THREADS_PER_BLOCK;
   dim3 blocks;
-  dim3 threads_per_block;
-  KERNEL_CONFIGURE(par->subgraph.vertex_count, blocks, threads_per_block);
-  bfs_bu_kernel<<<blocks, threads_per_block, 0, par->streams[1]>>>
-      (*par, *state);
-  CALL_CU_SAFE(cudaGetLastError());
+  kernel_configure(vwarp_thread_count(par->subgraph.vertex_count, VWARP_WIDTH,
+                                      VWARP_BATCH), blocks, threads);
+  bfs_bu_vwarp_kernel<VWARP_WIDTH, VWARP_BATCH, threads>
+      <<<blocks, threads, 0, par->streams[1]>>>(*par, *state);
 }
 
 // A warp-based implementation of the top-down BFS kernel.
@@ -387,7 +397,11 @@ __host__ error_t bfs_stepwise_gpu(partition_t* par, bfs_state_t* state) {
     state->frontier[par->id] = state->frontier_state.current;
 
     // Execute a bottom up step.
-    bfs_bu_launch_gpu(par, state);
+    // TODO(abdullah,scott): figure out an optimal vwarp configuration for
+    // different partitioning algorithms.
+    const int VWARP_WIDTH = 1;
+    const int BATCH_SIZE = 4;
+    bfs_bu_launch_gpu<VWARP_WIDTH, BATCH_SIZE>(par, state);
 
   } else {
     // Copy the current state of the remote vertices bitmap.
@@ -798,7 +812,7 @@ error_t bfs_stepwise_hybrid(vid_t src, cost_t* cost) {
 
   if (engine_largest_gpu_partition()) {
     CALL_SAFE(totem_malloc(engine_largest_gpu_partition() * sizeof(cost_t),
-                           TOTEM_MEM_HOST,
+                           TOTEM_MEM_HOST_PINNED,
                            reinterpret_cast<void**>(&state_g.cost_h)));
   }
 
@@ -836,7 +850,7 @@ error_t bfs_stepwise_hybrid(vid_t src, cost_t* cost) {
 
   // Clean up and return.
   if (engine_largest_gpu_partition()) {
-    totem_free(state_g.cost_h, TOTEM_MEM_HOST);
+    totem_free(state_g.cost_h, TOTEM_MEM_HOST_PINNED);
   }
   memset(&state_g, 0, sizeof(bfs_global_state_t));
   return SUCCESS;
