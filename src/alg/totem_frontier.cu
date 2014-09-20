@@ -1,6 +1,6 @@
 /**
  * This file contains an implementation of the frontier interface which is used
- * by some traversal-based algorithms such as BFS, Graph500 and Betweenness 
+ * by some traversal-based algorithms such as BFS, Graph500 and Betweenness
  * Centrality
  *
  *  Created on: 2013-08-3
@@ -9,6 +9,7 @@
 
 #include "totem_alg.h"
 #include "totem_engine.cuh"
+#include "totem_util.h"
 
 #ifdef FEATURE_SM35
 PRIVATE __global__ void
@@ -87,14 +88,15 @@ frontier_update_list_kernel(frontier_state_t state, const cost_t level,
   __shared__ int index;
   if (THREAD_BLOCK_INDEX == 0) {
     index = atomicAdd(state.count, count_l);
+    assert(*state.count <= state.list_len);
   }
   __syncthreads();
 
-  state.list[index + THREAD_BLOCK_INDEX] = queue_l[THREAD_BLOCK_INDEX];  
+  state.list[index + THREAD_BLOCK_INDEX] = queue_l[THREAD_BLOCK_INDEX];
 }
 
 void frontier_update_list_gpu(frontier_state_t* state,
-                              vid_t level, const cost_t* cost, 
+                              vid_t level, const cost_t* cost,
                               const cudaStream_t stream) {
   cudaMemsetAsync(state->count, 0, sizeof(vid_t), stream);
   dim3 blocks;
@@ -129,7 +131,7 @@ frontier_update_list_kernel(frontier_state_t state) {
   }
   __syncthreads();
 
-  state.list[index + THREAD_BLOCK_INDEX] = queue_l[THREAD_BLOCK_INDEX];  
+  state.list[index + THREAD_BLOCK_INDEX] = queue_l[THREAD_BLOCK_INDEX];
 }
 
 void frontier_update_list_gpu(frontier_state_t* state,
@@ -143,8 +145,8 @@ void frontier_update_list_gpu(frontier_state_t* state,
 }
 
 #ifdef FEATURE_SM35
-void frontier_update_boundaries_gpu(frontier_state_t* state, 
-                                    const graph_t* graph, 
+void frontier_update_boundaries_gpu(frontier_state_t* state,
+                                    const graph_t* graph,
                                     const cudaStream_t stream) {
   if (engine_sorted()) {
     // If the vertices are sorted by degree, build the boundaries array
@@ -167,7 +169,7 @@ vid_t frontier_update_bitmap_gpu(frontier_state_t* state, bitmap_t visited,
   bitmap_t tmp = state->current;
   state->current = state->visited_last;
   state->visited_last = tmp;
-    bitmap_diff_copy_gpu(visited, state->current, state->visited_last, 
+    bitmap_diff_copy_gpu(visited, state->current, state->visited_last,
                          state->len, stream);
   return 0;
 }
@@ -176,7 +178,7 @@ vid_t frontier_update_bitmap_cpu(frontier_state_t* state, bitmap_t visited) {
   bitmap_t tmp = state->current;
   state->current = state->visited_last;
   state->visited_last = tmp;
-  bitmap_diff_copy_cpu(visited, state->current, state->visited_last, 
+  bitmap_diff_copy_cpu(visited, state->current, state->visited_last,
                        state->len);
   return 0;
 }
@@ -184,7 +186,7 @@ vid_t frontier_update_bitmap_cpu(frontier_state_t* state, bitmap_t visited) {
 void frontier_reset_gpu(frontier_state_t* state) {
   bitmap_reset_gpu(state->current, state->len);
   bitmap_reset_gpu(state->visited_last, state->len);
-  totem_memset(state->count, (vid_t)0, 1, TOTEM_MEM_DEVICE);  
+  totem_memset(state->count, (vid_t)0, 1, TOTEM_MEM_DEVICE);
 }
 void frontier_reset_cpu(frontier_state_t* state) {
   bitmap_reset_cpu(state->current, state->len);
@@ -196,23 +198,20 @@ void frontier_init_gpu(frontier_state_t* state, vid_t vertex_count) {
   state->len = vertex_count;
   state->current = bitmap_init_gpu(vertex_count);
   state->visited_last = bitmap_init_gpu(vertex_count);
-  CALL_SAFE(totem_calloc(sizeof(vid_t), TOTEM_MEM_DEVICE, 
-                         (void **)&state->count));
-  CALL_SAFE(totem_calloc(vertex_count * sizeof(vid_t), TOTEM_MEM_DEVICE,
-                         (void **)&state->list));
+  CALL_SAFE(totem_calloc(sizeof(vid_t), TOTEM_MEM_DEVICE,
+                         reinterpret_cast<void**>(&state->count)));
   state->list_len = vertex_count;
-  if (engine_partition_algorithm() == PAR_SORTED_ASC) {
-    // LOW-degree vertices were placed on the GPU. Since there is typically
-    // many of them, and the GPU has limited memory, we restrict the frontier
-    // array size. If the frontier in a specific level was longer, then the 
-    // algorithm will not build a frontier array, and will iterate over all
-    // the vertices.
-    state->list_len = vertex_count * TRV_MAX_FRONTIER_LEN;
-  }
+  vid_t list_max_len = TRV_MAX_FRONTIER_SIZE * get_gpu_device_memory() /
+      sizeof(vid_t);
+  if (state->list_len >= list_max_len) { state->list_len = list_max_len; }
+  CALL_SAFE(totem_calloc(state->list_len * sizeof(vid_t), TOTEM_MEM_DEVICE,
+                         reinterpret_cast<void**>(&state->list)));
+
 #ifdef FEATURE_SM35
   if (engine_sorted()) {
-    CALL_SAFE(totem_calloc((FRONTIER_BOUNDARY_COUNT + 1) * sizeof(vid_t), 
-                           TOTEM_MEM_DEVICE, (void**)&state->boundaries));
+    CALL_SAFE(totem_calloc((FRONTIER_BOUNDARY_COUNT + 1) * sizeof(vid_t),
+                           TOTEM_MEM_DEVICE,
+                           reinterpret_cast<void**>(&state->boundaries)));
   }
 #endif /* FEATURE_SM35 */
 }

@@ -30,7 +30,7 @@ typedef int64_t bfs_tree_t;
  * For traversal-based algorithms, this constant determines the threshold
  * (as percentage of the total number of vertices) below which the frontier
  * is considered sparse. This is used to tune the graph algorithm (for example)
- * to choose between iterating over all the vertices (when the frontier is 
+ * to choose between iterating over all the vertices (when the frontier is
  * not sparse), or build a frontier and iterate over only the vertices in the
  * frontier when it is sparse.
  */
@@ -38,15 +38,15 @@ const double TRV_FRONTIER_SPARSE_THRESHOLD = .1;
 
 /*
  * For traversal-based algorithms, this constant determines the threshold
- * (as a fraction of the total number of vertices) that determines the
+ * (as a fraction of the total amount of device memory) that determines the
  * maximum space to be allocated for the frontier array. Since  the GPU has
  * limited memory, this threshold is used by GPU-based partitions to limit
- * the space allocated for the frontier array. Note that if the frontier 
+ * the space allocated for the frontier array. Note that if the frontier
  * in a specific level was longer, then the algorithm should not build a
  * frontier array, and should iterate over all the vertices. This value has
  * been determined experimentally.
  */
-const double TRV_MAX_FRONTIER_LEN = .2;
+const double TRV_MAX_FRONTIER_SIZE = .20;
 
 /**
  * A type for page rank. This is useful to allow changes in precision.
@@ -60,11 +60,11 @@ typedef float rank_t;
 const int PAGE_RANK_ROUNDS = 5;
 
 /**
- * A probability used in the PageRank algorithm that models the behavior of the 
- * random surfer when she moves from one page to another without following the 
+ * A probability used in the PageRank algorithm that models the behavior of the
+ * random surfer when she moves from one page to another without following the
  * links on the current page.
  * TODO(abdullah): The variable could be passed as a parameter in the entry
- * function to enable more flexibility and experimentation. This however 
+ * function to enable more flexibility and experimentation. This however
  * increases register usage and may affect performance
  */
 const rank_t PAGE_RANK_DAMPING_FACTOR = 0.85;
@@ -111,7 +111,7 @@ error_t bfs_hybrid(vid_t src_id, cost_t* cost);
 error_t bfs_stepwise_hybrid(vid_t src_id, cost_t* cost);
 
 /**
- * Given an undirected, unweighted graph and a source vertex, compute the 
+ * Given an undirected, unweighted graph and a source vertex, compute the
  * corresponding BFS tree.
  *
  * @param[in]  graph  the graph to perform BFS on
@@ -126,13 +126,13 @@ void graph500_alloc(partition_t* par);
 
 /**
  * Given a graph, compute the clustering coefficient of each vertex.
+ * TODO(treza): change the data type from weight_t to something specific
+ * to clustering coefficient (e.g., clustering_coefficient_t) or even
+ * change this to a template.
  *
  * @param[in] graph the input graph
  * @param[out] coefficients array containing computed coefficinets
  */
- // TODO(treza): change the data type from weight_t to something specific
- // to clustering coefficient (e.g., clustering_coefficient_t) or even
- // change this to a template.
 error_t clustering_coefficient_cpu(const graph_t* graph,
                                    weight_t** coefficients);
 error_t clustering_coefficient_gpu(const graph_t* graph,
@@ -163,8 +163,8 @@ error_t sssp_hybrid(vid_t src_id, weight_t* distance);
  * Given a weighted graph \f$G = (V, E, w)\f$, the All Pairs Shortest Path
  * algorithm computes the distance from every vertex to every other vertex
  * in a weighted graph with no negative cycles.
- * The distances array must be of size vertex_count^2. It mimics a static 
- * array to avoid the overhead of creating an array of pointers. Thus, 
+ * The distances array must be of size vertex_count^2. It mimics a static
+ * array to avoid the overhead of creating an array of pointers. Thus,
  * accessing index [i][j] will be done as distances[(i * vertex_count) + j]
  *
  * @param[in] graph an instance of the graph structure
@@ -177,14 +177,15 @@ error_t apsp_gpu(graph_t* graph, weight_t** distances);
 
 /**
  * Implements a version of the Label Propagation algorithm described in
- * [Xie 2013] for CPU. Algorithm details are described in 
+ * [Xie 2013] for CPU. Algorithm details are described in
  * totem_label_propagation.cu.
+ * TODO(tanuj): Declare a data type label_t.
+ *
  * @param[in] graph an instance of the graph structure
  * @param[out] labels the computed labels of each vertex
  * @return generic success or failure
- * 
+ *
  */
- // TODO(tanuj): Declare a data type label_t.
 error_t label_propagation_cpu(const graph_t* graph, vid_t* labels);
 
 /**
@@ -316,9 +317,9 @@ error_t betweenness_unweighted_shi_gpu(const graph_t* graph,
  *             scores per vertex
  * @return generic success or failure
  */
-error_t betweenness_cpu(const graph_t* graph, double epsilon, 
+error_t betweenness_cpu(const graph_t* graph, double epsilon,
                         score_t* centrality_score);
-error_t betweenness_gpu(const graph_t* graph, double epsilon, 
+error_t betweenness_gpu(const graph_t* graph, double epsilon,
                         score_t* centrality_score);
 error_t betweenness_hybrid(double epsilon, score_t* centrality_score);
 
@@ -347,7 +348,7 @@ error_t stress_unweighted_gpu(const graph_t* graph,
 
 typedef struct frontier_state_s {
   bitmap_t current;         // current frontier bitmap
-  bitmap_t visited_last;    // a bitmap of the visited vertices before the 
+  bitmap_t visited_last;    // a bitmap of the visited vertices before the
                             // start of the previous round. This is used to
                             // compute the frontier bitmap of the current
                             // round by diffing this bitmap with the visited
@@ -356,7 +357,7 @@ typedef struct frontier_state_s {
   vid_t len;                // frontier bitmaps length
   vid_t* list;              // maintains the list of vertices that belong to the
                             // current frontier being processed (GPU only)
-  vid_t  list_len;          // maximum number of vertices that the frontier 
+  vid_t  list_len;          // maximum number of vertices that the frontier
                             // list can hold (GPU only)
   vid_t* count;             // used to calculate the current number of vertices
                             // in the frontier (GPU only)
@@ -390,27 +391,27 @@ void frontier_reset_gpu(frontier_state_t* state);
 void frontier_reset_cpu(frontier_state_t* state);
 
 /**
- * Updates the frontier bitmap 
+ * Updates the frontier bitmap
  * @param[in] frontier reference to the frontier data structure
  * @param[in] visited a bitmap representing  all the vertices that has been
  * visited untill now
  */
-vid_t frontier_update_bitmap_cpu(frontier_state_t* state, 
+vid_t frontier_update_bitmap_cpu(frontier_state_t* state,
                                  const bitmap_t visited);
-vid_t frontier_update_bitmap_gpu(frontier_state_t* state, 
+vid_t frontier_update_bitmap_gpu(frontier_state_t* state,
                                  const bitmap_t visited,
                                  cudaStream_t stream);
 
 /**
- * Updates the frontier list with the vertex ids of the vertices in the 
+ * Updates the frontier list with the vertex ids of the vertices in the
  * frontier. It also defines the scheduling boundaries in the case
  * the vertices are sorted by degree
  * @param[in] frontier reference to the frontier data structure
  */
 void frontier_update_list_gpu(frontier_state_t* state,
-                              vid_t level, const cost_t* cost, 
+                              vid_t level, const cost_t* cost,
                               const cudaStream_t stream);
-void frontier_update_list_gpu(frontier_state_t* state, 
+void frontier_update_list_gpu(frontier_state_t* state,
                               const cudaStream_t stream);
 
 #ifdef FEATURE_SM35
@@ -419,14 +420,14 @@ void frontier_update_list_gpu(frontier_state_t* state,
  * @param[in] frontier reference to the frontier data structure
  * @param[in] graph a reference to the graph to be processed
  */
-void frontier_update_boundaries_gpu(frontier_state_t* state, 
+void frontier_update_boundaries_gpu(frontier_state_t* state,
                                     const graph_t* graph,
                                     const cudaStream_t stream);
 #endif /* FEATURE_SM35 */
 
 /**
  * Returns the number of vertices in the frontier
- * @param[in] frontier the frontier 
+ * @param[in] frontier the frontier
  * @return number of vertices in the frontier
  */
 inline vid_t frontier_count_cpu(frontier_state_t* state) {

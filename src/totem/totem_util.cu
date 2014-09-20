@@ -42,6 +42,12 @@ int get_gpu_count() {
   return min((MAX_PARTITION_COUNT - 1), gpu_count);
 }
 
+size_t get_gpu_device_memory() {
+  cudaDeviceProp device;
+  cudaGetDeviceProperties(&device, 0);
+  return device.totalGlobalMem;
+}
+
 int compare_ids_asc(const void* a, const void* b) {
   vid_t v1 = *(reinterpret_cast<const vid_t*>(a));
   vid_t v2 = *(reinterpret_cast<const vid_t*>(b));
