@@ -66,7 +66,7 @@ PRIVATE error_t check_special_cases(vid_t src, cost_t* cost, bool* finished) {
 
 // A step that iterates across the frontier of vertices and adds their
 // neighbours to the next frontier.
-PRIVATE void bfs_td_step(partition_t* par, bfs_state_t* state) {
+PRIVATE void bfs_td_cpu(partition_t* par, bfs_state_t* state) {
   graph_t* subgraph = &par->subgraph;
   bool finished = true;
 
@@ -101,7 +101,7 @@ PRIVATE void bfs_td_step(partition_t* par, bfs_state_t* state) {
 
 // A step that iterates across unvisited vertices and determines
 // their status in the next frontier.
-PRIVATE void bfs_bu_step(partition_t* par, bfs_state_t* state) {
+PRIVATE void bfs_bu_cpu(partition_t* par, bfs_state_t* state) {
   graph_t* subgraph = &par->subgraph;
   bool finished = true;
   bitmap_t visited = state->visited[par->id];
@@ -145,12 +145,12 @@ void bfs_stepwise_cpu(partition_t* par, bfs_state_t* state) {
     state->frontier[par->id] = state->frontier_state.current;
 
     // Execute a bottom up step.
-    bfs_bu_step(par, state);
+    bfs_bu_cpu(par, state);
 
   } else {
     // Copy the current state of the remote vertices bitmap.
     for (int pid = 0; pid < engine_partition_count(); pid++) {
-      if ((pid == par->id) || (par->outbox[pid].count == 0)) continue;
+      if ((pid == par->id) || (par->outbox[pid].count == 0)) { continue; }
       bitmap_copy_cpu(state->visited[pid],
                       (bitmap_t)par->outbox[pid].push_values,
                       par->outbox[pid].count);
@@ -161,12 +161,12 @@ void bfs_stepwise_cpu(partition_t* par, bfs_state_t* state) {
     state->frontier[par->id] = state->frontier_state.current;
 
     // Execute a top down step.
-    bfs_td_step(par, state);
+    bfs_td_cpu(par, state);
 
     // Diff the remote vertices bitmaps so that only the vertices who got set
     // in this round are notified.
     for (int pid = 0; pid < engine_partition_count(); pid++) {
-      if ((pid == par->id) || (par->outbox[pid].count == 0)) continue;
+      if ((pid == par->id) || (par->outbox[pid].count == 0)) { continue; }
       bitmap_diff_cpu(state->visited[pid],
                       (bitmap_t)par->outbox[pid].push_values,
                       par->outbox[pid].count);
@@ -176,7 +176,7 @@ void bfs_stepwise_cpu(partition_t* par, bfs_state_t* state) {
 
 // A gpu version of the Bottom-up step as a kernel.
 template<int VWARP_WIDTH, int VWARP_BATCH, int THREADS_PER_BLOCK>
-__global__ void bfs_bu_vwarp_kernel(partition_t par, bfs_state_t state) {
+__global__ void bfs_bu_kernel(partition_t par, bfs_state_t state) {
   const vid_t vertex_count = par.subgraph.vertex_count;
   if (THREAD_GLOBAL_INDEX >=
       vwarp_thread_count(vertex_count, VWARP_WIDTH, VWARP_BATCH)) { return; }
@@ -219,25 +219,24 @@ __global__ void bfs_bu_vwarp_kernel(partition_t par, bfs_state_t state) {
 }
 
 template<int VWARP_WIDTH, int VWARP_BATCH>
-PRIVATE void bfs_bu_launch_gpu(partition_t* par, bfs_state_t* state) {
+PRIVATE void bfs_bu_gpu(partition_t* par, bfs_state_t* state) {
   const int threads = MAX_THREADS_PER_BLOCK;
   dim3 blocks;
   kernel_configure(vwarp_thread_count(par->subgraph.vertex_count, VWARP_WIDTH,
                                       VWARP_BATCH), blocks, threads);
-  bfs_bu_vwarp_kernel<VWARP_WIDTH, VWARP_BATCH, threads>
+  bfs_bu_kernel<VWARP_WIDTH, VWARP_BATCH, threads>
       <<<blocks, threads, 0, par->streams[1]>>>(*par, *state);
 }
 
 // A warp-based implementation of the top-down BFS kernel.
-template<int VWARP_WIDTH, int VWARP_BATCH, bool USE_FRONTIER>
-__global__ void bfs_td_vwarp_kernel(partition_t par, bfs_state_t state,
-                                    const vid_t* __restrict frontier,
-                                    vid_t count) {
+template<int VWARP_WIDTH, int VWARP_BATCH>
+__global__ void bfs_td_kernel(partition_t par, bfs_state_t state,
+                              const vid_t* __restrict frontier,
+                              vid_t count) {
   if (THREAD_GLOBAL_INDEX >=
       vwarp_thread_count(count, VWARP_WIDTH, VWARP_BATCH)) { return; }
 
   const eid_t* __restrict vertices = par.subgraph.vertices;
-  const cost_t* __restrict cost = state.cost;
 
   // This flag is used to report the finish state of a block of threads. This
   // is useful to avoid having many threads writing to the global finished
@@ -253,33 +252,24 @@ __global__ void bfs_td_vwarp_kernel(partition_t par, bfs_state_t state,
     vwarp_warp_batch_size(count, VWARP_WIDTH, VWARP_BATCH);
   int warp_offset = vwarp_thread_index(VWARP_WIDTH);
 
-  for(vid_t i = start_vertex; i < end_vertex; i++) {
-    vid_t v = i;
-    if (USE_FRONTIER) { // This is evaluated at compile time.
-      v = frontier[i];
+  for (vid_t i = start_vertex; i < end_vertex; i++) {
+    vid_t v = frontier[i];
+    const eid_t nbr_count = vertices[v + 1] - vertices[v];
+    vid_t* nbrs = par.subgraph.edges + vertices[v];
+    if (v >= par.subgraph.vertex_ext) {
+      nbrs = par.subgraph.edges_ext +
+          (vertices[v] - par.subgraph.edge_count_ext);
     }
-
-    // If USE_FRONTIER is true, this if-statement will be removed at compile
-    // time.
-    if (USE_FRONTIER || (cost[v] == state.level)) {
-      assert(cost[v] == state.level);
-      const eid_t nbr_count = vertices[v + 1] - vertices[v];
-      vid_t* nbrs = par.subgraph.edges + vertices[v];
-      if (v >= par.subgraph.vertex_ext) {
-        nbrs = par.subgraph.edges_ext +
-            (vertices[v] - par.subgraph.edge_count_ext);
-      }
-      for(vid_t i = warp_offset; i < nbr_count; i += VWARP_WIDTH) {
-        int nbr_pid = GET_PARTITION_ID(nbrs[i]);
-        vid_t nbr = GET_VERTEX_ID(nbrs[i]);
-        bitmap_t visited = state.visited[nbr_pid];
-        if (!bitmap_is_set(visited, nbr)) {
-          if (bitmap_set_gpu(visited, nbr)) {
-            if ((nbr_pid == par.id) && state.cost[nbr] == INF_COST) {
-              state.cost[nbr] = state.level + 1;
-            }
-            finished_block = false;
+    for (vid_t i = warp_offset; i < nbr_count; i += VWARP_WIDTH) {
+      int nbr_pid = GET_PARTITION_ID(nbrs[i]);
+      vid_t nbr = GET_VERTEX_ID(nbrs[i]);
+      bitmap_t visited = state.visited[nbr_pid];
+      if (!bitmap_is_set(visited, nbr)) {
+        if (bitmap_set_gpu(visited, nbr)) {
+          if ((nbr_pid == par.id) && state.cost[nbr] == INF_COST) {
+            state.cost[nbr] = state.level + 1;
           }
+          finished_block = false;
         }
       }
     }
@@ -289,22 +279,21 @@ __global__ void bfs_td_vwarp_kernel(partition_t par, bfs_state_t state,
   if (!finished_block && THREAD_BLOCK_INDEX == 0) *state.finished = false;
 }
 
-template<int VWARP_WIDTH, int BATCH_SIZE, bool USE_FRONTIER>
+template<int VWARP_WIDTH, int BATCH_SIZE>
 #ifdef FEATURE_SM35
 PRIVATE __host__ __device__
 #else
 PRIVATE __host__
-#endif /* FEATURE_SM35  */
+#endif  // FEATURE_SM35
 void bfs_td_launch_gpu(partition_t* par, bfs_state_t* state,
                        vid_t* frontier_list, vid_t vertex_count,
                        cudaStream_t stream) {
-  if (!USE_FRONTIER) { vertex_count = par->subgraph.vertex_count; }
   const int threads = MAX_THREADS_PER_BLOCK;
   dim3 blocks;
   assert(VWARP_WIDTH <= threads);
   kernel_configure(vwarp_thread_count(vertex_count, VWARP_WIDTH, BATCH_SIZE),
                    blocks, threads);
-  bfs_td_vwarp_kernel<VWARP_WIDTH, BATCH_SIZE, USE_FRONTIER>
+  bfs_td_kernel<VWARP_WIDTH, BATCH_SIZE>
       <<<blocks, threads, 0, stream>>>(*par, *state, frontier_list,
                                        vertex_count);
 }
@@ -314,18 +303,18 @@ typedef void(*bfs_td_gpu_func_t)(partition_t*, bfs_state_t*, vid_t*, vid_t,
 
 #ifdef FEATURE_SM35
 PRIVATE __global__
-void bfs_launch_at_boundary_kernel(partition_t par, bfs_state_t state) {
+void bfs_td_launch_at_boundary_gpu(partition_t par, bfs_state_t state) {
   if (THREAD_GLOBAL_INDEX > 0 || (*state.frontier_state.count == 0)) {
     return;
   }
   const bfs_td_gpu_func_t BFS_GPU_FUNC[] = {
-    bfs_td_launch_gpu<1,   2,  true>,   // (0) < 8
-    bfs_td_launch_gpu<8,   8,  true>,   // (1) > 8    && < 32
-    bfs_td_launch_gpu<32,  32, true>,   // (2) > 32   && < 128
-    bfs_td_launch_gpu<128, 32, true>,   // (3) > 128  && < 256
-    bfs_td_launch_gpu<256, 32, true>,   // (4) > 256  && < 1K
-    bfs_td_launch_gpu<512, 32, true>,   // (5) > 1K   && < 2K
-    bfs_td_launch_gpu<MAX_THREADS_PER_BLOCK, 8, true>,  // (6) > 2k
+    bfs_td_launch_gpu<1,   2>,   // (0) < 8
+    bfs_td_launch_gpu<8,   8>,   // (1) > 8    && < 32
+    bfs_td_launch_gpu<32,  32>,   // (2) > 32   && < 128
+    bfs_td_launch_gpu<128, 32>,   // (3) > 128  && < 256
+    bfs_td_launch_gpu<256, 32>,   // (4) > 256  && < 1K
+    bfs_td_launch_gpu<512, 32>,   // (5) > 1K   && < 2K
+    bfs_td_launch_gpu<MAX_THREADS_PER_BLOCK, 8>,  // (6) > 2k
   };
 
   int64_t end = *(state.frontier_state.count);
@@ -341,49 +330,37 @@ void bfs_launch_at_boundary_kernel(partition_t par, bfs_state_t state) {
     }
   }
 }
-#endif /* FEATURE_SM35  */
+#endif  // FEATURE_SM35
 
-PRIVATE void bfs_tuned_td_launch_gpu(partition_t* par, bfs_state_t* state) {
-  vid_t frontier_count = frontier_count_gpu(&state->frontier_state,
-                                            par->streams[1]);
-  if (frontier_count == 0) return;
-
-  int use_frontier = (int)(frontier_count <= state->frontier_state.list_len);
-  if (use_frontier) {
+PRIVATE void bfs_td_gpu(partition_t* par, bfs_state_t* state) {
+#ifdef FEATURE_SM35
+  if (engine_sorted()) {
     frontier_update_list_gpu(&state->frontier_state, state->level, state->cost,
                              par->streams[1]);
-  }
-
-#ifdef FEATURE_SM35
-  if (engine_sorted() && use_frontier) {
     frontier_update_boundaries_gpu(&state->frontier_state, &par->subgraph,
                                    par->streams[1]);
-    bfs_launch_at_boundary_kernel<<<1, 1, 0, par->streams[1]>>>(*par, *state);
+    bfs_td_launch_at_boundary_gpu<<<1, 1, 0, par->streams[1]>>>(*par, *state);
     CALL_CU_SAFE(cudaGetLastError());
     return;
   }
-#endif /* FEATURE_SM35 */
+#endif  // FEATURE_SM35
 
-  // Call the BFS kernel
-  const bfs_td_gpu_func_t BFS_GPU_FUNC[][2] = {
-    {  // RANDOM algorithm
-      bfs_td_launch_gpu<VWARP_MEDIUM_WARP_WIDTH, VWARP_MEDIUM_BATCH_SIZE,
-                        false>,
-      bfs_td_launch_gpu<VWARP_MEDIUM_WARP_WIDTH, VWARP_MEDIUM_BATCH_SIZE, true>
-    },
-    {  // HIGH partitioning
-      bfs_td_launch_gpu<VWARP_MEDIUM_WARP_WIDTH, VWARP_MEDIUM_BATCH_SIZE,
-                        false>,
-      bfs_td_launch_gpu<VWARP_MEDIUM_WARP_WIDTH, VWARP_MEDIUM_BATCH_SIZE, true>
-    },
-    {  // LOW partitioning
-      bfs_td_launch_gpu<MAX_THREADS_PER_BLOCK, VWARP_MEDIUM_BATCH_SIZE, false>,
-      bfs_td_launch_gpu<MAX_THREADS_PER_BLOCK, VWARP_MEDIUM_BATCH_SIZE, true>
-    }
+  // Call the BFS kernel.
+  const bfs_td_gpu_func_t BFS_GPU_FUNC[] = {
+    // RANDOM algorithm
+    bfs_td_launch_gpu<VWARP_MEDIUM_WARP_WIDTH, VWARP_MEDIUM_BATCH_SIZE>,
+    // HIGH partitioning
+    bfs_td_launch_gpu<VWARP_MEDIUM_WARP_WIDTH, VWARP_MEDIUM_BATCH_SIZE>,
+    // LOW partitioning
+    bfs_td_launch_gpu<MAX_THREADS_PER_BLOCK, VWARP_MEDIUM_BATCH_SIZE>
   };
   int par_alg = engine_partition_algorithm();
-  BFS_GPU_FUNC[par_alg][use_frontier]
-      (par, state, state->frontier_state.list, frontier_count, par->streams[1]);
+  vid_t count = frontier_count_gpu(&state->frontier_state, par->streams[1]);
+  if (count == 0) { return; }
+  frontier_update_list_gpu(&state->frontier_state, state->level, state->cost,
+                           par->streams[1]);
+  BFS_GPU_FUNC[par_alg](par, state, state->frontier_state.list, count,
+                        par->streams[1]);
   CALL_CU_SAFE(cudaGetLastError());
 }
 
@@ -398,15 +375,16 @@ __host__ error_t bfs_stepwise_gpu(partition_t* par, bfs_state_t* state) {
 
     // Execute a bottom up step.
     // TODO(abdullah,scott): figure out an optimal vwarp configuration for
-    // different partitioning algorithms.
+    // different partitioning algorithms. This configuration worked well for
+    // HIGH partitioning (low degree vertices on the GPU).
     const int VWARP_WIDTH = 1;
     const int BATCH_SIZE = 4;
-    bfs_bu_launch_gpu<VWARP_WIDTH, BATCH_SIZE>(par, state);
+    bfs_bu_gpu<VWARP_WIDTH, BATCH_SIZE>(par, state);
 
   } else {
     // Copy the current state of the remote vertices bitmap.
     for (int pid = 0; pid < engine_partition_count(); pid++) {
-      if ((pid == par->id) || (par->outbox[pid].count == 0)) continue;
+      if ((pid == par->id) || (par->outbox[pid].count == 0)) { continue; }
       bitmap_copy_gpu(state->visited[pid],
                       (bitmap_t)par->outbox[pid].push_values,
                       par->outbox[pid].count, par->streams[1]);
@@ -418,12 +396,12 @@ __host__ error_t bfs_stepwise_gpu(partition_t* par, bfs_state_t* state) {
     state->frontier[par->id] = state->frontier_state.current;
 
     // Execute a top down step.
-    bfs_tuned_td_launch_gpu(par, state);
+    bfs_td_gpu(par, state);
 
     // Diff the remote vertices bitmaps so that only the vertices who got set
     // in this round are notified.
     for (int pid = 0; pid < engine_partition_count(); pid++) {
-      if ((pid == par->id) || (par->outbox[pid].count == 0)) continue;
+      if ((pid == par->id) || (par->outbox[pid].count == 0)) { continue; }
       bitmap_diff_gpu(state->visited[pid],
                       (bitmap_t)par->outbox[pid].push_values,
                       par->outbox[pid].count, par->streams[1]);
@@ -447,9 +425,7 @@ PRIVATE void bfs(partition_t* par) {
 
   // TODO(scott): Make this not hardcoded - this swaps statically on step 3.
   if ((state->level == 3 && state_g.bu_step == false) ||
-      (state->level == 5 && state_g.bu_step)) {
-    return;
-  }
+      (state->level == 5 && state_g.bu_step)) { return; }
 
   // Launch the processor specific algorithm.
   if (par->processor.type == PROCESSOR_CPU) {
@@ -579,7 +555,7 @@ bfs_scatter_kernel(const bitmap_t __restrict rmt_visited,
                    const vid_t* __restrict rmt_nbrs, vid_t word_count,
                    bitmap_t visited, cost_t* cost, cost_t level) {
   if (THREAD_GLOBAL_INDEX >=
-      vwarp_thread_count(word_count, VWARP_WIDTH, BATCH_SIZE)) return;
+      vwarp_thread_count(word_count, VWARP_WIDTH, BATCH_SIZE)) { return; }
   vid_t start_word = vwarp_warp_start_vertex(VWARP_WIDTH, BATCH_SIZE) +
     vwarp_block_start_vertex(VWARP_WIDTH, BATCH_SIZE, THREADS_PER_BLOCK);
   vid_t end_word = start_word +
@@ -588,7 +564,7 @@ bfs_scatter_kernel(const bitmap_t __restrict rmt_visited,
   int warp_offset = vwarp_thread_index(VWARP_WIDTH);
   for (vid_t k = start_word; k < end_word; k++) {
     bitmap_word_t word = rmt_visited[k];
-    if (word == 0) continue;
+    if (word == 0) { continue; }
     vid_t start_vertex = k * BITMAP_BITS_PER_WORD;
     for (vid_t i = warp_offset; i < BITMAP_BITS_PER_WORD; i += VWARP_WIDTH) {
       if (bitmap_is_set(word, i)) {
@@ -606,9 +582,9 @@ bfs_scatter_kernel(const bitmap_t __restrict rmt_visited,
 PRIVATE void bfs_scatter(partition_t* par) {
   bfs_state_t* state = reinterpret_cast<bfs_state_t*>(par->algo_state);
   for (int rmt_pid = 0; rmt_pid < engine_partition_count(); rmt_pid++) {
-    if (rmt_pid == par->id) continue;
+    if (rmt_pid == par->id) { continue; }
     grooves_box_table_t* inbox = &par->inbox[rmt_pid];
-    if (!inbox->count) continue;
+    if (!inbox->count) { continue; }
     if (par->processor.type == PROCESSOR_CPU) {
       bfs_scatter_cpu(inbox, state, state->visited[par->id]);
     } else if (par->processor.type == PROCESSOR_GPU) {
@@ -659,7 +635,7 @@ PRIVATE void bfs_aggregate(partition_t* par) {
 }
 
 // A simple kernel that sets the source vertex to visited on the GPU.
-__global__ void bfs_init_bu_kernel(bitmap_t visited, vid_t src) {
+__global__ void bfs_init_source_kernel(bitmap_t visited, vid_t src) {
   if (THREAD_GLOBAL_INDEX != 0) { return; }
   bitmap_set_gpu(visited, src);
 }
@@ -700,7 +676,7 @@ PRIVATE inline void bfs_init_gpu(partition_t* par) {
 
   // Set the source vertex as visited, if it is in our partition.
   if (GET_PARTITION_ID(state_g.src) == par->id) {
-    bfs_init_bu_kernel<<<1, 1, 0, par->streams[1]>>>
+    bfs_init_source_kernel<<<1, 1, 0, par->streams[1]>>>
       (state->visited[par->id], GET_VERTEX_ID(state_g.src));
     CALL_CU_SAFE(cudaGetLastError());
   }
