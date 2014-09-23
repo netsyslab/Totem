@@ -469,12 +469,13 @@ __global__ void bfs_gather_gpu(partition_t par, bfs_state_t state,
                                grooves_box_table_t inbox) {
   __shared__ cost_t cost[BITMAP_BITS_PER_WORD * THREADS_PER_BLOCK];
 
-  vid_t block_start_index = BLOCK_GLOBAL_INDEX * THREADS_PER_BLOCK;
-  int block_count = THREADS_PER_BLOCK * BITMAP_BITS_PER_WORD;
-  if (block_start_index + block_count > inbox.count) {
-    block_count = inbox.count - block_start_index;
+  const vid_t kVerticesPerBlock = THREADS_PER_BLOCK * BITMAP_BITS_PER_WORD;
+  vid_t block_start_index = BLOCK_GLOBAL_INDEX * kVerticesPerBlock;
+  vid_t block_batch = kVerticesPerBlock;
+  if (block_start_index + kVerticesPerBlock > inbox.count) {
+    block_batch = inbox.count - block_start_index;
   }
-  for (int i = THREAD_BLOCK_INDEX; i < block_count; i += THREADS_PER_BLOCK) {
+  for (int i = THREAD_BLOCK_INDEX; i < block_batch; i += THREADS_PER_BLOCK) {
     cost[i] = state.cost[inbox.rmt_nbrs[block_start_index + i]];
   }
   __syncthreads();
