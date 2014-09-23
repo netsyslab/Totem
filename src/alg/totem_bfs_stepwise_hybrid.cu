@@ -196,6 +196,10 @@ __global__ void bfs_bu_kernel(partition_t par, bfs_state_t state) {
   for (vid_t v = start_vertex; v < end_vertex; v++) {
     if (state.cost[v] != INF_COST) { continue; }
     const vid_t* __restrict edges = par.subgraph.edges + vertices[v];
+    if (v >= par.subgraph.vertex_ext) {
+      edges = par.subgraph.edges_ext +
+          (vertices[v] - par.subgraph.edge_count_ext);
+    }
     const eid_t nbr_count = vertices[v + 1] - vertices[v];
     for (eid_t i = 0; i < nbr_count; i++) {
       int nbr_pid = GET_PARTITION_ID(edges[i]);
