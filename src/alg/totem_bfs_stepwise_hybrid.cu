@@ -174,61 +174,96 @@ void bfs_stepwise_cpu(partition_t* par, bfs_state_t* state) {
   }
 }
 
-// A gpu version of the Bottom-up step as a kernel.
-template<int VWARP_WIDTH, int VWARP_BATCH, int THREADS_PER_BLOCK>
-__global__ void bfs_bu_kernel(partition_t par, bfs_state_t state) {
-  const vid_t vertex_count = par.subgraph.vertex_count;
-  if (THREAD_GLOBAL_INDEX >=
-      vwarp_thread_count(vertex_count, VWARP_WIDTH, VWARP_BATCH)) { return; }
+PRIVATE __device__ inline vid_t* get_edges_array(graph_t* graph, vid_t v) {
+  vid_t* edges = graph->edges + graph->vertices[v];
+  if (v >= graph->vertex_ext) {
+    edges = graph->edges_ext + (graph->vertices[v] - graph->edge_count_ext);
+  }
+  return edges;
+}
 
+// A gpu version of the Bottom-up step as a kernel.
+template<int THREADS_PER_BLOCK>
+__global__ void bfs_bu_kernel(partition_t par, bfs_state_t state) {
+  const int kWarpWidth = 1;
+  const vid_t kVertexCount = par.subgraph.vertex_count;
+  const vid_t kVerticesPerBlock = BITMAP_BITS_PER_WORD * THREADS_PER_BLOCK;
+  const eid_t* __restrict vertices = par.subgraph.vertices;
+  __shared__ bool nbrs_state[kVerticesPerBlock];
+
+  vid_t block_start_index = BLOCK_GLOBAL_INDEX * kVerticesPerBlock;
+  vid_t block_batch = kVerticesPerBlock;
+  if (block_start_index + kVerticesPerBlock > kVertexCount) {
+    block_batch = kVertexCount - block_start_index;
+  }
+  for (int i = THREAD_BLOCK_INDEX; i < block_batch; i += THREADS_PER_BLOCK) {
+    vid_t v = block_start_index + i;
+    if (state.cost[v] == INF_COST) {
+      const vid_t* __restrict edges = get_edges_array(&par.subgraph, v);
+      int nbr_pid = GET_PARTITION_ID(edges[0]);
+      vid_t nbr = GET_VERTEX_ID(edges[0]);
+      nbrs_state[i] = bitmap_is_set(state.frontier[nbr_pid], nbr);
+    } else {
+      nbrs_state[i] = false;
+    }
+  }
   __shared__ bool finished_block;
   finished_block = true;
   __syncthreads();
 
-  vid_t start_vertex = vwarp_block_start_vertex(VWARP_WIDTH, VWARP_BATCH) +
-      vwarp_warp_start_vertex(VWARP_WIDTH, VWARP_BATCH);
-  vid_t end_vertex = start_vertex + vwarp_warp_batch_size(
-      vertex_count, VWARP_WIDTH, VWARP_BATCH);
-  int warp_index = vwarp_warp_index(VWARP_WIDTH);
+  if (THREAD_GLOBAL_INDEX >=
+      vwarp_thread_count(kVertexCount, kWarpWidth, BITMAP_BITS_PER_WORD)) {
+    return;
+  }
 
-  const eid_t* __restrict vertices = par.subgraph.vertices;
+  vid_t start_vertex =
+      vwarp_block_start_vertex(kWarpWidth, BITMAP_BITS_PER_WORD) +
+      vwarp_warp_start_vertex(kWarpWidth, BITMAP_BITS_PER_WORD);
+  vid_t batch_size = vwarp_warp_batch_size(
+      kVertexCount, kWarpWidth, BITMAP_BITS_PER_WORD);
 
-  for (vid_t v = start_vertex; v < end_vertex; v++) {
-    if (state.cost[v] != INF_COST) { continue; }
-    const vid_t* __restrict edges = par.subgraph.edges + vertices[v];
-    if (v >= par.subgraph.vertex_ext) {
-      edges = par.subgraph.edges_ext +
-          (vertices[v] - par.subgraph.edge_count_ext);
+  const bool* my_nbrs = &nbrs_state[THREAD_BLOCK_INDEX * BITMAP_BITS_PER_WORD];
+
+  bitmap_t visited = state.visited[par.id];
+  bitmap_word_t word = visited[start_vertex / BITMAP_BITS_PER_WORD];
+  for (vid_t k = 0; k < batch_size; k++) {
+    vid_t v = start_vertex + k;
+    bitmap_word_t mask = (bitmap_word_t)1 << k;
+    if (my_nbrs[k]) {
+      word |= mask;
+      state.cost[v] = state.level + 1;
+      finished_block = false;
     }
+    if (word & mask) { continue; }
+    const vid_t* __restrict edges = get_edges_array(&par.subgraph, v);
     const eid_t nbr_count = vertices[v + 1] - vertices[v];
-    for (eid_t i = 0; i < nbr_count; i++) {
+    for (eid_t i = 1; i < nbr_count; i++) {
       int nbr_pid = GET_PARTITION_ID(edges[i]);
       vid_t nbr = GET_VERTEX_ID(edges[i]);
       // Check if neighbour is in the current frontier.
       if (bitmap_is_set(state.frontier[nbr_pid], nbr)) {
-        // Add the vertex we are exploring to the next frontier.
-        bitmap_set_gpu(state.visited[par.id], v);
-
-        // Increment the level of this vertex.
+        word |= mask;
         state.cost[v] = state.level + 1;
         finished_block = false;
-        break;
       }
     }
   }
+  visited[start_vertex / BITMAP_BITS_PER_WORD] = word;
 
   // Move over the finished variable.
   __syncthreads();
   if (!finished_block && THREAD_BLOCK_INDEX == 0) *state.finished = false;
 }
 
-template<int VWARP_WIDTH, int VWARP_BATCH>
 PRIVATE void bfs_bu_gpu(partition_t* par, bfs_state_t* state) {
+  // The batch size is fixed at BITMAP_BITS_PER_WORD. This is necessary to avoid
+  // using atomic operations when setting the visited bitmap.
   const int threads = MAX_THREADS_PER_BLOCK;
   dim3 blocks;
-  kernel_configure(vwarp_thread_count(par->subgraph.vertex_count, VWARP_WIDTH,
-                                      VWARP_BATCH), blocks, threads);
-  bfs_bu_kernel<VWARP_WIDTH, VWARP_BATCH, threads>
+  kernel_configure(vwarp_thread_count(par->subgraph.vertex_count,
+                                      1 /* warp width */,
+                                      BITMAP_BITS_PER_WORD), blocks, threads);
+  bfs_bu_kernel<threads>
       <<<blocks, threads, 0, par->streams[1]>>>(*par, *state);
 }
 
@@ -259,14 +294,10 @@ __global__ void bfs_td_kernel(partition_t par, bfs_state_t state,
   for (vid_t i = start_vertex; i < end_vertex; i++) {
     vid_t v = frontier[i];
     const eid_t nbr_count = vertices[v + 1] - vertices[v];
-    vid_t* nbrs = par.subgraph.edges + vertices[v];
-    if (v >= par.subgraph.vertex_ext) {
-      nbrs = par.subgraph.edges_ext +
-          (vertices[v] - par.subgraph.edge_count_ext);
-    }
+    const vid_t* __restrict edges = get_edges_array(&par.subgraph, v);
     for (vid_t i = warp_offset; i < nbr_count; i += VWARP_WIDTH) {
-      int nbr_pid = GET_PARTITION_ID(nbrs[i]);
-      vid_t nbr = GET_VERTEX_ID(nbrs[i]);
+      int nbr_pid = GET_PARTITION_ID(edges[i]);
+      vid_t nbr = GET_VERTEX_ID(edges[i]);
       bitmap_t visited = state.visited[nbr_pid];
       if (!bitmap_is_set(visited, nbr)) {
         if (bitmap_set_gpu(visited, nbr)) {
@@ -378,12 +409,7 @@ __host__ error_t bfs_stepwise_gpu(partition_t* par, bfs_state_t* state) {
     state->frontier[par->id] = state->frontier_state.current;
 
     // Execute a bottom up step.
-    // TODO(abdullah,scott): figure out an optimal vwarp configuration for
-    // different partitioning algorithms. This configuration worked well for
-    // HIGH partitioning (low degree vertices on the GPU).
-    const int VWARP_WIDTH = 1;
-    const int BATCH_SIZE = 4;
-    bfs_bu_gpu<VWARP_WIDTH, BATCH_SIZE>(par, state);
+    bfs_bu_gpu(par, state);
 
   } else {
     // Copy the current state of the remote vertices bitmap.
@@ -429,7 +455,7 @@ PRIVATE void bfs(partition_t* par) {
 
   // TODO(scott): Make this not hardcoded - this swaps statically on step 3.
   if ((state->level == 3 && state_g.bu_step == false) ||
-      (state->level == 5 && state_g.bu_step)) { return; }
+      (state->level == 6 && state_g.bu_step)) { return; }
 
   // Launch the processor specific algorithm.
   if (par->processor.type == PROCESSOR_CPU) {
