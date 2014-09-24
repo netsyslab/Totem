@@ -371,8 +371,7 @@ void bfs_td_launch_at_boundary_gpu(partition_t par, bfs_state_t state) {
 PRIVATE void bfs_td_gpu(partition_t* par, bfs_state_t* state) {
 #ifdef FEATURE_SM35
   if (engine_sorted()) {
-    frontier_update_list_gpu(&state->frontier_state, state->level, state->cost,
-                             par->streams[1]);
+    frontier_update_list_gpu(&state->frontier_state, par->streams[1]);
     frontier_update_boundaries_gpu(&state->frontier_state, &par->subgraph,
                                    par->streams[1]);
     bfs_td_launch_at_boundary_gpu<<<1, 1, 0, par->streams[1]>>>(*par, *state);
@@ -393,8 +392,7 @@ PRIVATE void bfs_td_gpu(partition_t* par, bfs_state_t* state) {
   int par_alg = engine_partition_algorithm();
   vid_t count = frontier_count_gpu(&state->frontier_state, par->streams[1]);
   if (count == 0) { return; }
-  frontier_update_list_gpu(&state->frontier_state, state->level, state->cost,
-                           par->streams[1]);
+  frontier_update_list_gpu(&state->frontier_state, par->streams[1]);
   BFS_GPU_FUNC[par_alg](par, state, state->frontier_state.list, count,
                         par->streams[1]);
   CALL_CU_SAFE(cudaGetLastError());
@@ -502,8 +500,7 @@ PRIVATE void bfs_gather_cpu(partition_t* par, bfs_state_t* state,
 template<int THREADS_PER_BLOCK>
 __global__ void bfs_gather_gpu(partition_t par, bfs_state_t state,
                                grooves_box_table_t inbox) {
-  __shared__ cost_t cost[BITMAP_BITS_PER_WORD * THREADS_PER_BLOCK];
-
+  __shared__ bool active[BITMAP_BITS_PER_WORD * THREADS_PER_BLOCK];
   const vid_t kVerticesPerBlock = THREADS_PER_BLOCK * BITMAP_BITS_PER_WORD;
   vid_t block_start_index = BLOCK_GLOBAL_INDEX * kVerticesPerBlock;
   vid_t block_batch = kVerticesPerBlock;
@@ -511,11 +508,12 @@ __global__ void bfs_gather_gpu(partition_t par, bfs_state_t state,
     block_batch = inbox.count - block_start_index;
   }
   for (int i = THREAD_BLOCK_INDEX; i < block_batch; i += THREADS_PER_BLOCK) {
-    cost[i] = state.cost[inbox.rmt_nbrs[block_start_index + i]];
+    active[i] = (state.cost[inbox.rmt_nbrs[block_start_index + i]] ==
+                 state.level);
   }
   __syncthreads();
 
-  cost_t* my_cost = &cost[THREAD_BLOCK_INDEX * BITMAP_BITS_PER_WORD];
+  bool* my_active = &active[THREAD_BLOCK_INDEX * BITMAP_BITS_PER_WORD];
   const vid_t word_index = THREAD_GLOBAL_INDEX;
   vid_t start_index = word_index * BITMAP_BITS_PER_WORD;
   if (start_index >= inbox.count) { return; }
@@ -526,7 +524,7 @@ __global__ void bfs_gather_gpu(partition_t par, bfs_state_t state,
       BITMAP_BITS_PER_WORD : inbox.count - start_index;
   for (int i = 0; i < batch; i++) {
     bitmap_word_t mask = ((bitmap_word_t)1) << i;
-    if (my_cost[i] == state.level) { word |= mask; }
+    if (my_active[i]) { word |= mask; }
   }
   bitmap[word_index] = word;
 }
