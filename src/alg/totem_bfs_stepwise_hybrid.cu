@@ -10,8 +10,8 @@
  * Breadth-First Search Implementation for Graph500.
  * http://www.eecs.berkeley.edu/Pubs/TechRpts/2011/EECS-2011-117.pdf
  *
- * TODO(scott): Modify the algorithm to swap between top down and bottom up
- *              steps.
+ * TODO(scott): Modify the algorithm to dynamically swap between top down and
+ *              bottom up steps.
  *
  *  Created on: 2014-08-26
  *  Authors:    Scott Sallinen
@@ -31,6 +31,7 @@ typedef struct bfs_state_s {
   bool*     finished;          // Points to Totem's finish flag.
   cost_t    level;             // Current level to process by the partition.
   frontier_state_t frontier_state;   // Frontier management state.
+  bool      skip_gather; // Whether to skip the gather in the round.
 } bfs_state_t;
 
 // State shared between all partitions.
@@ -43,7 +44,7 @@ typedef struct bfs_global_state_s {
   vid_t     src;      // Source vertex id. (The id after partitioning.)
   bool      bu_step;  // Whether or not to perform a bottom up step.
 } bfs_global_state_t;
-PRIVATE bfs_global_state_t state_g = {NULL, NULL, 0};
+PRIVATE bfs_global_state_t state_g = {NULL, NULL, 0, false};
 
 // Checks for input parameters and special cases. This is invoked at the
 // beginning of public interfaces (GPU and CPU)
@@ -449,13 +450,17 @@ PRIVATE void bfs(partition_t* par) {
   // Ignore the first round - this allows us to communicate the frontier with
   // an updated visited status of the source vertex.
   if (engine_superstep() == 1 && state_g.bu_step) {
+    state->skip_gather = false;
     engine_report_not_finished();
     return;
   }
 
   // TODO(scott): Make this not hardcoded - this swaps statically on step 3.
   if ((state->level == 3 && state_g.bu_step == false) ||
-      (state->level == 6 && state_g.bu_step)) { return; }
+      (state->level == 6 && state_g.bu_step)) {
+    state->skip_gather = true;
+    return;
+  }
 
   // Launch the processor specific algorithm.
   if (par->processor.type == PROCESSOR_CPU) {
@@ -532,6 +537,9 @@ PRIVATE void bfs_gather(partition_t* par) {
   bfs_state_t* state = reinterpret_cast<bfs_state_t*>(par->algo_state);
 
   if (par->subgraph.vertex_count == 0) { return; }
+
+  // Skip the communication on the final transitional round.
+  if (state->skip_gather) { return; }
 
   // Across all partitions that are not us.
   for (int rmt_pid = 0; rmt_pid < engine_partition_count(); rmt_pid++) {
@@ -867,6 +875,7 @@ error_t bfs_stepwise_hybrid(vid_t src, cost_t* cost) {
   engine_config(&config_bu);
   engine_execute();
 
+  // Finalize execution with top down steps.
   state_g.bu_step = false;
   engine_config_t config_td2 = {
     NULL, bfs, bfs_scatter, NULL, NULL, bfs_finalize, bfs_aggregate,
