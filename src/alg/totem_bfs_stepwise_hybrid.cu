@@ -81,7 +81,7 @@ PRIVATE void bfs_td_cpu(partition_t* par, bfs_state_t* state) {
     for (eid_t i = subgraph->vertices[vertex_id];
          i < subgraph->vertices[vertex_id + 1]; i++) {
       int nbr_pid = GET_PARTITION_ID(subgraph->edges[i]);
-      int nbr = GET_VERTEX_ID(subgraph->edges[i]);
+      vid_t nbr = GET_VERTEX_ID(subgraph->edges[i]);
 
       // Add the neighbour we are exploring to the next frontier.
       if (!bitmap_is_set(state->visited[nbr_pid], nbr)) {
@@ -117,7 +117,7 @@ PRIVATE void bfs_bu_cpu(partition_t* par, bfs_state_t* state) {
     for (eid_t i = subgraph->vertices[vertex_id];
          i < subgraph->vertices[vertex_id + 1]; i++) {
       int nbr_pid = GET_PARTITION_ID(subgraph->edges[i]);
-      int nbr = GET_VERTEX_ID(subgraph->edges[i]);
+      vid_t nbr = GET_VERTEX_ID(subgraph->edges[i]);
 
       // Check if the bitmap corresponding to the vertices PID is set.
       // This means the partition that the vertex belongs to, has explored it.
@@ -136,6 +136,7 @@ PRIVATE void bfs_bu_cpu(partition_t* par, bfs_state_t* state) {
   // Move over the finished variable.
   if (!finished) *(state->finished) = false;
 }
+
 
 // This is a CPU version of the Bottom-up/Top-down BFS algorithm.
 // See file header for full details.
@@ -199,13 +200,15 @@ __global__ void bfs_bu_kernel(partition_t par, bfs_state_t state) {
   }
   for (int i = THREAD_BLOCK_INDEX; i < block_batch; i += THREADS_PER_BLOCK) {
     vid_t v = block_start_index + i;
+    nbrs_state[i] = false;
     if (state.cost[v] == INF_COST) {
       const vid_t* __restrict edges = get_edges_array(&par.subgraph, v);
-      int nbr_pid = GET_PARTITION_ID(edges[0]);
-      vid_t nbr = GET_VERTEX_ID(edges[0]);
-      nbrs_state[i] = bitmap_is_set(state.frontier[nbr_pid], nbr);
-    } else {
-      nbrs_state[i] = false;
+      const eid_t nbr_count = vertices[v + 1] - vertices[v];
+      for (eid_t e = 0; e < nbr_count && !nbrs_state[i]; e++) {
+        int nbr_pid = GET_PARTITION_ID(edges[e]);
+        vid_t nbr = GET_VERTEX_ID(edges[e]);
+        nbrs_state[i] = bitmap_is_set(state.frontier[nbr_pid], nbr);
+      }
     }
   }
   __shared__ bool finished_block;
@@ -234,19 +237,6 @@ __global__ void bfs_bu_kernel(partition_t par, bfs_state_t state) {
       word |= mask;
       state.cost[v] = state.level + 1;
       finished_block = false;
-    }
-    if (word & mask) { continue; }
-    const vid_t* __restrict edges = get_edges_array(&par.subgraph, v);
-    const eid_t nbr_count = vertices[v + 1] - vertices[v];
-    for (eid_t i = 1; i < nbr_count; i++) {
-      int nbr_pid = GET_PARTITION_ID(edges[i]);
-      vid_t nbr = GET_VERTEX_ID(edges[i]);
-      // Check if neighbour is in the current frontier.
-      if (bitmap_is_set(state.frontier[nbr_pid], nbr)) {
-        word |= mask;
-        state.cost[v] = state.level + 1;
-        finished_block = false;
-      }
     }
   }
   visited[start_vertex / BITMAP_BITS_PER_WORD] = word;
@@ -454,7 +444,7 @@ PRIVATE void bfs(partition_t* par) {
   }
 
   // TODO(scott): Make this not hardcoded - this swaps statically on step 3.
-  if ((state->level == 2 && state_g.bu_step == false) ||
+  if ((state->level == 3 && state_g.bu_step == false) ||
       (state->level == 6 && state_g.bu_step)) {
     state->skip_gather = true;
     return;
@@ -473,7 +463,6 @@ PRIVATE void bfs(partition_t* par) {
   state->level++;
 }
 
-// Gather for the CPU bitmap to inbox.
 PRIVATE void bfs_gather_cpu(partition_t* par, bfs_state_t* state,
                             grooves_box_table_t* inbox) {
   const vid_t words = bitmap_bits_to_words(inbox->count);
