@@ -454,7 +454,7 @@ PRIVATE void bfs(partition_t* par) {
   }
 
   // TODO(scott): Make this not hardcoded - this swaps statically on step 3.
-  if ((state->level == 3 && state_g.bu_step == false) ||
+  if ((state->level == 2 && state_g.bu_step == false) ||
       (state->level == 6 && state_g.bu_step)) {
     state->skip_gather = true;
     return;
@@ -482,15 +482,15 @@ PRIVATE void bfs_gather_cpu(partition_t* par, bfs_state_t* state,
   // Iterate across the items in the inbox.
   OMP(omp parallel for schedule(runtime))
   for (vid_t word_index = 0; word_index < words; word_index++) {
-    vid_t index = word_index * BITMAP_BITS_PER_WORD;
+    vid_t start_index = word_index * BITMAP_BITS_PER_WORD;
     bitmap_word_t word = bitmap[word_index];
     for (int i = 0; i < BITMAP_BITS_PER_WORD; i++) {
+      vid_t index = start_index + i;
       if (index >= inbox->count) { break; }
       bitmap_word_t mask = ((bitmap_word_t)1) << i;
       if (word & mask) { continue; }
       vid_t vid = inbox->rmt_nbrs[index];
       if (state->cost[vid] == state->level) { word |= mask; }
-      index++;
     }
     bitmap[word_index] = word;
   }
