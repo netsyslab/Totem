@@ -141,14 +141,13 @@ PRIVATE void bfs_bu_cpu(partition_t* par, bfs_state_t* state) {
 // This is a CPU version of the Bottom-up/Top-down BFS algorithm.
 // See file header for full details.
 void bfs_stepwise_cpu(partition_t* par, bfs_state_t* state) {
-  if (state_g.bu_step) {
-    // Update the frontier.
-    frontier_update_bitmap_cpu(&state->frontier_state, state->visited[par->id]);
-    state->frontier[par->id] = state->frontier_state.current;
+  // Update the frontier.
+  frontier_update_bitmap_cpu(&state->frontier_state, state->visited[par->id]);
+  state->frontier[par->id] = state->frontier_state.current;
 
+  if (state_g.bu_step) {
     // Execute a bottom up step.
     bfs_bu_cpu(par, state);
-
   } else {
     // Copy the current state of the remote vertices bitmap.
     for (int pid = 0; pid < engine_partition_count(); pid++) {
@@ -157,10 +156,6 @@ void bfs_stepwise_cpu(partition_t* par, bfs_state_t* state) {
                       (bitmap_t)par->outbox[pid].push_values,
                       par->outbox[pid].count);
     }
-
-    // Update the frontier.
-    frontier_update_bitmap_cpu(&state->frontier_state, state->visited[par->id]);
-    state->frontier[par->id] = state->frontier_state.current;
 
     // Execute a top down step.
     bfs_td_cpu(par, state);
