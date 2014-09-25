@@ -23,7 +23,10 @@
 
 // Per-partition specific state.
 typedef struct bfs_state_s {
-  cost_t*   cost;              // One slot per vertex in the partition.
+  cost_t*   cost;     // One slot per vertex in the partition.
+  cost_t*   cost_h;   // Used as a temporary buffer to receive the final
+                      // result copied back from GPU partitions before being
+                      // copied again to the final output buffer.
   bitmap_t  visited[MAX_PARTITION_COUNT];   // A list of bitmaps, one for each
                                             // remote partition.
   bitmap_t  frontier[MAX_PARTITION_COUNT];  // A list of bitmaps, one for each
@@ -37,14 +40,10 @@ typedef struct bfs_state_s {
 // State shared between all partitions.
 typedef struct bfs_global_state_s {
   cost_t*   cost;     // Final output buffer.
-  cost_t*   cost_h;   // Used as a temporary buffer to receive the final
-                      // result copied back from GPU partitions before being
-                      // copied again to the final output buffer.
-                      // TODO(abdullah): push this buffer to be managed by Totem
   vid_t     src;      // Source vertex id. (The id after partitioning.)
   bool      bu_step;  // Whether or not to perform a bottom up step.
 } bfs_global_state_t;
-PRIVATE bfs_global_state_t state_g = {NULL, NULL, 0, false};
+PRIVATE bfs_global_state_t state_g = {NULL, 0, false};
 
 // Checks for input parameters and special cases. This is invoked at the
 // beginning of public interfaces (GPU and CPU)
@@ -137,7 +136,6 @@ PRIVATE void bfs_bu_cpu(partition_t* par, bfs_state_t* state) {
   if (!finished) *(state->finished) = false;
 }
 
-
 // This is a CPU version of the Bottom-up/Top-down BFS algorithm.
 // See file header for full details.
 void bfs_stepwise_cpu(partition_t* par, bfs_state_t* state) {
@@ -222,7 +220,6 @@ __global__ void bfs_bu_kernel(partition_t par, bfs_state_t state) {
       kVertexCount, kWarpWidth, BITMAP_BITS_PER_WORD);
 
   const bool* my_nbrs = &nbrs_state[THREAD_BLOCK_INDEX * BITMAP_BITS_PER_WORD];
-
   bitmap_t visited = state.visited[par.id];
   bitmap_word_t word = visited[start_vertex / BITMAP_BITS_PER_WORD];
   for (vid_t k = 0; k < batch_size; k++) {
@@ -632,26 +629,20 @@ PRIVATE void bfs_aggregate(partition_t* par) {
 
   bfs_state_t* state    = reinterpret_cast<bfs_state_t*>(par->algo_state);
   graph_t*     subgraph = &par->subgraph;
-  cost_t*      src_cost = NULL;
 
   // Apply the cost from our partition into the final cost array.
-  if (par->processor.type == PROCESSOR_CPU) {
-    src_cost = state->cost;
-  } else if (par->processor.type == PROCESSOR_GPU) {
-    assert(state_g.cost_h);
-    CALL_CU_SAFE(cudaMemcpy(state_g.cost_h, state->cost,
-                            subgraph->vertex_count * sizeof(cost_t),
-                            cudaMemcpyDefault));
-    src_cost = state_g.cost_h;
-  } else {
-    assert(false);
+  if (par->processor.type == PROCESSOR_GPU) {
+    CALL_CU_SAFE(cudaMemcpyAsync(state->cost_h, state->cost,
+                                 subgraph->vertex_count * sizeof(cost_t),
+                                 cudaMemcpyDefault, par->streams[1]));
+    cudaStreamSynchronize(par->streams[1]);
   }
 
   // Aggregate the results.
   assert(state_g.cost);
   OMP(omp parallel for schedule(static))
   for (vid_t v = 0; v < subgraph->vertex_count; v++) {
-    state_g.cost[par->map[v]] = src_cost[v];
+    state_g.cost[par->map[v]] = state->cost_h[v];
   }
 }
 
@@ -665,8 +656,9 @@ __global__ void bfs_init_source_kernel(bitmap_t visited, vid_t src) {
 PRIVATE inline void bfs_init_gpu(partition_t* par) {
   bfs_state_t* state = reinterpret_cast<bfs_state_t*>(par->algo_state);
 
-  // Initialize our visited bitmap.
-  state->visited[par->id] = bitmap_init_gpu(par->subgraph.vertex_count);
+  // Reset the visited bitmap.
+  bitmap_reset_gpu(state->visited[par->id], par->subgraph.vertex_count,
+                   par->streams[1]);
 
   // Initialize other partitions frontier bitmaps.
   for (int pid = 0; pid < engine_partition_count(); pid++) {
@@ -676,21 +668,20 @@ PRIVATE inline void bfs_init_gpu(partition_t* par) {
         reinterpret_cast<bitmap_t>(par->outbox[pid].pull_values);
 
       // Allocate the visited bitmaps for other partitions.
-      state->visited[pid] = bitmap_init_gpu(par->outbox[pid].count);
+      bitmap_reset_gpu(state->visited[pid], par->outbox[pid].count,
+                       par->streams[1]);
 
       // Clear the outboxes (push values).
-      bitmap_reset_gpu(reinterpret_cast<bitmap_t>
-                         (par->outbox[pid].push_values),
+      bitmap_reset_gpu(reinterpret_cast<bitmap_t>(par->outbox[pid].push_values),
                        par->outbox[pid].count, par->streams[1]);
     }
 
     // Clear the inboxes (pull values), and also their shadows.
     if (pid != par->id && par->inbox[pid].count != 0) {
-      bitmap_reset_gpu(reinterpret_cast<bitmap_t>
-                         (par->inbox[pid].pull_values),
+      bitmap_reset_gpu(reinterpret_cast<bitmap_t>(par->inbox[pid].pull_values),
                        par->inbox[pid].count, par->streams[1]);
       bitmap_reset_gpu(reinterpret_cast<bitmap_t>
-                         (par->inbox[pid].pull_values_s),
+                       (par->inbox[pid].pull_values_s),
                        par->inbox[pid].count, par->streams[1]);
     }
   }
@@ -702,16 +693,16 @@ PRIVATE inline void bfs_init_gpu(partition_t* par) {
     CALL_CU_SAFE(cudaGetLastError());
   }
 
-  // Initialize our local frontier.
-  frontier_init_gpu(&state->frontier_state, par->subgraph.vertex_count);
+  // Allocate our local frontier.
+  frontier_reset_gpu(&state->frontier_state);
 }
 
 // Initialize the CPU memory - bitmaps and frontier.
 PRIVATE inline void bfs_init_cpu(partition_t* par) {
   bfs_state_t* state = reinterpret_cast<bfs_state_t*>(par->algo_state);
 
-  // Initialize our visited bitmap.
-  state->visited[par->id] = bitmap_init_cpu(par->subgraph.vertex_count);
+  // Clear the visited bitmap.
+  bitmap_reset_cpu(state->visited[par->id], par->subgraph.vertex_count);
 
   // Initialize other partitions bitmaps.
   for (int pid = 0; pid < engine_partition_count(); pid++) {
@@ -720,22 +711,20 @@ PRIVATE inline void bfs_init_cpu(partition_t* par) {
       state->frontier[pid] =
         reinterpret_cast<bitmap_t>(par->outbox[pid].pull_values);
 
-      // Allocate the visited bitmaps for other partitions.
-      state->visited[pid] = bitmap_init_cpu(par->outbox[pid].count);
+      // Reset the visited bitmaps of other partitions.
+      bitmap_reset_cpu(state->visited[pid], par->outbox[pid].count);
 
       // Clear the push values.
-      bitmap_reset_cpu(reinterpret_cast<bitmap_t>
-                         (par->outbox[pid].push_values),
-                      par->outbox[pid].count);
+      bitmap_reset_cpu(reinterpret_cast<bitmap_t>(par->outbox[pid].push_values),
+                       par->outbox[pid].count);
     }
 
     // Clear the inboxes, and also their shadows.
     if (pid != par->id && par->inbox[pid].count != 0) {
-      bitmap_reset_cpu(reinterpret_cast<bitmap_t>
-                         (par->inbox[pid].pull_values),
+      bitmap_reset_cpu(reinterpret_cast<bitmap_t>(par->inbox[pid].pull_values),
                        par->inbox[pid].count);
       bitmap_reset_cpu(reinterpret_cast<bitmap_t>
-                         (par->inbox[pid].pull_values_s),
+                       (par->inbox[pid].pull_values_s),
                        par->inbox[pid].count);
     }
   }
@@ -746,18 +735,72 @@ PRIVATE inline void bfs_init_cpu(partition_t* par) {
   }
 
   // Initialize our local frontier.
+  frontier_reset_cpu(&state->frontier_state);
+}
+
+// Allocate the GPU memory - bitmaps and frontier.
+PRIVATE inline void bfs_alloc_gpu(partition_t* par) {
+  bfs_state_t* state = reinterpret_cast<bfs_state_t*>(par->algo_state);
+
+  // Allocate memory for the cost array, and set it to INFINITE cost.
+  CALL_SAFE(totem_malloc(par->subgraph.vertex_count * sizeof(cost_t),
+                         TOTEM_MEM_DEVICE,
+                         reinterpret_cast<void**>(&(state->cost))));
+
+  // Initialize our visited bitmap.
+  state->visited[par->id] = bitmap_init_gpu(par->subgraph.vertex_count);
+
+  // Initialize other partitions frontier bitmaps.
+  for (int pid = 0; pid < engine_partition_count(); pid++) {
+    // Assign the outboxes to our frontier bitmap pointers.
+    if (pid != par->id && par->outbox[pid].count != 0) {
+      // Allocate the visited bitmaps for other partitions.
+      state->visited[pid] = bitmap_init_gpu(par->outbox[pid].count);
+    }
+  }
+
+  // Allocate our local frontier.
+  frontier_init_gpu(&state->frontier_state, par->subgraph.vertex_count);
+
+  // Allocate the host pinned buffer that will received the final output
+  // from the GPU.
+  CALL_SAFE(totem_malloc(par->subgraph.vertex_count * sizeof(cost_t),
+                         TOTEM_MEM_HOST_PINNED,
+                         reinterpret_cast<void**>(&state->cost_h)));
+
+}
+
+// Allocate the CPU memory - bitmaps and frontier.
+PRIVATE inline void bfs_alloc_cpu(partition_t* par) {
+  bfs_state_t* state = reinterpret_cast<bfs_state_t*>(par->algo_state);
+
+  // Allocate memory for the cost array, and set it to INFINITE cost.
+  CALL_SAFE(totem_malloc(par->subgraph.vertex_count * sizeof(cost_t),
+                         TOTEM_MEM_HOST,
+                         reinterpret_cast<void**>(&(state->cost))));
+
+  // Initialize our visited bitmap.
+  state->visited[par->id] = bitmap_init_cpu(par->subgraph.vertex_count);
+
+  // Initialize other partitions bitmaps.
+  for (int pid = 0; pid < engine_partition_count(); pid++) {
+    // Assign the outboxes to our frontier bitmap pointers.
+    if (pid != par->id && par->outbox[pid].count != 0) {
+      // Allocate the visited bitmaps for other partitions.
+      state->visited[pid] = bitmap_init_cpu(par->outbox[pid].count);
+    }
+  }
+
+  // Initialize our local frontier.
   frontier_init_cpu(&state->frontier_state, par->subgraph.vertex_count);
+  state->cost_h = state->cost;
 }
 
 // The init phase - Set up the memory and statuses.
 PRIVATE void bfs_init(partition_t* par) {
   if (par->subgraph.vertex_count == 0) { return; }
-  bfs_state_t* state =
-    reinterpret_cast<bfs_state_t*>(calloc(1, sizeof(bfs_state_t)));
-  assert(state);
 
-  // Initialize based off of our processor type.
-  par->algo_state = state;
+  bfs_state_t* state = reinterpret_cast<bfs_state_t*>(par->algo_state);
   totem_mem_t type = TOTEM_MEM_HOST;
   if (par->processor.type == PROCESSOR_CPU) {
     bfs_init_cpu(par);
@@ -768,9 +811,6 @@ PRIVATE void bfs_init(partition_t* par) {
     assert(false);
   }
 
-  // Allocate memory for the cost array, and set it to INFINITE cost.
-  CALL_SAFE(totem_malloc(par->subgraph.vertex_count * sizeof(cost_t), type,
-                         reinterpret_cast<void**>(&(state->cost))));
   totem_memset(state->cost, INF_COST, par->subgraph.vertex_count, type,
                par->streams[1]);
 
@@ -785,8 +825,20 @@ PRIVATE void bfs_init(partition_t* par) {
   state->level = 0;
 }
 
+void bfs_stepwise_alloc(partition_t* par) {
+  if (par->subgraph.vertex_count == 0) { return; }
+  // Initialize based off of our processor type.
+  par->algo_state = calloc(1, sizeof(bfs_state_t));
+  assert(par->algo_state);
+  if (par->processor.type == PROCESSOR_CPU) {
+    bfs_alloc_cpu(par);
+  } else {
+    bfs_alloc_gpu(par);
+  }
+}
+
 // The finalize phase - clean up.
-PRIVATE void bfs_finalize(partition_t* par) {
+void bfs_stepwise_free(partition_t* par) {
   if (par->subgraph.vertex_count == 0) { return; }
   bfs_state_t* state = reinterpret_cast<bfs_state_t*>(par->algo_state);
   totem_mem_t type = TOTEM_MEM_HOST;
@@ -807,6 +859,7 @@ PRIVATE void bfs_finalize(partition_t* par) {
       if ((par->id == pid) || (par->outbox[pid].count == 0)) { continue; }
       bitmap_finalize_gpu(state->visited[pid]);
     }
+    totem_free(state->cost_h, TOTEM_MEM_HOST_PINNED);
   } else {
     assert(false);
   }
@@ -828,22 +881,14 @@ error_t bfs_stepwise_hybrid(vid_t src, cost_t* cost) {
   state_g.cost = cost;
   state_g.src  = engine_vertex_id_in_partition(src);
 
-  if (engine_largest_gpu_partition()) {
-    CALL_SAFE(totem_malloc(engine_largest_gpu_partition() * sizeof(cost_t),
-                           TOTEM_MEM_HOST_PINNED,
-                           reinterpret_cast<void**>(&state_g.cost_h)));
-  }
-
   // Initialize the engines - one for the first top down step, and a second
   // to complete the algorithm with bottom up steps.
   // TODO(scott): Modify the swapping to flip back and forth simpler.
 
-
   // Begin by executing with top down steps.
   state_g.bu_step = false;
   engine_config_t config_td = {
-    NULL, bfs, bfs_scatter, NULL, bfs_init, NULL, NULL,
-    GROOVES_PUSH
+    NULL, bfs, bfs_scatter, NULL, bfs_init, NULL, NULL, GROOVES_PUSH
   };
   engine_config(&config_td);
   engine_execute();
@@ -851,8 +896,7 @@ error_t bfs_stepwise_hybrid(vid_t src, cost_t* cost) {
   // Continue execution with bottom up steps.
   state_g.bu_step = true;
   engine_config_t config_bu = {
-    NULL, bfs, NULL, bfs_gather, NULL, NULL, NULL,
-    GROOVES_PULL
+    NULL, bfs, NULL, bfs_gather, NULL, NULL, NULL, GROOVES_PULL
   };
   engine_config(&config_bu);
   engine_execute();
@@ -860,17 +904,10 @@ error_t bfs_stepwise_hybrid(vid_t src, cost_t* cost) {
   // Finalize execution with top down steps.
   state_g.bu_step = false;
   engine_config_t config_td2 = {
-    NULL, bfs, bfs_scatter, NULL, NULL, bfs_finalize, bfs_aggregate,
-    GROOVES_PUSH
+    NULL, bfs, bfs_scatter, NULL, NULL, NULL, bfs_aggregate, GROOVES_PUSH
   };
   engine_config(&config_td2);
   engine_execute();
 
-
-  // Clean up and return.
-  if (engine_largest_gpu_partition()) {
-    totem_free(state_g.cost_h, TOTEM_MEM_HOST_PINNED);
-  }
-  memset(&state_g, 0, sizeof(bfs_global_state_t));
   return SUCCESS;
 }

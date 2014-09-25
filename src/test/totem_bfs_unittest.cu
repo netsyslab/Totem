@@ -40,6 +40,8 @@ class BFSTest : public TestWithParam<test_param_t*> {
     if (_bfs_param->attr) {
       _bfs_param->attr->push_msg_size = 1;
       _bfs_param->attr->pull_msg_size = 1;
+      _bfs_param->attr->alloc_func = _bfs_param->hybrid_alloc;
+      _bfs_param->attr->free_func = _bfs_param->hybrid_free;
       if (totem_init(_graph, _bfs_param->attr) == FAILURE) {
         return FAILURE;
       }
@@ -241,6 +243,14 @@ void* bfs_hybrid_funcs[] = {
   reinterpret_cast<void*>(&bfs_hybrid),
   reinterpret_cast<void*>(&bfs_stepwise_hybrid),
 };
+totem_cb_func_t bfs_hybrid_alloc_funcs[] = {
+  NULL,
+  &bfs_stepwise_alloc
+};
+totem_cb_func_t bfs_hybrid_free_funcs[] = {
+  NULL,
+  &bfs_stepwise_free
+};
 const int bfs_hybrid_count = STATIC_ARRAY_COUNT(bfs_hybrid_funcs);
 
 // Maintains references to the different configurations (vanilla and hybrid)
@@ -259,7 +269,8 @@ INSTANTIATE_TEST_CASE_P(BFSGPUAndCPUTest, BFSTest,
                         ValuesIn(GetParameters(
                             bfs_params, bfs_params_count,
                             bfs_vanilla_funcs, bfs_vanilla_count,
-                            bfs_hybrid_funcs, bfs_hybrid_count),
+                            bfs_hybrid_funcs, bfs_hybrid_count,
+                            bfs_hybrid_alloc_funcs, bfs_hybrid_free_funcs),
                                  bfs_params + bfs_params_count));
 #else
 
