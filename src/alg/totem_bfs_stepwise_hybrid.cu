@@ -24,9 +24,6 @@
 // Per-partition specific state.
 typedef struct bfs_state_s {
   cost_t*   cost;     // One slot per vertex in the partition.
-  cost_t*   cost_h;   // Used as a temporary buffer to receive the final
-                      // result copied back from GPU partitions before being
-                      // copied again to the final output buffer.
   bitmap_t  visited[MAX_PARTITION_COUNT];   // A list of bitmaps, one for each
                                             // remote partition.
   bitmap_t  frontier[MAX_PARTITION_COUNT];  // A list of bitmaps, one for each
@@ -39,9 +36,13 @@ typedef struct bfs_state_s {
 
 // State shared between all partitions.
 typedef struct bfs_global_state_s {
-  cost_t*   cost;     // Final output buffer.
-  vid_t     src;      // Source vertex id. (The id after partitioning.)
-  bool      bu_step;  // Whether or not to perform a bottom up step.
+  cost_t* cost;     // Final output buffer.
+  vid_t   src;      // Source vertex id. (The id after partitioning.)
+  bool    bu_step;  // Whether or not to perform a bottom up step.
+  cost_t* cost_h[MAX_PARTITION_COUNT];  // Used as a temporary buffer to receive
+                                        // the final result copied back from GPU
+                                        // partitions before being copied again
+                                        // to the final output buffer.
 } bfs_global_state_t;
 PRIVATE bfs_global_state_t state_g = {NULL, 0, false};
 
@@ -626,23 +627,13 @@ PRIVATE void bfs_scatter(partition_t* par) {
 // The aggregate phase - combine results to be presented.
 PRIVATE void bfs_aggregate(partition_t* par) {
   if (!par->subgraph.vertex_count) { return; }
-
-  bfs_state_t* state    = reinterpret_cast<bfs_state_t*>(par->algo_state);
-  graph_t*     subgraph = &par->subgraph;
-
-  // Apply the cost from our partition into the final cost array.
+  bfs_state_t* state = reinterpret_cast<bfs_state_t*>(par->algo_state);
   if (par->processor.type == PROCESSOR_GPU) {
-    CALL_CU_SAFE(cudaMemcpyAsync(state->cost_h, state->cost,
-                                 subgraph->vertex_count * sizeof(cost_t),
+    CALL_CU_SAFE(cudaMemcpyAsync(state_g.cost_h[par->id], state->cost,
+                                 par->subgraph.vertex_count * sizeof(cost_t),
                                  cudaMemcpyDefault, par->streams[1]));
-    cudaStreamSynchronize(par->streams[1]);
-  }
-
-  // Aggregate the results.
-  assert(state_g.cost);
-  OMP(omp parallel for schedule(static))
-  for (vid_t v = 0; v < subgraph->vertex_count; v++) {
-    state_g.cost[par->map[v]] = state->cost_h[v];
+  } else {
+    state_g.cost_h[par->id] = state->cost;
   }
 }
 
@@ -766,7 +757,7 @@ PRIVATE inline void bfs_alloc_gpu(partition_t* par) {
   // from the GPU.
   CALL_SAFE(totem_malloc(par->subgraph.vertex_count * sizeof(cost_t),
                          TOTEM_MEM_HOST_PINNED,
-                         reinterpret_cast<void**>(&state->cost_h)));
+                         reinterpret_cast<void**>(&state_g.cost_h[par->id])));
 
 }
 
@@ -793,7 +784,7 @@ PRIVATE inline void bfs_alloc_cpu(partition_t* par) {
 
   // Initialize our local frontier.
   frontier_init_cpu(&state->frontier_state, par->subgraph.vertex_count);
-  state->cost_h = state->cost;
+  state_g.cost_h[par->id] = state->cost;
 }
 
 // The init phase - Set up the memory and statuses.
@@ -859,7 +850,7 @@ void bfs_stepwise_free(partition_t* par) {
       if ((par->id == pid) || (par->outbox[pid].count == 0)) { continue; }
       bitmap_finalize_gpu(state->visited[pid]);
     }
-    totem_free(state->cost_h, TOTEM_MEM_HOST_PINNED);
+    totem_free(state_g.cost_h[par->id], TOTEM_MEM_HOST_PINNED);
   } else {
     assert(false);
   }
@@ -908,6 +899,15 @@ error_t bfs_stepwise_hybrid(vid_t src, cost_t* cost) {
   };
   engine_config(&config_td2);
   engine_execute();
+
+  vid_t* map = engine_vertex_id_in_partition();
+  OMP(omp parallel for schedule(static))
+  for (vid_t v = 0; v < engine_vertex_count(); v++) {
+    vid_t local = map[v];
+    cost_t* cost = state_g.cost_h[GET_PARTITION_ID(local)];
+    state_g.cost[v] = cost[GET_VERTEX_ID(local)];
+  }
+
 
   return SUCCESS;
 }
