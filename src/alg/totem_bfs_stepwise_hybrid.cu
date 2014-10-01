@@ -32,6 +32,10 @@ typedef struct bfs_state_s {
   cost_t    level;             // Current level to process by the partition.
   frontier_state_t frontier_state;   // Frontier management state.
   bool      skip_gather; // Whether to skip the gather in the round.
+  cost_t*   permuted_cost;    // Used to locally permute the result such that
+                              // the final aggregate loop performs sequential
+                              // memory accesses
+  vid_t*    permutation_map;  //
 } bfs_state_t;
 
 // State shared between all partitions.
@@ -39,12 +43,15 @@ typedef struct bfs_global_state_s {
   cost_t* cost;     // Final output buffer.
   vid_t   src;      // Source vertex id. (The id after partitioning.)
   bool    bu_step;  // Whether or not to perform a bottom up step.
+  vid_t*  map;      // Maps global id space to local space after the cost has
+                    // been permuted.
+  bool    map_allocated;  // Keeps track of the allocation status of the map.
   cost_t* cost_h[MAX_PARTITION_COUNT];  // Used as a temporary buffer to receive
                                         // the final result copied back from GPU
                                         // partitions before being copied again
                                         // to the final output buffer.
 } bfs_global_state_t;
-PRIVATE bfs_global_state_t state_g = {NULL, 0, false};
+PRIVATE bfs_global_state_t state_g = {NULL, 0, false, NULL, false};
 
 // Checks for input parameters and special cases. This is invoked at the
 // beginning of public interfaces (GPU and CPU)
@@ -437,7 +444,7 @@ PRIVATE void bfs(partition_t* par) {
   }
 
   // TODO(scott): Make this not hardcoded - this swaps statically on step 3.
-  if ((state->level == 3 && state_g.bu_step == false) ||
+  if ((state->level == 2 && state_g.bu_step == false) ||
       (state->level == 6 && state_g.bu_step)) {
     state->skip_gather = true;
     return;
@@ -624,16 +631,29 @@ PRIVATE void bfs_scatter(partition_t* par) {
   }
 }
 
-// The aggregate phase - combine results to be presented.
+PRIVATE __global__ void permute_kernel(partition_t par, bfs_state_t state) {
+  vid_t index = THREAD_GLOBAL_INDEX;
+  if (index >= par.subgraph.vertex_count) { return; }
+  state.permuted_cost[index] = state.cost[state.permutation_map[index]];
+}
+
 PRIVATE void bfs_aggregate(partition_t* par) {
   if (!par->subgraph.vertex_count) { return; }
   bfs_state_t* state = reinterpret_cast<bfs_state_t*>(par->algo_state);
   if (par->processor.type == PROCESSOR_GPU) {
-    CALL_CU_SAFE(cudaMemcpyAsync(state_g.cost_h[par->id], state->cost,
+    const int threads = MAX_THREADS_PER_BLOCK;
+    dim3 blocks;
+    kernel_configure(par->subgraph.vertex_count, blocks, threads);
+    permute_kernel<<<blocks, threads, 0, par->streams[1]>>>(*par, *state);
+    CALL_CU_SAFE(cudaMemcpyAsync(state_g.cost_h[par->id], state->permuted_cost,
                                  par->subgraph.vertex_count * sizeof(cost_t),
                                  cudaMemcpyDefault, par->streams[1]));
   } else {
-    state_g.cost_h[par->id] = state->cost;
+    OMP(omp parallel for schedule(static))
+    for (vid_t i = 0; i < par->subgraph.vertex_count; i++) {
+      state->permuted_cost[i] = state->cost[state->permutation_map[i]];
+    }
+    state_g.cost_h[par->id] = state->permuted_cost;
   }
 }
 
@@ -729,6 +749,34 @@ PRIVATE inline void bfs_init_cpu(partition_t* par) {
   frontier_reset_cpu(&state->frontier_state);
 }
 
+PRIVATE vid_t* map_g = NULL;
+PRIVATE bool compare_global_ids_asc(const vid_t& id1, const vid_t& id2) {
+  return map_g[id1] < map_g[id2];
+}
+
+PRIVATE inline vid_t* bfs_alloc_prepare_permutation_map(partition_t* par) {
+  vid_t* permutation_map;
+  CALL_SAFE(totem_malloc(par->subgraph.vertex_count * sizeof(vid_t),
+                         TOTEM_MEM_HOST,
+                         reinterpret_cast<void**>(&permutation_map)));
+  OMP(omp parallel for schedule(static))
+  for (vid_t i = 0; i < par->subgraph.vertex_count; i++) {
+    permutation_map[i] = i;
+  }
+
+  map_g = par->map;
+  tbb::parallel_sort(permutation_map,
+                     permutation_map + par->subgraph.vertex_count,
+                     compare_global_ids_asc);
+
+  OMP(omp parallel for schedule(static))
+  for (vid_t i = 0; i < par->subgraph.vertex_count; i++) {
+    state_g.map[par->map[permutation_map[i]]] = SET_PARTITION_ID(i, par->id);
+  }
+
+  return permutation_map;
+}
+
 // Allocate the GPU memory - bitmaps and frontier.
 PRIVATE inline void bfs_alloc_gpu(partition_t* par) {
   bfs_state_t* state = reinterpret_cast<bfs_state_t*>(par->algo_state);
@@ -759,6 +807,17 @@ PRIVATE inline void bfs_alloc_gpu(partition_t* par) {
                          TOTEM_MEM_HOST_PINNED,
                          reinterpret_cast<void**>(&state_g.cost_h[par->id])));
 
+  CALL_SAFE(totem_malloc(par->subgraph.vertex_count * sizeof(cost_t),
+                         TOTEM_MEM_DEVICE,
+                         reinterpret_cast<void**>(&(state->permuted_cost))));
+  vid_t* permutation_map = bfs_alloc_prepare_permutation_map(par);
+  CALL_SAFE(totem_malloc(par->subgraph.vertex_count * sizeof(vid_t),
+                         TOTEM_MEM_DEVICE, reinterpret_cast<void**>(
+                             &(state->permutation_map))));
+  cudaMemcpy(state->permutation_map, permutation_map,
+             par->subgraph.vertex_count * sizeof(vid_t),
+             cudaMemcpyDefault);
+  totem_free(permutation_map, TOTEM_MEM_HOST);
 }
 
 // Allocate the CPU memory - bitmaps and frontier.
@@ -785,6 +844,11 @@ PRIVATE inline void bfs_alloc_cpu(partition_t* par) {
   // Initialize our local frontier.
   frontier_init_cpu(&state->frontier_state, par->subgraph.vertex_count);
   state_g.cost_h[par->id] = state->cost;
+
+  CALL_SAFE(totem_malloc(par->subgraph.vertex_count * sizeof(cost_t),
+                         TOTEM_MEM_HOST,
+                         reinterpret_cast<void**>(&(state->permuted_cost))));
+  state->permutation_map = bfs_alloc_prepare_permutation_map(par);
 }
 
 // The init phase - Set up the memory and statuses.
@@ -821,6 +885,12 @@ void bfs_stepwise_alloc(partition_t* par) {
   // Initialize based off of our processor type.
   par->algo_state = calloc(1, sizeof(bfs_state_t));
   assert(par->algo_state);
+  if (!state_g.map_allocated) {
+    state_g.map_allocated = true;
+    CALL_SAFE(totem_malloc(engine_vertex_count() * sizeof(vid_t),
+                           TOTEM_MEM_HOST,
+                           reinterpret_cast<void**>(&(state_g.map))));
+  }
   if (par->processor.type == PROCESSOR_CPU) {
     bfs_alloc_cpu(par);
   } else {
@@ -855,8 +925,14 @@ void bfs_stepwise_free(partition_t* par) {
     assert(false);
   }
 
-  // Free memory.
+  if (state_g.map_allocated) {
+    state_g.map_allocated = false;
+    totem_free(state_g.map, TOTEM_MEM_HOST);
+  }
+
   totem_free(state->cost, type);
+  totem_free(state->permuted_cost, type);
+  totem_free(state->permutation_map, type);
   free(state);
   par->algo_state = NULL;
 }
@@ -900,14 +976,13 @@ error_t bfs_stepwise_hybrid(vid_t src, cost_t* cost) {
   engine_config(&config_td2);
   engine_execute();
 
-  vid_t* map = engine_vertex_id_in_partition();
+  vid_t* map = state_g.map;
   OMP(omp parallel for schedule(static))
   for (vid_t v = 0; v < engine_vertex_count(); v++) {
     vid_t local = map[v];
     cost_t* cost = state_g.cost_h[GET_PARTITION_ID(local)];
     state_g.cost[v] = cost[GET_VERTEX_ID(local)];
   }
-
 
   return SUCCESS;
 }
