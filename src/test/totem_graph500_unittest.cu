@@ -1,4 +1,4 @@
-/* 
+/*
  * Contains unit tests for an implementation of the Graph500 benchmark
  * graph search algorithm.
  *
@@ -12,20 +12,14 @@
 #if GTEST_HAS_PARAM_TEST
 
 using ::testing::TestWithParam;
-using ::testing::Values;
+using ::testing::ValuesIn;
 
-typedef error_t(*Graph500Function)(graph_t*, vid_t, bfs_tree_t*);
+typedef error_t(*GRAPH500Function)(graph_t*, vid_t, bfs_tree_t*);
+typedef error_t(*GRAPH500HybridFunction)(vid_t, bfs_tree_t*);
 
-// Allows testing the vanilla graph500 functions and the ones based on Totem
-typedef struct graph500_param_s {
-  totem_attr_t*    attr;   // Totem attributes for totem-based tests
-  Graph500Function func;   // the vanilla Graph500 function if attr is NULL
-} graph500_param_t;
-
-class Graph500Test : public TestWithParam<graph500_param_t*> {
+class Graph500Test : public TestWithParam<test_param_t*> {
  public:
   virtual void SetUp() {
-    // Ensure the minimum CUDA architecture is supported
     CUDA_CHECK_VERSION();
     _graph500_param = GetParam();
     _mem_type = TOTEM_MEM_HOST_PINNED;
@@ -39,7 +33,7 @@ class Graph500Test : public TestWithParam<graph500_param_t*> {
   void InitTestCase(const char* filename) {
     graph_initialize(filename, false, &_graph);
     CALL_SAFE(totem_malloc(_graph->vertex_count * sizeof(bfs_tree_t), _mem_type,
-                           (void**)&_tree));
+                           reinterpret_cast<void**>(&_tree)));
   }
 
   void FinalizeTestCase() {
@@ -48,28 +42,34 @@ class Graph500Test : public TestWithParam<graph500_param_t*> {
 
   error_t TestGraph(vid_t src) {
     if (_graph500_param->attr) {
-      _graph500_param->attr->push_msg_size = 
-        (sizeof(vid_t) * BITS_PER_BYTE) + 1;
-      _graph500_param->attr->alloc_func = graph500_alloc;
-      _graph500_param->attr->free_func = graph500_free;
+      _graph500_param->attr->push_msg_size =
+          (sizeof(vid_t) * BITS_PER_BYTE) + 1;
+      _graph500_param->attr->alloc_func = _graph500_param->hybrid_alloc;
+      _graph500_param->attr->free_func = _graph500_param->hybrid_free;
       if (totem_init(_graph, _graph500_param->attr) == FAILURE) {
         return FAILURE;
       }
-      error_t err = graph500_hybrid(src, _tree);
+      GRAPH500HybridFunction func =
+          reinterpret_cast<GRAPH500HybridFunction>(_graph500_param->func);
+      error_t err = func(src, _tree);
       totem_finalize();
       return err;
+    } else {
+      GRAPH500Function func = reinterpret_cast<GRAPH500Function>(
+          _graph500_param->func);
+      return func(_graph, src, _tree);
     }
-    return _graph500_param->func(_graph, src, _tree);
   }
+
  protected:
-  graph500_param_t* _graph500_param;
+  test_param_t* _graph500_param;
   totem_mem_t _mem_type;
   graph_t* _graph;
   bfs_tree_t* _tree;
 };
 
 TEST_P(Graph500Test, Empty) {
-  _graph = (graph_t*)calloc(1, sizeof(graph_t));
+  _graph = reinterpret_cast<graph_t*>(calloc(1, sizeof(graph_t)));
   EXPECT_EQ(FAILURE, TestGraph(0));
   EXPECT_EQ(FAILURE, TestGraph(99));
   free(_graph);
@@ -100,7 +100,7 @@ TEST_P(Graph500Test, Disconnected) {
   vid_t source = 0;
   EXPECT_EQ(SUCCESS, TestGraph(source));
   EXPECT_EQ(source, (vid_t)_tree[source]);
-  for(vid_t vertex = source + 1; vertex < _graph->vertex_count; vertex++) {
+  for (vid_t vertex = source + 1; vertex < _graph->vertex_count; vertex++) {
     EXPECT_EQ(VERTEX_ID_MAX, (vid_t)_tree[vertex]);
   }
 
@@ -108,15 +108,15 @@ TEST_P(Graph500Test, Disconnected) {
   source = _graph->vertex_count - 1;
   EXPECT_EQ(SUCCESS, TestGraph(source));
   EXPECT_EQ(source, (vid_t)_tree[source]);
-  for(vid_t vertex = source; vertex < _graph->vertex_count - 1; vertex++){
+  for (vid_t vertex = source; vertex < _graph->vertex_count - 1; vertex++) {
     EXPECT_EQ(VERTEX_ID_MAX, (vid_t)_tree[vertex]);
   }
 
   // A vertex in the middle as source
   source = 199;
   EXPECT_EQ(SUCCESS, TestGraph(source));
-  for(vid_t vertex = 0; vertex < _graph->vertex_count; vertex++) {
-    EXPECT_EQ((vertex == source) ? source : 
+  for (vid_t vertex = 0; vertex < _graph->vertex_count; vertex++) {
+    EXPECT_EQ((vertex == source) ? source :
               VERTEX_ID_MAX, (vid_t)_tree[vertex]);
   }
 
@@ -134,7 +134,7 @@ TEST_P(Graph500Test, Chain) {
   vid_t source = 0;
   EXPECT_EQ(SUCCESS, TestGraph(source));
   EXPECT_EQ(source, (vid_t)_tree[source]);
-  for(vid_t vertex = source + 1; vertex < _graph->vertex_count; vertex++){
+  for (vid_t vertex = source + 1; vertex < _graph->vertex_count; vertex++) {
     EXPECT_EQ((vertex - 1), (vid_t)_tree[vertex]);
   }
 
@@ -142,14 +142,14 @@ TEST_P(Graph500Test, Chain) {
   source = _graph->vertex_count - 1;
   EXPECT_EQ(SUCCESS, TestGraph(source));
   EXPECT_EQ(source, (vid_t)_tree[source]);
-  for(vid_t vertex = source; vertex < _graph->vertex_count - 1; vertex++){
+  for (vid_t vertex = source; vertex < _graph->vertex_count - 1; vertex++) {
     EXPECT_EQ((vertex + 1), (vid_t)_tree[vertex]);
   }
 
   // A vertex in the middle as source
   source = 199;
   EXPECT_EQ(SUCCESS, TestGraph(source));
-  for(vid_t vertex = 0; vertex < _graph->vertex_count; vertex++) {
+  for (vid_t vertex = 0; vertex < _graph->vertex_count; vertex++) {
     if (vertex > source) {
       EXPECT_EQ((vertex - 1), (vid_t)_tree[vertex]);
     } else if (vertex < source) {
@@ -172,21 +172,21 @@ TEST_P(Graph500Test, CompleteGraph) {
   // First vertex as source
   vid_t source = 0;
   EXPECT_EQ(SUCCESS, TestGraph(source));
-  for(vid_t vertex = 0; vertex < _graph->vertex_count; vertex++){
+  for (vid_t vertex = 0; vertex < _graph->vertex_count; vertex++) {
     EXPECT_EQ(source, (vid_t)_tree[vertex]);
   }
 
   // Last vertex as source
   source = _graph->vertex_count - 1;
   EXPECT_EQ(SUCCESS, TestGraph(source));
-  for(vid_t vertex = 0; vertex < _graph->vertex_count; vertex++) {
+  for (vid_t vertex = 0; vertex < _graph->vertex_count; vertex++) {
     EXPECT_EQ(source, (vid_t)_tree[vertex]);
   }
 
   // A vertex source in the middle
   source = 199;
   EXPECT_EQ(SUCCESS, TestGraph(source));
-  for(vid_t vertex = 0; vertex < _graph->vertex_count; vertex++) {
+  for (vid_t vertex = 0; vertex < _graph->vertex_count; vertex++) {
     EXPECT_EQ(source, (vid_t)_tree[vertex]);
   }
 
@@ -203,7 +203,7 @@ TEST_P(Graph500Test, Star) {
   // First vertex as source
   vid_t source = 0;
   EXPECT_EQ(SUCCESS, TestGraph(source));
-  for(vid_t vertex = 0; vertex < _graph->vertex_count; vertex++){
+  for (vid_t vertex = 0; vertex < _graph->vertex_count; vertex++) {
     EXPECT_EQ(source, (vid_t)_tree[vertex]);
   }
 
@@ -212,7 +212,7 @@ TEST_P(Graph500Test, Star) {
   EXPECT_EQ(SUCCESS, TestGraph(source));
   EXPECT_EQ(source, (vid_t)_tree[source]);
   EXPECT_EQ(source, (vid_t)_tree[0]);
-  for(vid_t vertex = 1; vertex < _graph->vertex_count; vertex++) {
+  for (vid_t vertex = 1; vertex < _graph->vertex_count; vertex++) {
     if (vertex == source) continue;
     EXPECT_EQ((vid_t)0, (vid_t)_tree[vertex]);
   }
@@ -222,7 +222,7 @@ TEST_P(Graph500Test, Star) {
   EXPECT_EQ(SUCCESS, TestGraph(source));
   EXPECT_EQ(source, (vid_t)_tree[source]);
   EXPECT_EQ(source, (vid_t)_tree[0]);
-  for(vid_t vertex = 1; vertex < _graph->vertex_count; vertex++) {
+  for (vid_t vertex = 1; vertex < _graph->vertex_count; vertex++) {
     if (vertex == source) continue;
     EXPECT_EQ((vid_t)0, (vid_t)_tree[vertex]);
   }
@@ -233,68 +233,46 @@ TEST_P(Graph500Test, Star) {
   FinalizeTestCase();
 }
 
-// Values() seems to accept only pointers, hence the possible parameters
-// are defined here, and a pointer to each of them is used.
-graph500_param_t graph500_params[] = {
-  {NULL, &graph500_cpu},
-  {&totem_attrs[0], NULL},
-  {&totem_attrs[1], NULL},
-  {&totem_attrs[2], NULL},
-  {&totem_attrs[3], NULL},
-  {&totem_attrs[4], NULL},
-  {&totem_attrs[5], NULL},
-  {&totem_attrs[6], NULL},
-  {&totem_attrs[7], NULL},
-  {&totem_attrs[8], NULL},
-  {&totem_attrs[9], NULL},
-  {&totem_attrs[10], NULL},
-  {&totem_attrs[11], NULL},
-  {&totem_attrs[12], NULL},
-  {&totem_attrs[13], NULL},
-  {&totem_attrs[14], NULL},
-  {&totem_attrs[15], NULL},
-  {&totem_attrs[16], NULL},
-  {&totem_attrs[17], NULL},
-  {&totem_attrs[18], NULL},
-  {&totem_attrs[19], NULL},
-  {&totem_attrs[20], NULL},
-  {&totem_attrs[21], NULL},
-  {&totem_attrs[22], NULL},
-  {&totem_attrs[23], NULL}
+// Defines the set of GRAPH500 vanilla implementations to be tested. To test
+// a new implementation, simply add it to the set below.
+void* graph500_vanilla_funcs[] = {
+  reinterpret_cast<void*>(&graph500_cpu),
 };
+const int graph500_vanilla_count = STATIC_ARRAY_COUNT(graph500_vanilla_funcs);
+
+// Defines the set of GRAPH500 hybrid implementations to be tested. To test
+// a new implementation, simply add it to the set below.
+void* graph500_hybrid_funcs[] = {
+  reinterpret_cast<void*>(&graph500_hybrid),
+};
+totem_cb_func_t graph500_hybrid_alloc_funcs[] = {
+  &graph500_alloc
+};
+totem_cb_func_t graph500_hybrid_free_funcs[] = {
+  &graph500_free
+};
+const int graph500_hybrid_count = STATIC_ARRAY_COUNT(graph500_hybrid_funcs);
+
+// Maintains references to the different configurations (vanilla and hybrid)
+// that will be tested by the framework.
+static const int graph500_params_count = graph500_vanilla_count +
+    graph500_hybrid_count * hybrid_configurations_count;
+static test_param_t* graph500_params[graph500_params_count];
 
 // From Google documentation:
 // In order to run value-parameterized tests, we need to instantiate them,
 // or bind them to a list of values which will be used as test parameters.
 //
 // Values() receives a list of parameters and the framework will execute the
-// whole set of tests Graph500Test for each element of Values()
-INSTANTIATE_TEST_CASE_P(Graph500GPUAndCPUTest, Graph500Test, 
-                        Values(&graph500_params[0],
-                               &graph500_params[1],
-                               &graph500_params[2],
-                               &graph500_params[3],
-                               &graph500_params[4],
-                               &graph500_params[5],
-                               &graph500_params[6],
-                               &graph500_params[7],
-                               &graph500_params[8],
-                               &graph500_params[9],
-                               &graph500_params[10],
-                               &graph500_params[11],
-                               &graph500_params[12],
-                               &graph500_params[13],
-                               &graph500_params[14],
-                               &graph500_params[15],
-                               &graph500_params[16],
-                               &graph500_params[17],
-                               &graph500_params[18],
-                               &graph500_params[19],
-                               &graph500_params[20],
-                               &graph500_params[21],
-                               &graph500_params[22],
-                               &graph500_params[23],
-                               &graph500_params[24]));
+// whole set of tests GRAPH500Test for each element of Values()
+INSTANTIATE_TEST_CASE_P(GRAPH500GPUAndCPUTest, Graph500Test,
+                        ValuesIn(GetParameters(
+                            graph500_params, graph500_params_count,
+                            graph500_vanilla_funcs, graph500_vanilla_count,
+                            graph500_hybrid_funcs, graph500_hybrid_count,
+                            graph500_hybrid_alloc_funcs,
+                            graph500_hybrid_free_funcs),
+                                 graph500_params + graph500_params_count));
 
 #else
 
