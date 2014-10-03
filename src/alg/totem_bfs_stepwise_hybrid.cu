@@ -109,8 +109,8 @@ PRIVATE void bfs_td_cpu(partition_t* par, bfs_state_t* state) {
       }
     }  // End of neighbour check - vertex examined.
   }  // All vertices examined in level.
-  state_g.switch_parameter = 100.0 * edge_frontier_count /
-      par->subgraph.edge_count;
+  state_g.switch_parameter =
+      100.0 * edge_frontier_count / par->subgraph.edge_count;
 
   // Move over the finished variable.
   if (!finished) *(state->finished) = false;
@@ -124,9 +124,7 @@ PRIVATE void bfs_bu_cpu(partition_t* par, bfs_state_t* state) {
   bitmap_t visited = state->visited[par->id];
 
   // Iterate across all of our vertices.
-  vid_t next_frontier_count = 0;
-  OMP(omp parallel for schedule(runtime) reduction(& : finished)
-      reduction(+ : next_frontier_count))
+  OMP(omp parallel for schedule(runtime) reduction(& : finished))
   for (vid_t vertex_id = 0; vertex_id < subgraph->vertex_count; vertex_id++) {
     // Ignore the local vertex if it has already been visited.
     if (bitmap_is_set(visited, vertex_id)) { continue; }
@@ -146,13 +144,10 @@ PRIVATE void bfs_bu_cpu(partition_t* par, bfs_state_t* state) {
         // Increment the level of this vertex.
         state->cost[vertex_id] = state->level + 1;
         finished = false;
-        next_frontier_count++;
         break;
       }
     }  // End of neighbour check - vertex examined.
   }  // All vertices examined in level.
-  state_g.switch_parameter = 100.0 * next_frontier_count /
-      subgraph->vertex_count;
 
   // Move over the finished variable.
   if (!finished) *(state->finished) = false;
@@ -453,8 +448,8 @@ PRIVATE void bfs(partition_t* par) {
 
   // The switching thresholds has been determined empirically. Consider looking
   // at them again if they did not work for specific workloads.
-  if ((state_g.switch_parameter >= 2 && state_g.bu_step == false) ||
-      (state_g.switch_parameter <= 2 && state_g.bu_step)) {
+  if ((state_g.switch_parameter >= 1 && state_g.bu_step == false) ||
+      (engine_superstep() == 5 && state_g.bu_step)) {
     state->skip_gather = true;
     return;
   }
@@ -488,7 +483,7 @@ PRIVATE void bfs_gather_cpu(partition_t* par, bfs_state_t* state,
       bitmap_word_t mask = ((bitmap_word_t)1) << i;
       if (word & mask) { continue; }
       vid_t vid = inbox->rmt_nbrs[index];
-      if (state->cost[vid] == state->level) { word |= mask; }
+      if (bitmap_is_set(state->visited[par->id], vid)) { word |= mask; }
     }
     bitmap[word_index] = word;
   }
@@ -507,7 +502,7 @@ __global__ void bfs_gather_gpu(partition_t par, bfs_state_t state,
   }
   for (int i = THREAD_BLOCK_INDEX; i < block_batch; i += THREADS_PER_BLOCK) {
     vid_t vid = inbox.rmt_nbrs[block_start_index + i];
-    active[i] = (state.cost[vid] == state.level);
+    active[i] = bitmap_is_set(state.visited[par.id], vid);
   }
   __syncthreads();
 
@@ -987,6 +982,7 @@ error_t bfs_stepwise_hybrid(vid_t src, cost_t* cost) {
   // TODO(scott): Modify the swapping to flip back and forth simpler.
 
   // Begin by executing with top down steps.
+  state_g.switch_parameter = 0;
   state_g.bu_step = false;
   engine_config_t config_td = {
     NULL, bfs, bfs_scatter, NULL, bfs_init, NULL, NULL, GROOVES_PUSH
@@ -1003,6 +999,7 @@ error_t bfs_stepwise_hybrid(vid_t src, cost_t* cost) {
   engine_execute();
 
   // Finalize execution with top down steps.
+  state_g.switch_parameter = 0;
   state_g.bu_step = false;
   engine_config_t config_td2 = {
     NULL, bfs, bfs_scatter, NULL, NULL, NULL, bfs_permute, GROOVES_PUSH
