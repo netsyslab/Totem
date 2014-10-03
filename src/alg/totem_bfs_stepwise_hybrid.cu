@@ -191,10 +191,11 @@ void bfs_stepwise_cpu(partition_t* par, bfs_state_t* state) {
   }
 }
 
-PRIVATE __device__ inline vid_t* get_edges_array(graph_t* graph, vid_t v) {
-  vid_t* edges = graph->edges + graph->vertices[v];
-  if (v >= graph->vertex_ext) {
-    edges = graph->edges_ext + (graph->vertices[v] - graph->edge_count_ext);
+PRIVATE __device__ inline vid_t* get_edges_array(
+    const graph_t& graph, vid_t v) {
+  vid_t* edges = graph.edges + graph.vertices[v];
+  if (v >= graph.vertex_ext) {
+    edges = graph.edges_ext + (graph.vertices[v] - graph.edge_count_ext);
   }
   return edges;
 }
@@ -213,11 +214,12 @@ __global__ void bfs_bu_kernel(partition_t par, bfs_state_t state) {
   if (block_start_index + kVerticesPerBlock > kVertexCount) {
     block_batch = kVertexCount - block_start_index;
   }
+  const bitmap_t __restrict kVisited = state.visited[par.id];
   for (int i = THREAD_BLOCK_INDEX; i < block_batch; i += THREADS_PER_BLOCK) {
     vid_t v = block_start_index + i;
     nbrs_state[i] = false;
-    if (state.cost[v] == INF_COST) {
-      const vid_t* __restrict edges = get_edges_array(&par.subgraph, v);
+    if (!bitmap_is_set(kVisited, v)) {
+      const vid_t* __restrict edges = get_edges_array(par.subgraph, v);
       const eid_t nbr_count = vertices[v + 1] - vertices[v];
       for (eid_t e = 0; e < nbr_count && !nbrs_state[i]; e++) {
         int nbr_pid = GET_PARTITION_ID(edges[e]);
@@ -299,7 +301,7 @@ __global__ void bfs_td_kernel(partition_t par, bfs_state_t state,
   for (vid_t i = start_vertex; i < end_vertex; i++) {
     vid_t v = frontier[i];
     const eid_t nbr_count = vertices[v + 1] - vertices[v];
-    const vid_t* __restrict edges = get_edges_array(&par.subgraph, v);
+    const vid_t* __restrict edges = get_edges_array(par.subgraph, v);
     for (vid_t i = warp_offset; i < nbr_count; i += VWARP_WIDTH) {
       int nbr_pid = GET_PARTITION_ID(edges[i]);
       vid_t nbr = GET_VERTEX_ID(edges[i]);
@@ -404,10 +406,10 @@ PRIVATE void bfs_td_gpu(partition_t* par, bfs_state_t* state) {
 
 // This is a GPU version of the Bottom-up/Top-down BFS algorithm.
 // See file header for full details.
-__host__ error_t bfs_stepwise_gpu(partition_t* par, bfs_state_t* state) {
+__host__ void bfs_stepwise_gpu(partition_t* par, bfs_state_t* state) {
   // Update the frontier.
-  frontier_update_bitmap_gpu(&state->frontier_state, state->visited[par->id],
-                             par->streams[1]);
+  frontier_update_bitmap_gpu(
+      &state->frontier_state, state->visited[par->id], par->streams[1]);
   state->frontier[par->id] = state->frontier_state.current;
 
   if (state_g.bu_step) {
@@ -434,8 +436,6 @@ __host__ error_t bfs_stepwise_gpu(partition_t* par, bfs_state_t* state) {
                       par->outbox[pid].count, par->streams[1]);
     }
   }
-
-  return SUCCESS;
 }
 
 // The execution phase - based off of the partition we are, launch an approach.
@@ -506,8 +506,8 @@ __global__ void bfs_gather_gpu(partition_t par, bfs_state_t state,
     block_batch = inbox.count - block_start_index;
   }
   for (int i = THREAD_BLOCK_INDEX; i < block_batch; i += THREADS_PER_BLOCK) {
-    active[i] = (state.cost[inbox.rmt_nbrs[block_start_index + i]] ==
-                 state.level);
+    vid_t vid = inbox.rmt_nbrs[block_start_index + i];
+    active[i] = (state.cost[vid] == state.level);
   }
   __syncthreads();
 
@@ -561,21 +561,27 @@ PRIVATE void bfs_gather(partition_t* par) {
 }
 
 // This is a scatter for CPU - copied from the original bfs_hybrid algorithm.
-PRIVATE inline void bfs_scatter_cpu(grooves_box_table_t* inbox,
-                                    bfs_state_t* state, bitmap_t visited) {
-  bitmap_t remotely_visited = (bitmap_t)inbox->push_values;
-  OMP(omp parallel for schedule(runtime))
-  for (vid_t word_index = 0; word_index < bitmap_bits_to_words(inbox->count);
-       word_index++) {
-    if (remotely_visited[word_index]) {
-      vid_t bit_index = word_index * BITMAP_BITS_PER_WORD;
-      vid_t bit_last_index = (word_index + 1) * BITMAP_BITS_PER_WORD;
-      for (; bit_index < bit_last_index; bit_index++) {
-        if (bitmap_is_set(remotely_visited, bit_index)) {
-          vid_t vid = inbox->rmt_nbrs[bit_index];
-          if (!bitmap_is_set(visited, vid)) {
-            bitmap_set_cpu(visited, vid);
-            state->cost[vid] = state->level;
+PRIVATE inline void bfs_scatter_cpu(partition_t* par) {
+  bfs_state_t* state = reinterpret_cast<bfs_state_t*>(par->algo_state);
+  bitmap_t visited = state->visited[par->id];
+  for (int rmt_pid = 0; rmt_pid < engine_partition_count(); rmt_pid++) {
+    if (rmt_pid == par->id) { continue; }
+    grooves_box_table_t* inbox = &par->inbox[rmt_pid];
+    if (!inbox->count) { continue; }
+    bitmap_t remotely_visited = (bitmap_t)inbox->push_values;
+    OMP(omp parallel for schedule(runtime))
+    for (vid_t word_index = 0; word_index < bitmap_bits_to_words(inbox->count);
+         word_index++) {
+      if (remotely_visited[word_index]) {
+        vid_t bit_index = word_index * BITMAP_BITS_PER_WORD;
+        vid_t bit_last_index = (word_index + 1) * BITMAP_BITS_PER_WORD;
+        for (; bit_index < bit_last_index; bit_index++) {
+          if (bitmap_is_set(remotely_visited, bit_index)) {
+            vid_t vid = inbox->rmt_nbrs[bit_index];
+            if (!bitmap_is_set(visited, vid)) {
+              bitmap_set_cpu(visited, vid);
+              state->cost[vid] = state->level;
+            }
           }
         }
       }
@@ -613,30 +619,34 @@ bfs_scatter_kernel(const bitmap_t __restrict rmt_visited,
   }
 }
 
-// The main scatter function, used in the top down phases.
-PRIVATE void bfs_scatter(partition_t* par) {
+PRIVATE void bfs_scatter_gpu(partition_t* par) {
   bfs_state_t* state = reinterpret_cast<bfs_state_t*>(par->algo_state);
   for (int rmt_pid = 0; rmt_pid < engine_partition_count(); rmt_pid++) {
     if (rmt_pid == par->id) { continue; }
     grooves_box_table_t* inbox = &par->inbox[rmt_pid];
     if (!inbox->count) { continue; }
-    if (par->processor.type == PROCESSOR_CPU) {
-      bfs_scatter_cpu(inbox, state, state->visited[par->id]);
-    } else if (par->processor.type == PROCESSOR_GPU) {
-      vid_t word_count = bitmap_bits_to_words(inbox->count);
-      dim3 blocks;
-      const int batch_size = 8; const int warp_size = 16;
-      const int threads = DEFAULT_THREADS_PER_BLOCK;
-      kernel_configure(vwarp_thread_count(word_count, warp_size, batch_size),
-                       blocks, threads);
-      bfs_scatter_kernel<warp_size, batch_size, threads>
+    vid_t word_count = bitmap_bits_to_words(inbox->count);
+    dim3 blocks;
+    const int batch_size = 8; const int warp_size = 16;
+    const int threads = DEFAULT_THREADS_PER_BLOCK;
+    kernel_configure(vwarp_thread_count(word_count, warp_size, batch_size),
+                     blocks, threads);
+    bfs_scatter_kernel<warp_size, batch_size, threads>
         <<<blocks, threads, 0, par->streams[1]>>>
         ((bitmap_t)inbox->push_values, inbox->rmt_nbrs, word_count,
          state->visited[par->id], state->cost, state->level);
-      CALL_CU_SAFE(cudaGetLastError());
-    } else {
-      assert(false);
-    }
+    CALL_CU_SAFE(cudaGetLastError());
+  }
+}
+
+// The main scatter function, used in the top down phases.
+PRIVATE void bfs_scatter(partition_t* par) {
+  if (par->processor.type == PROCESSOR_CPU) {
+    bfs_scatter_cpu(par);
+  } else if (par->processor.type == PROCESSOR_GPU) {
+    bfs_scatter_gpu(par);
+  } else {
+    assert(false);
   }
 }
 
@@ -706,15 +716,15 @@ PRIVATE inline void bfs_init_gpu(partition_t* par) {
     }
   }
 
+  // Reset the local frontier.
+  frontier_reset_gpu(&state->frontier_state);
+
   // Set the source vertex as visited, if it is in our partition.
   if (GET_PARTITION_ID(state_g.src) == par->id) {
     bfs_init_source_kernel<<<1, 1, 0, par->streams[1]>>>
-      (state->visited[par->id], GET_VERTEX_ID(state_g.src));
+        (state->visited[par->id], GET_VERTEX_ID(state_g.src));
     CALL_CU_SAFE(cudaGetLastError());
   }
-
-  // Allocate our local frontier.
-  frontier_reset_gpu(&state->frontier_state);
 }
 
 // Initialize the CPU memory - bitmaps and frontier.
@@ -749,13 +759,13 @@ PRIVATE inline void bfs_init_cpu(partition_t* par) {
     }
   }
 
+  // Reset the local frontier.
+  frontier_reset_cpu(&state->frontier_state);
+
   // Set the source vertex as visited, if it is in our partition.
   if (GET_PARTITION_ID(state_g.src) == par->id) {
     bitmap_set_cpu(state->visited[par->id], GET_VERTEX_ID(state_g.src));
   }
-
-  // Initialize our local frontier.
-  frontier_reset_cpu(&state->frontier_state);
 }
 
 PRIVATE vid_t* map_g = NULL;
