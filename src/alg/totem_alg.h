@@ -123,8 +123,11 @@ void bfs_stepwise_free(partition_t* par);
 */
 error_t graph500_cpu(graph_t* graph, vid_t src, bfs_tree_t* tree);
 error_t graph500_hybrid(vid_t src, bfs_tree_t* tree);
+error_t g500s_stepwise_hybrid(vid_t src, bfs_tree_t* tree);
 void graph500_free(partition_t* par);
 void graph500_alloc(partition_t* par);
+void g500s_stepwise_free(partition_t* par);
+void g500s_stepwise_alloc(partition_t* par);
 
 /**
  * Given a graph, compute the clustering coefficient of each vertex.
