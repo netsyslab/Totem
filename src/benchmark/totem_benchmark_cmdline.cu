@@ -7,35 +7,29 @@
 
 #include "totem_benchmark.h"
 
-/**
- * An options instance that is used to configure the benchmark
- */
+// An options instance that is used to configure the benchmark.
 PRIVATE benchmark_options_t options = {
-  NULL,                  // graph_file
-  BENCHMARK_BFS,         // benchmark
-  PLATFORM_CPU,          // platform
-  1,                     // number of GPUs
-  omp_get_max_threads(), // number of CPU threads
-  omp_sched_guided,      // static scheduling
-  1,                     // repeat
-  50,                    // alpha
-  PAR_RANDOM,            // partitioning algorithm
-  GPU_GRAPH_MEM_DEVICE,  // allocate gpu-based partitions on the device
-  false,                 // do not randomize vertex placement across
-                         // GPU partitions
-  false,                 // Vertex ids will not be sorted by edge degree.
-  false,                 // Edges will be sorted ascending by default.
+  NULL,                   // Graph file.
+  BENCHMARK_BFS,          // Benchmark.
+  PLATFORM_CPU,           // Platform.
+  1,                      // Number of GPUs.
+  omp_get_max_threads(),  // Number of CPU threads.
+  omp_sched_guided,       // OMP scheduling.
+  1,                      // Repeat.
+  50,                     // Alpha.
+  PAR_RANDOM,             // Partitioning algorithm.
+  GPU_GRAPH_MEM_DEVICE,   // Allocate gpu-based partitions on the device
+  false,                  // Do not randomize vertex placement across
+                          // GPU partitions.
+  false,                  // Vertex ids will not be sorted by edge degree.
+  false,                  // Edges will be sorted ascending by default.
 };
 
-/**
- * A getter for a reference to the Totem options values.
- */
+// A getter for a reference to the benchmark options.
 benchmark_options_t* totem_benchmark_get_options() {return &options;}
 
-/**
- * Maximum Number of times an experiment is repeated or sources used to 
- * benchmark a traversal algorithm
-*/
+// Maximum Number of times an experiment is repeated or sources used to
+// benchmark a traversal algorithm.
 const int REPEAT_MAX = 1000;
 
 /**
@@ -49,12 +43,13 @@ PRIVATE void display_help(char* exe_name, int exit_err) {
          "  -aNUM [0-100] Percentage of edges allocated to CPU partition "
          "(default 50%%)\n"
          "  -bNUM Benchmark\n"
-         "     %d: BFS (default)\n"
+         "     %d: BFS top-down (default)\n"
          "     %d: PageRank\n"
          "     %d: SSSP\n"
          "     %d: Betweenness\n"
          "     %d: Graph500\n"
          "     %d: Clustering Coefficient\n"
+         "     %d: BFS stepwise\n"
          "  -e Swaps the direction of edge sorting to be descending order.\n"
          "     (default FALSE)\n"
          "  -gNUM [0-%d] Number of GPUs to use. This is applicable for GPU\n"
@@ -80,17 +75,18 @@ PRIVATE void display_help(char* exe_name, int exit_err) {
          "  -rNUM [1-%d] Number of times an experiment is repeated or sources\n"
          "        used to benchmark a traversal algorithm (default 5)\n"
          "  -sNUM OMP scheduling type\n"
-         "     %d: static (default)\n"
+         "     %d: static\n"
          "     %d: dynamic\n"
-         "     %d: guided\n"
-         "  -tNUM [1-%d] Number of CPU threads to use (default %d).\n" 
+         "     %d: guided (default)\n"
+         "  -tNUM [1-%d] Number of CPU threads to use (default %d).\n"
          "  -h Print this help message\n",
          exe_name, BENCHMARK_BFS, BENCHMARK_PAGERANK, BENCHMARK_SSSP,
          BENCHMARK_BETWEENNESS, BENCHMARK_GRAPH500,
-         BENCHMARK_CLUSTERING_COEFFICIENT, get_gpu_count(), PAR_RANDOM,
+         BENCHMARK_CLUSTERING_COEFFICIENT, BENCHMARK_BFS_STEPWISE,
+         get_gpu_count(), PAR_RANDOM,
          PAR_SORTED_ASC, PAR_SORTED_DSC, GPU_GRAPH_MEM_DEVICE,
          GPU_GRAPH_MEM_MAPPED, GPU_GRAPH_MEM_MAPPED_VERTICES,
-         GPU_GRAPH_MEM_MAPPED_EDGES, GPU_GRAPH_MEM_PARTITIONED_EDGES, 
+         GPU_GRAPH_MEM_MAPPED_EDGES, GPU_GRAPH_MEM_PARTITIONED_EDGES,
          PLATFORM_CPU, PLATFORM_GPU, PLATFORM_HYBRID, REPEAT_MAX,
          omp_sched_static, omp_sched_dynamic, omp_sched_guided,
          omp_get_max_threads(), omp_get_max_threads());
@@ -105,7 +101,7 @@ PRIVATE void display_help(char* exe_name, int exit_err) {
 benchmark_options_t* benchmark_cmdline_parse(int argc, char** argv) {
   optarg = NULL;
   int ch, benchmark, platform, par_algo, gpu_graph_mem;
-  while(((ch = getopt(argc, argv, "a:b:eg:i:m:op:qr:s:t:h")) != EOF)) {
+  while (((ch = getopt(argc, argv, "a:b:eg:i:m:op:qr:s:t:h")) != EOF)) {
     switch (ch) {
       case 'a':
         options.alpha = atoi(optarg);
@@ -174,7 +170,7 @@ benchmark_options_t* benchmark_cmdline_parse(int argc, char** argv) {
         if (options.omp_sched != omp_sched_static &&
             options.omp_sched != omp_sched_dynamic &&
             options.omp_sched != omp_sched_guided) {
-          fprintf(stderr, "Invalid OMP scheduling argument %d\n", 
+          fprintf(stderr, "Invalid OMP scheduling argument %d\n",
                   options.omp_sched);
           display_help(argv[0], -1);
         }
@@ -189,14 +185,16 @@ benchmark_options_t* benchmark_cmdline_parse(int argc, char** argv) {
       case 'h':
         display_help(argv[0], 0);
         break;
-      default: 
+      default:
         display_help(argv[0], -1);
-    };
+    }
   }
+
   if ((optind != argc - 1)) {
     fprintf(stderr, "Missing arguments!\n");
     display_help(argv[0], -1);
   }
   options.graph_file = argv[optind++];
+
   return &options;
 }

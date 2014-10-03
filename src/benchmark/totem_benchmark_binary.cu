@@ -17,6 +17,8 @@ PRIVATE void benchmark_betweenness(graph_t*, void*, totem_attr_t*);
 PRIVATE void benchmark_graph500(graph_t* graph, void* tree, totem_attr_t* attr);
 PRIVATE void benchmark_clustering_coefficient(graph_t* graph, void*,
                                               totem_attr_t* attr);
+PRIVATE void benchmark_bfs_stepwise(graph_t* graph, void* cost,
+                                    totem_attr_t* attr);
 const benchmark_attr_t BENCHMARKS[] = {
   {
     benchmark_bfs,
@@ -77,7 +79,17 @@ const benchmark_attr_t BENCHMARKS[] = {
     MSG_SIZE_ZERO,
     NULL,
     NULL
-  }
+  },
+  {
+    benchmark_bfs_stepwise,
+    "BFS_STEPWISE",
+    sizeof(cost_t),
+    true,
+    1,
+    1,
+    bfs_stepwise_alloc,
+    bfs_stepwise_free
+  },
 };
 
 
@@ -85,13 +97,12 @@ const benchmark_attr_t BENCHMARKS[] = {
 PRIVATE benchmark_options_t* options = NULL;
 PRIVATE const int SEED = 1985;
 
-/**
- * Returns the number of traversed edges used in computing the processing rate
- */
+// Returns the number of traversed edges used in computing the processing rate
 PRIVATE uint64_t get_traversed_edges(graph_t* graph, void* benchmark_output) {
   uint64_t trv_edges = 0;
   switch (options->benchmark) {
-    case BENCHMARK_BFS: {
+    case BENCHMARK_BFS:
+    case BENCHMARK_BFS_STEPWISE: {
       OMP(omp parallel for reduction(+ : trv_edges))
       for (vid_t vid = 0; vid < graph->vertex_count; vid++) {
         cost_t* cost = reinterpret_cast<cost_t*>(benchmark_output);
@@ -145,53 +156,48 @@ PRIVATE vid_t get_random_src(graph_t* graph) {
   return src;
 }
 
-/**
- * Runs BFS benchmark according to Graph500 specification
- */
+// Runs the top-down BFS benchmark.
 PRIVATE void benchmark_bfs(graph_t* graph, void* cost, totem_attr_t* attr) {
-  CALL_SAFE(bfs_hybrid(get_random_src(graph),
-    reinterpret_cast<cost_t*>(cost)));
+  vid_t src = get_random_src(graph);
+  CALL_SAFE(bfs_hybrid(src, reinterpret_cast<cost_t*>(cost)));
 }
 
-/**
- * Runs PageRank benchmark
- */
-PRIVATE void benchmark_pagerank(graph_t* graph, void* rank,
-                                totem_attr_t* attr) {
+// Runs the stepwise BFS benchmark.
+PRIVATE void benchmark_bfs_stepwise(
+    graph_t* graph, void* cost, totem_attr_t* attr) {
+  vid_t src = get_random_src(graph);
+  CALL_SAFE(bfs_stepwise_hybrid(src, reinterpret_cast<cost_t*>(cost)));
+}
+
+// Runs PageRank benchmark.
+PRIVATE void benchmark_pagerank(
+    graph_t* graph, void* rank, totem_attr_t* attr) {
   CALL_SAFE(page_rank_incoming_hybrid(NULL, reinterpret_cast<rank_t*>(rank)));
 }
 
-/**
- * Runs SSSP benchmark
- */
-PRIVATE void benchmark_sssp(graph_t* graph, void* distance,
-                                totem_attr_t* attr) {
+// Runs SSSP benchmark.
+PRIVATE void benchmark_sssp(
+    graph_t* graph, void* distance, totem_attr_t* attr) {
   CALL_SAFE(sssp_hybrid(get_random_src(graph),
     reinterpret_cast<weight_t*>(distance)));
 }
 
-/**
- * Runs Betweenness Centrality benchmark
- */
-PRIVATE void benchmark_betweenness(graph_t* graph, void* betweenness_score,
-                                   totem_attr_t* attr) {
+// Runs Betweenness Centrality benchmark.
+PRIVATE void benchmark_betweenness(
+    graph_t* graph, void* betweenness_score, totem_attr_t* attr) {
   CALL_SAFE(betweenness_hybrid(CENTRALITY_SINGLE,
                                reinterpret_cast<score_t*>(betweenness_score)));
 }
 
-PRIVATE
-void benchmark_graph500(graph_t* graph, void* tree, totem_attr_t* attr) {
+PRIVATE void benchmark_graph500(
+    graph_t* graph, void* tree, totem_attr_t* attr) {
   CALL_SAFE(graph500_hybrid(get_random_src(graph),
     reinterpret_cast<bfs_tree_t*>(tree)));
 }
 
-/**
- * Runs Clustering Coefficient benchmark
- */
-
-PRIVATE
-void benchmark_clustering_coefficient(graph_t* graph, void* coefficients,
-                                      totem_attr_t* attr) {
+// Runs Clustering Coefficient benchmark
+PRIVATE void benchmark_clustering_coefficient(
+    graph_t* graph, void* coefficients, totem_attr_t* attr) {
   if (options->platform == PLATFORM_CPU) {
     CALL_SAFE(clustering_coefficient_sorted_neighbours_cpu(
               graph, reinterpret_cast<weight_t**>(&coefficients)));
@@ -203,9 +209,7 @@ void benchmark_clustering_coefficient(graph_t* graph, void* coefficients,
   }
 }
 
-/**
- * The main execution loop of the benchmark
- */
+// The main execution loop of the benchmark.
 PRIVATE void benchmark_run() {
   assert(options);
 
@@ -249,8 +253,9 @@ PRIVATE void benchmark_run() {
     stopwatch_t stopwatch;
     stopwatch_start(&stopwatch);
     BENCHMARKS[options->benchmark].func(graph, benchmark_state, &attr);
-    print_timing(graph, stopwatch_elapsed(&stopwatch),
-                 get_traversed_edges(graph, benchmark_state), totem_based);
+    double total = stopwatch_elapsed(&stopwatch);
+    print_timing(graph, total, get_traversed_edges(graph, benchmark_state),
+                 totem_based);
   }
 
   if (totem_based) {
