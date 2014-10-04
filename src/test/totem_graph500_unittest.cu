@@ -44,6 +44,7 @@ class Graph500Test : public TestWithParam<test_param_t*> {
     if (_graph500_param->attr) {
       _graph500_param->attr->push_msg_size =
           (sizeof(vid_t) * BITS_PER_BYTE) + 1;
+      _graph500_param->attr->pull_msg_size = 1;
       _graph500_param->attr->alloc_func = _graph500_param->hybrid_alloc;
       _graph500_param->attr->free_func = _graph500_param->hybrid_free;
       if (totem_init(_graph, _graph500_param->attr) == FAILURE) {
@@ -244,12 +245,15 @@ const int graph500_vanilla_count = STATIC_ARRAY_COUNT(graph500_vanilla_funcs);
 // a new implementation, simply add it to the set below.
 void* graph500_hybrid_funcs[] = {
   reinterpret_cast<void*>(&graph500_hybrid),
+  reinterpret_cast<void*>(&graph500_stepwise_hybrid),
 };
 totem_cb_func_t graph500_hybrid_alloc_funcs[] = {
-  &graph500_alloc
+  &graph500_alloc,
+  &graph500_stepwise_alloc,
 };
 totem_cb_func_t graph500_hybrid_free_funcs[] = {
-  &graph500_free
+  &graph500_free,
+  &graph500_stepwise_free
 };
 const int graph500_hybrid_count = STATIC_ARRAY_COUNT(graph500_hybrid_funcs);
 
