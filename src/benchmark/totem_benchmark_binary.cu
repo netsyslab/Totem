@@ -19,6 +19,8 @@ PRIVATE void benchmark_clustering_coefficient(graph_t* graph, void*,
                                               totem_attr_t* attr);
 PRIVATE void benchmark_bfs_stepwise(graph_t* graph, void* cost,
                                     totem_attr_t* attr);
+PRIVATE void benchmark_graph500_stepwise(graph_t* graph, void* tree,
+                                         totem_attr_t* attr);
 const benchmark_attr_t BENCHMARKS[] = {
   {
     benchmark_bfs,
@@ -89,6 +91,16 @@ const benchmark_attr_t BENCHMARKS[] = {
     1,
     bfs_stepwise_alloc,
     bfs_stepwise_free
+  },
+    {
+    benchmark_graph500,
+    "GRAPH500_STEPWISE",
+    sizeof(bfs_tree_t),
+    true,
+    (sizeof(vid_t) * BITS_PER_BYTE) + 1,
+    1,
+    graph500_stepwise_alloc,
+    graph500_stepwise_free
   },
 };
 
@@ -192,6 +204,12 @@ PRIVATE void benchmark_betweenness(
 PRIVATE void benchmark_graph500(
     graph_t* graph, void* tree, totem_attr_t* attr) {
   CALL_SAFE(graph500_hybrid(get_random_src(graph),
+    reinterpret_cast<bfs_tree_t*>(tree)));
+}
+
+PRIVATE void benchmark_graph500_stepwise(
+    graph_t* graph, void* tree, totem_attr_t* attr) {
+  CALL_SAFE(graph500_stepwise_hybrid(get_random_src(graph),
     reinterpret_cast<bfs_tree_t*>(tree)));
 }
 

@@ -47,9 +47,10 @@ PRIVATE void display_help(char* exe_name, int exit_err) {
          "     %d: PageRank\n"
          "     %d: SSSP\n"
          "     %d: Betweenness\n"
-         "     %d: Graph500\n"
+         "     %d: Graph500 top-down\n"
          "     %d: Clustering Coefficient\n"
          "     %d: BFS stepwise\n"
+         "     %d: Graph500 stepwise\n"
          "  -e Swaps the direction of edge sorting to be descending order.\n"
          "     (default FALSE)\n"
          "  -gNUM [0-%d] Number of GPUs to use. This is applicable for GPU\n"
@@ -83,7 +84,7 @@ PRIVATE void display_help(char* exe_name, int exit_err) {
          exe_name, BENCHMARK_BFS, BENCHMARK_PAGERANK, BENCHMARK_SSSP,
          BENCHMARK_BETWEENNESS, BENCHMARK_GRAPH500,
          BENCHMARK_CLUSTERING_COEFFICIENT, BENCHMARK_BFS_STEPWISE,
-         get_gpu_count(), PAR_RANDOM,
+         BENCHMARK_GRAPH500_STEPWISE, get_gpu_count(), PAR_RANDOM,
          PAR_SORTED_ASC, PAR_SORTED_DSC, GPU_GRAPH_MEM_DEVICE,
          GPU_GRAPH_MEM_MAPPED, GPU_GRAPH_MEM_MAPPED_VERTICES,
          GPU_GRAPH_MEM_MAPPED_EDGES, GPU_GRAPH_MEM_PARTITIONED_EDGES,
