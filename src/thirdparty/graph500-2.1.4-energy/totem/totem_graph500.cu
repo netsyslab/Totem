@@ -198,9 +198,9 @@ int create_graph_from_edgelist(struct packed_edge* IJ, int64_t nedge) {
 
   // Static graph500 attributes.
   attr.push_msg_size      = (sizeof(vid_t) * BITS_PER_BYTE) + 1;
-  attr.pull_msg_size      = MSG_SIZE_ZERO;
-  attr.alloc_func         = graph500_alloc;
-  attr.free_func          = graph500_free;
+  attr.pull_msg_size      = 1;
+  attr.alloc_func         = graph500_stepwise_alloc;
+  attr.free_func          = graph500_stepwise_free;
 
   // Free the edge list to free up space for creating Totem's partitined graph.
   free(IJ);
@@ -221,7 +221,7 @@ int make_bfs_tree(int64_t* bfs_tree_out, int64_t* max_vtx_out,
   stopwatch_t stopwatch;
   stopwatch_start(&stopwatch);
   *max_vtx_out = graph->vertex_count - 1;
-  CALL_SAFE(graph500_hybrid(srcvtx, bfs_tree_out));
+  CALL_SAFE(graph500_stepwise_hybrid(srcvtx, bfs_tree_out));
   print_timing(graph, stopwatch_elapsed(&stopwatch), graph->edge_count, true);
   return 0;
 }
