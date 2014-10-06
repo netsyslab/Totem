@@ -705,9 +705,6 @@ PRIVATE inline void graph500_init_gpu(partition_t* par) {
       bitmap_reset_gpu(reinterpret_cast<bitmap_t>(par->outbox[pid].push_values),
                        count, par->streams[1]);
 
-      // Reset the trees of other partitions.
-      totem_memset(state->tree[pid], VERTEX_ID_MAX, count, TOTEM_MEM_DEVICE,
-                   par->streams[1]);
     }
 
     // Clear the inboxes (pull values), and also their shadows.
@@ -753,9 +750,6 @@ PRIVATE inline void graph500_init_cpu(partition_t* par) {
       // Clear the push values.
       bitmap_reset_cpu(
           reinterpret_cast<bitmap_t>(par->outbox[pid].push_values), count);
-
-      // Reset the trees of other partitions.
-      totem_memset(state->tree[pid], VERTEX_ID_MAX, count, TOTEM_MEM_HOST);
     }
 
     // Clear the inboxes, and also their shadows.
@@ -1076,6 +1070,8 @@ PRIVATE void graph500_final_aggregation() {
     vid_t parent = tree[GET_VERTEX_ID(local)];
     if (parent != VERTEX_ID_MAX) {
       state_g.tree[v] = engine_vertex_id_local_to_global(parent);
+    } else {
+      state_g.tree[v] = (bfs_tree_t)-1;
     }
   }
 }
@@ -1090,7 +1086,6 @@ error_t graph500_stepwise_hybrid(vid_t src, bfs_tree_t* tree) {
   // Initialize the global state.
   state_g.tree = tree;
   state_g.src  = engine_vertex_id_in_partition(src);
-  totem_memset(tree, (bfs_tree_t)(-1), engine_vertex_count(), TOTEM_MEM_HOST);
 
   // Initialize the engines - one for the first top down step, and a second
   // to complete the algorithm with bottom up steps.
