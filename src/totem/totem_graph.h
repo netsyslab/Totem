@@ -261,11 +261,18 @@ error_t get_subgraph(const graph_t* graph, bool* mask, graph_t** subgraph);
 error_t graph_remove_singletons(const graph_t* graph, graph_t** subgraph);
 
 /**
- * Sorts the neighbours of each vertex in ascending order.
+ * Sorts the neighbours of each vertex by id.
  * @param[in] graph the graph to operate on
  * @param[in] edge_sort_dsc Determine the direction of sorting.
  */
 void graph_sort_nbrs(graph_t* graph, bool edge_sort_dsc = false);
+
+/**
+ * Sorts the neighbours of each vertex by degree.
+ * @param[in] graph the graph to operate on
+ * @param[in] edge_sort_dsc Determine the direction of sorting.
+ */
+void graph_sort_nbrs_by_degree(graph_t* graph, bool edge_sort_dsc = false);
 
 /**
  * Given a given flow graph (ie, a directed graph where for every edge (u,v),
