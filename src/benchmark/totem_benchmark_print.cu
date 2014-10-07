@@ -5,20 +5,17 @@
  *  Author: Abdullah Gharaibeh
  */
 
-// totem includes
 #include "totem_benchmark.h"
 
 PRIVATE const char* PLATFORM_STR[] = {"CPU", "GPU", "HYBRID"};
 PRIVATE const char* PAR_ALGO_STR[] = {"RANDOM", "HIGH", "LOW"};
-PRIVATE const char* OMP_SCHEDULE_STR[] = {"", "STATIC", "DYNAMIC", "GUIDED", 
+PRIVATE const char* OMP_SCHEDULE_STR[] = {"", "STATIC", "DYNAMIC", "GUIDED",
                                           "RUNTIME"};
-PRIVATE const char* GPU_GRAPH_MEM_STR[] = {"DEVICE", "MAPPED", 
-                                           "MAPPED_VERTICES", "MAPPED_EDGES", 
+PRIVATE const char* GPU_GRAPH_MEM_STR[] = {"DEVICE", "MAPPED",
+                                           "MAPPED_VERTICES", "MAPPED_EDGES",
                                            "PARTITIONED_EDGES"};
 
-/**
- * Prints partitioning characteristics
- */
+// Prints partitioning characteristics.
 PRIVATE void print_header_partitions(graph_t* graph) {
   uint64_t rv = 0; uint64_t re = 0;
   for (uint32_t pid = 0; pid < totem_partition_count(); pid++) {
@@ -26,46 +23,44 @@ PRIVATE void print_header_partitions(graph_t* graph) {
     re += totem_par_rmt_edge_count(pid);
   }
   // Print the total percentage of remote vertices/edges
-  printf("rmt_vertex:%0.0f\trmt_edge:%0.0f\tbeta:%0.0f\t", 
-         100.0*(double)((double)rv/(double)graph->vertex_count),
-         100.0*(double)((double)re/(double)graph->edge_count),
-         100.0*(double)((double)rv/(double)graph->edge_count));
-  
-  // For each partition, print partition id, % of vertices, % of edges, 
+  printf("rmt_vertex:%0.0f\trmt_edge:%0.0f\tbeta:%0.0f\t",
+         100.0*(static_cast<double>(rv)/graph->vertex_count),
+         100.0*(static_cast<double>(re)/graph->edge_count),
+         100.0*(static_cast<double>(rv)/graph->edge_count));
+
+  // For each partition, print partition id, % of vertices, % of edges,
   // % of remote vertices, % of remote edges
   for (uint32_t pid = 0; pid < totem_partition_count(); pid++) {
-    printf("pid%d:%0.0f,%0.0f,%0.0f,%0.0f\t", pid, 
-           100.0 * ((double)totem_par_vertex_count(pid) / 
-                    (double)graph->vertex_count), 
-           100.0 * ((double)totem_par_edge_count(pid) / 
-                    (double)graph->edge_count),
-           100.0 * ((double)totem_par_rmt_vertex_count(pid) / 
-                    (double)graph->vertex_count),
-           100.0 * ((double)totem_par_rmt_edge_count(pid) / 
-                    (double)graph->edge_count));
-   
+    printf("pid%d:%0.0f,%0.0f,%0.0f,%0.0f\t", pid,
+           100.0 * (static_cast<double>(totem_par_vertex_count(pid)) /
+                    static_cast<double>(graph->vertex_count)),
+           100.0 * (static_cast<double>(totem_par_edge_count(pid)) /
+                    static_cast<double>(graph->edge_count)),
+           100.0 * (static_cast<double>(totem_par_rmt_vertex_count(pid)) /
+                    static_cast<double>(graph->vertex_count)),
+           100.0 * (static_cast<double>(totem_par_rmt_edge_count(pid)) /
+                    static_cast<double>(graph->edge_count)));
   }
 }
 
-/**
- * Prints out the configuration parameters of this benchmark run
- */
-void print_config(graph_t* graph, benchmark_options_t* options, 
+// Prints out the configuration parameters of this benchmark run.
+void print_config(graph_t* graph, benchmark_options_t* options,
                   const char* benchmark_name) {
   const char* OMP_PROC_BIND = getenv("OMP_PROC_BIND");
   printf("file:%s\tbenchmark:%s\tvertices:%llu\tedges:%llu\tpartitioning:%s\t"
-         "platform:%s\talpha:%d\trepeat:%d\tgpu_count:%d\t"
-         "thread_count:%d\tthread_sched:%s\tthread_bind:%s\t"
-         "gpu_graph_mem:%s\tgpu_par_randomized:%s\tsorted:%s\tedge_order:%s",
-         options->graph_file, benchmark_name, 
-         (uint64_t)graph->vertex_count, (uint64_t)graph->edge_count, 
-         PAR_ALGO_STR[options->par_algo], PLATFORM_STR[options->platform], 
-         options->alpha, options->repeat, options->gpu_count, 
-         options->thread_count, OMP_SCHEDULE_STR[options->omp_sched], 
+         "platform:%s\talpha:%d\trepeat:%d\tgpu_count:%d\tthread_count:%d\t"
+         "thread_sched:%s\tthread_bind:%s\tgpu_graph_mem:%s\t"
+         "gpu_par_randomized:%s\tsorted:%s\tedge_sort_key:%s\tedge_order:%s",
+         options->graph_file, benchmark_name,
+         (uint64_t)graph->vertex_count, (uint64_t)graph->edge_count,
+         PAR_ALGO_STR[options->par_algo], PLATFORM_STR[options->platform],
+         options->alpha, options->repeat, options->gpu_count,
+         options->thread_count, OMP_SCHEDULE_STR[options->omp_sched],
          OMP_PROC_BIND == NULL ? "false" : OMP_PROC_BIND,
          GPU_GRAPH_MEM_STR[options->gpu_graph_mem],
          options->gpu_par_randomized ? "true" : "false",
          options->sorted ? "true" : "false",
+         options->edge_sort_by_degree ? "degree" : "id",
          options->edge_sort_dsc ? "dsc" : "asc");
   fflush(stdout);
 }
@@ -79,14 +74,12 @@ void print_header(graph_t* graph, bool totem_based) {
     print_header_partitions(graph);
   }
   printf("\ntotal\texec\tinit\tcomp\tcomm\tfinalize\tcpu_comp\tgpu_comp\t"
-         "gpu_total_comp\tscatter\tgather\taggr\ttrv_edges\texec_rate\n"); 
+         "gpu_total_comp\tscatter\tgather\taggr\ttrv_edges\texec_rate\n");
   fflush(stdout);
 }
 
-/**
- * Prints out detailed timing of a single run
- */
-void print_timing(graph_t* graph, double time_total, uint64_t trv_edges, 
+// Prints out detailed timing of a single run.
+void print_timing(graph_t* graph, double time_total, uint64_t trv_edges,
                   bool totem_based) {
   const totem_timing_t* timers = totem_timing();
   printf("%0.2f\t%0.2f\t%0.2f\t%0.2f\t%0.2f\t%0.2f\t"
