@@ -93,7 +93,7 @@ const benchmark_attr_t BENCHMARKS[] = {
     bfs_stepwise_free
   },
     {
-    benchmark_graph500,
+    benchmark_graph500_stepwise,
     "GRAPH500_STEPWISE",
     sizeof(bfs_tree_t),
     true,

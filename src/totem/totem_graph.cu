@@ -898,3 +898,27 @@ void graph_sort_nbrs(graph_t* graph, bool edge_sort_dsc) {
     // TODO(treza): Required updates for edge-weights.
   }
 }
+
+PRIVATE graph_t* graph_g = NULL;
+PRIVATE bool edge_sort_dsc_g = false;
+PRIVATE int compare_ids_by_degree_dsc(const void* a, const void* b) {
+  vid_t v1 = *(reinterpret_cast<const vid_t*>(a));
+  vid_t v2 = *(reinterpret_cast<const vid_t*>(b));
+  vid_t v1_nbrs = graph_g->vertices[v1 + 1] - graph_g->vertices[v1];
+  vid_t v2_nbrs = graph_g->vertices[v2 + 1] - graph_g->vertices[v2];
+  if (edge_sort_dsc_g) { return v2_nbrs - v1_nbrs; }
+  return v1_nbrs - v2_nbrs;
+}
+
+void graph_sort_nbrs_by_degree(graph_t* graph, bool edge_sort_dsc) {
+  // TODO(abdullah): this function is not reentrant as it uses global shared
+  // variables, make it reentrant.
+  graph_g = graph;
+  edge_sort_dsc_g = edge_sort_dsc;
+  OMP(omp parallel for schedule(guided))
+  for (vid_t v = 0; v < graph->vertex_count; v++) {
+    vid_t* nbrs = &graph->edges[graph->vertices[v]];
+    qsort(nbrs, graph->vertices[v + 1] - graph->vertices[v], sizeof(vid_t),
+          compare_ids_by_degree_dsc);
+  }
+}

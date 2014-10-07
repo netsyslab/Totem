@@ -252,10 +252,12 @@ error_t partition_random(graph_t* graph, int partition_count,
 }
 
 PRIVATE bool compare_degrees_asc(const vdegree_t &a, const vdegree_t &b) {
+  if (a.degree == b.degree) { return (a.id < b.id); }
   return (a.degree < b.degree);
 }
 
 PRIVATE bool compare_degrees_dsc(const vdegree_t &a, const vdegree_t &b) {
+  if (a.degree == b.degree) { return (a.id < b.id); }
   return (a.degree > b.degree);
 }
 
