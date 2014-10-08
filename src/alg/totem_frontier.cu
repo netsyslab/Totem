@@ -12,9 +12,10 @@
 #include "totem_util.h"
 
 #ifdef FEATURE_SM35
+template<typename eid_type>
 PRIVATE __global__ void
 frontier_update_boundaries_kernel(frontier_state_t state,
-                                  const eid_t* __restrict vertices) {
+                                  const eid_type* __restrict vertices) {
   const vid_t index = THREAD_GLOBAL_INDEX;
   if (index >= *state.count) return;
 
@@ -44,9 +45,10 @@ frontier_update_boundaries_kernel(frontier_state_t state,
   }
 }
 
+template<typename eid_type>
 PRIVATE __global__ void
 frontier_update_boundaries_launch_kernel(frontier_state_t state,
-                                         const eid_t* __restrict vertices) {
+                                         const eid_type* __restrict vertices) {
   if (THREAD_GLOBAL_INDEX > 0 || (*state.count == 0)) return;
   dim3 blocks;
   kernel_configure(*state.count, blocks);
@@ -157,8 +159,13 @@ void frontier_update_boundaries_gpu(frontier_state_t* state,
       <<<blocks, DEFAULT_THREADS_PER_BLOCK, 0, stream>>>(*state);
     CALL_CU_SAFE(cudaGetLastError());
 
-    frontier_update_boundaries_launch_kernel
-      <<<1, 1, 0, stream>>>(*state, graph->vertices);
+    if (graph->compressed_vertices) {
+      frontier_update_boundaries_launch_kernel
+          <<<1, 1, 0, stream>>>(*state, graph->vertices_d);
+    } else {
+      frontier_update_boundaries_launch_kernel
+          <<<1, 1, 0, stream>>>(*state, graph->vertices);
+    }
     CALL_CU_SAFE(cudaGetLastError());
   }
 }
