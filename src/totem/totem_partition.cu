@@ -11,7 +11,7 @@
 #include "totem_partition.h"
 #include "totem_util.h"
 
-// TODO (scott): Non global variables
+// TODO(scott): Non global variables
 vid_t* map_g[MAX_PARTITION_COUNT] = {NULL};
 vid_t* id_in_partition_g = NULL;
 
@@ -24,8 +24,8 @@ vid_t* id_in_partition_g = NULL;
  *                     (Should be larger than 1)
  */
 PRIVATE void randomize_across_gpus(graph_t* graph, vid_t* partitions,
-                                   int gpu_count){
-  if (gpu_count < 2) return; // Nothing to do
+                                   int gpu_count) {
+  if (gpu_count < 2) { return; }  // Nothing to do
 
   uint32_t seed = GLOBAL_SEED;
 
@@ -55,7 +55,7 @@ PRIVATE void randomize_across_gpus(graph_t* graph, vid_t* partitions,
 PRIVATE error_t map_vertices_by_degree(graph_t* graph, int partition_count,
                                        vid_t* partitions,
                                        bool partition_random,
-                                       bool asc, vdegree_t* vd){
+                                       bool asc, vdegree_t* vd) {
   vid_t partition_vertex_count[MAX_PARTITION_COUNT];
   totem_memset(partition_vertex_count, (vid_t)0, MAX_PARTITION_COUNT,
                TOTEM_MEM_HOST);
@@ -90,7 +90,7 @@ PRIVATE error_t map_vertices_by_degree(graph_t* graph, int partition_count,
 
 // Overloaded for random partitioning. (Ascending, no vertex-degree array.)
 PRIVATE error_t map_vertices_by_degree(graph_t* graph, int partition_count,
-                                       vid_t* partitions){
+                                       vid_t* partitions) {
   map_vertices_by_degree(graph, partition_count, partitions,
                          true, /* Partitioning by random flag set.     */
                          true, /* No effect, ascending is fine.        */
@@ -100,7 +100,7 @@ PRIVATE error_t map_vertices_by_degree(graph_t* graph, int partition_count,
 // Overloaded for ordered calls.
 PRIVATE error_t map_vertices_by_degree(graph_t* graph, int partition_count,
                                        vid_t* partitions, bool asc,
-                                       vdegree_t* vd){
+                                       vdegree_t* vd) {
   map_vertices_by_degree(graph, partition_count, partitions,
                          false, /* Not partitioning randomly. */
                          asc, vd);
@@ -195,7 +195,7 @@ PRIVATE error_t partition_random(graph_t* graph, int partition_count,
   }
   *partition_labels = partitions;
 
-  if (attr->sorted){
+  if (attr->sorted) {
     map_vertices_by_degree(graph, partition_count, partitions);
   }
 
@@ -322,10 +322,22 @@ error_t partition_by_sorted_degree(graph_t* graph, int partition_count,
     }
   }
 
-  if (attr->gpu_par_randomized){
+  double beta = 0.05;
+  index = graph->vertex_count - 1;
+  for (int pid = 0; pid < partition_count - 1; pid++) {
+    double assigned = 0;
+    while ((assigned / total_elements < beta) &&
+           (index < graph->vertex_count)) {
+      assigned += vd[index].degree;
+      (*partition_labels)[vd[index].id] = pid;
+      index--;
+    }
+  }
+
+  if (attr->gpu_par_randomized) {
     randomize_across_gpus(graph, (*partition_labels), attr->gpu_count);
   }
-  if (attr->sorted){
+  if (attr->sorted) {
     map_vertices_by_degree(graph, partition_count, (*partition_labels),
                             asc, vd);
   }
@@ -366,7 +378,7 @@ PRIVATE error_t init_allocate_struct_space(graph_t* graph, int pcount,
   (*pset)->partitions = (partition_t*)calloc(pcount, sizeof(partition_t));
   assert((*pset)->partitions);
 
-  // TODO (scott): can we simplify this to not need the attribute?
+  // TODO(scott): can we simplify this to not need the attribute?
   // Assign the location for mapping id's to partitions.
   if (attr->sorted) {
     (*pset)->id_in_partition = id_in_partition_g;
@@ -410,9 +422,9 @@ PRIVATE void init_allocate_partitions_space(partition_set_t* pset,
           (eid_t*)malloc(sizeof(eid_t) * (subgraph->vertex_count + 1));
       assert(subgraph->vertices);
 
-      //TODO (scott): can we simplify this to not need the attribute?
+      // TODO(scott): can we simplify this to not need the attribute?
       // Assign the partition map.
-      if (attr->sorted){
+      if (attr->sorted) {
         partition->map = map_g[pid];
       } else {
         partition->map = (vid_t*)calloc(subgraph->vertex_count, sizeof(vid_t));
@@ -507,10 +519,10 @@ PRIVATE void init_build_partitions(partition_set_t* pset, vid_t* plabels,
   // partition will be renamed so that the ids are contiguous from 0 to
   // partition->subgraph.vertex_count - 1.
 
-  // TODO (scott): can we simplify this to not need the attribute?
+  // TODO(scott): can we simplify this to not need the attribute?
   // The init function is unnecessary if the vertex degree is mapped sorted,
   // it is taken care of before the partitions are built.
-  if(!attr->sorted) {
+  if (!attr->sorted) {
     init_build_map(pset, plabels);
   }
 
@@ -560,6 +572,12 @@ error_t partition_set_initialize(graph_t* graph, vid_t* plabels,
   assert(graph && plabels && pproc);
   if (pcount > MAX_PARTITION_COUNT) return FAILURE;
 
+  // Sort neighbours of each vertex by degree if specified (improves access
+  // locality of specific algorithms like stepwise BFS).
+  if (attr->edge_sort_by_degree) {
+    graph_sort_nbrs_by_degree(graph, attr->edge_sort_dsc);
+  }
+
   // Setup space and initialize the partition set data structure
   CHK_SUCCESS(init_allocate_struct_space(graph, pcount, push_msg_size,
                                          pull_msg_size, pset, attr), err);
@@ -573,8 +591,10 @@ error_t partition_set_initialize(graph_t* graph, vid_t* plabels,
   // Build the state of each partition
   init_build_partitions(*pset, plabels, attr);
 
-  // Sort nbrs of each each vertex to improve access locality
-  init_sort_nbrs(*pset, attr);
+  // Sort nbrs of each vertex by id (improves access locality).
+  if (!attr->edge_sort_by_degree) {
+    init_sort_nbrs(*pset, attr);
+  }
 
   // Initialize grooves' inbox and outbox state
   grooves_initialize(*pset);

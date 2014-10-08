@@ -22,6 +22,7 @@ PRIVATE benchmark_options_t options = {
   false,                  // Do not randomize vertex placement across
                           // GPU partitions.
   false,                  // Vertex ids will not be sorted by edge degree.
+  false,                  // Edges will be sorted by id by default.
   false,                  // Edges will be sorted ascending by default.
 };
 
@@ -51,6 +52,8 @@ PRIVATE void display_help(char* exe_name, int exit_err) {
          "     %d: Clustering Coefficient\n"
          "     %d: BFS stepwise\n"
          "     %d: Graph500 stepwise\n"
+         "  -d Sorts the edges by degree instead of by vertex id.\n"
+         "     (default FALSE)\n"
          "  -e Swaps the direction of edge sorting to be descending order.\n"
          "     (default FALSE)\n"
          "  -gNUM [0-%d] Number of GPUs to use. This is applicable for GPU\n"
@@ -102,7 +105,7 @@ PRIVATE void display_help(char* exe_name, int exit_err) {
 benchmark_options_t* benchmark_cmdline_parse(int argc, char** argv) {
   optarg = NULL;
   int ch, benchmark, platform, par_algo, gpu_graph_mem;
-  while (((ch = getopt(argc, argv, "a:b:eg:i:m:op:qr:s:t:h")) != EOF)) {
+  while (((ch = getopt(argc, argv, "a:b:deg:i:m:op:qr:s:t:h")) != EOF)) {
     switch (ch) {
       case 'a':
         options.alpha = atoi(optarg);
@@ -118,6 +121,9 @@ benchmark_options_t* benchmark_cmdline_parse(int argc, char** argv) {
           display_help(argv[0], -1);
         }
         options.benchmark = (benchmark_t)benchmark;
+        break;
+      case 'd':
+        options.edge_sort_by_degree = true;
         break;
       case 'e':
         options.edge_sort_dsc = true;
