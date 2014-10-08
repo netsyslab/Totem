@@ -770,8 +770,12 @@ error_t graph_initialize_device(const graph_t* graph_h, graph_t** graph_d,
 
   const eid_t kMaxEdgeCount =
       (static_cast<int64_t>(4) * 1024 * 1024 * 1024) - 1;
+#ifdef FEATURE_64BIT_EDGE_ID
   (*graph_d)->compressed_vertices = compressed_vertices_supported &&
       (graph_h->edge_count <= kMaxEdgeCount);
+#else
+  (*graph_d)->compressed_vertices = false;
+#endif
 
   // Nothing to be done if this is an empty graph.
   if (graph_h->vertex_count > 0) {
