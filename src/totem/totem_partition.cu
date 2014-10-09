@@ -322,11 +322,12 @@ error_t partition_by_sorted_degree(graph_t* graph, int partition_count,
     }
   }
 
-  double beta = 0.05;
+  // TODO(abdullah,scott): have this value set as part of the benchmark options.
+  double gamma = 0;
   index = graph->vertex_count - 1;
   for (int pid = 0; pid < partition_count - 1; pid++) {
     double assigned = 0;
-    while ((assigned / total_elements < beta) &&
+    while ((assigned / total_elements < gamma) &&
            (index < graph->vertex_count)) {
       assigned += vd[index].degree;
       (*partition_labels)[vd[index].id] = pid;
@@ -542,7 +543,8 @@ PRIVATE void init_sort_nbrs(partition_set_t* pset, totem_attr_t* attr) {
 }
 
 PRIVATE void init_build_partitions_gpu(partition_set_t* pset,
-                                       gpu_graph_mem_t gpu_graph_mem) {
+                                       gpu_graph_mem_t gpu_graph_mem,
+                                       bool supports_compressed_vertices) {
   uint32_t pcount = pset->partition_count;
   for (uint32_t pid = 0; pid < pcount; pid++) {
     partition_t* partition = &pset->partitions[pid];
@@ -556,8 +558,8 @@ PRIVATE void init_build_partitions_gpu(partition_set_t* pset,
     assert(subgraph_h);
     memcpy(subgraph_h, &partition->subgraph, sizeof(graph_t));
     graph_t* subgraph_d = NULL;
-    CALL_SAFE(graph_initialize_device(subgraph_h, &subgraph_d,
-                                      gpu_graph_mem));
+    CALL_SAFE(graph_initialize_device(
+        subgraph_h, &subgraph_d, gpu_graph_mem, supports_compressed_vertices));
     graph_finalize(subgraph_h);
     memcpy(&partition->subgraph, subgraph_d, sizeof(graph_t));
     free(subgraph_d);
@@ -566,9 +568,7 @@ PRIVATE void init_build_partitions_gpu(partition_set_t* pset,
 
 error_t partition_set_initialize(graph_t* graph, vid_t* plabels,
                                  processor_t* pproc, int pcount,
-                                 gpu_graph_mem_t gpu_graph_mem,
-                                 size_t push_msg_size, size_t pull_msg_size,
-                                 partition_set_t** pset, totem_attr_t* attr) {
+                                 totem_attr_t* attr, partition_set_t** pset) {
   assert(graph && plabels && pproc);
   if (pcount > MAX_PARTITION_COUNT) return FAILURE;
 
@@ -579,8 +579,8 @@ error_t partition_set_initialize(graph_t* graph, vid_t* plabels,
   }
 
   // Setup space and initialize the partition set data structure
-  CHK_SUCCESS(init_allocate_struct_space(graph, pcount, push_msg_size,
-                                         pull_msg_size, pset, attr), err);
+  CHK_SUCCESS(init_allocate_struct_space(graph, pcount, attr->push_msg_size,
+                                         attr->pull_msg_size, pset, attr), err);
 
   // Get the partition sizes
   init_compute_partitions_sizes(*pset, plabels);
@@ -600,7 +600,8 @@ error_t partition_set_initialize(graph_t* graph, vid_t* plabels,
   grooves_initialize(*pset);
 
   // Build the state on the GPU(s) for GPU residing partitions
-  init_build_partitions_gpu(*pset, gpu_graph_mem);
+  init_build_partitions_gpu(*pset, attr->gpu_graph_mem,
+                            attr->compressed_vertices_supported);
 
   return SUCCESS;
  err:
@@ -621,7 +622,9 @@ error_t partition_set_finalize(partition_set_t* pset) {
       CALL_CU_SAFE(cudaEventDestroy(partition->event_end));
       // TODO(abdullah): use graph_finalize instead of manually
       // freeing the buffers
-      if (subgraph->gpu_graph_mem == GPU_GRAPH_MEM_MAPPED ||
+      if (subgraph->compressed_vertices) {
+        totem_free(subgraph->vertices_d, TOTEM_MEM_DEVICE);
+      } else if (subgraph->gpu_graph_mem == GPU_GRAPH_MEM_MAPPED ||
           subgraph->gpu_graph_mem == GPU_GRAPH_MEM_MAPPED_VERTICES) {
         totem_free(subgraph->mapped_vertices, TOTEM_MEM_HOST_MAPPED);
       } else {
@@ -643,8 +646,9 @@ error_t partition_set_finalize(partition_set_t* pset) {
         }
       }
 
-      if (subgraph->weighted && subgraph->weights)
+      if (subgraph->weighted && subgraph->weights) {
         CALL_CU_SAFE(cudaFree(subgraph->weights));
+      }
     } else {
       assert(partition->processor.type == PROCESSOR_CPU);
       if (subgraph->vertices) free(subgraph->vertices);
@@ -653,7 +657,7 @@ error_t partition_set_finalize(partition_set_t* pset) {
         free(subgraph->weights);
       }
     }
-    if (subgraph->vertices) free(partition->map);
+    if (subgraph->vertices) { free(partition->map); }
   }
   grooves_finalize(pset);
   free(pset->partitions);

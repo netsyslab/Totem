@@ -79,19 +79,19 @@ typedef struct partition_s {
                                         when aggregating the final results */
   grooves_box_table_t outbox[MAX_PARTITION_COUNT]; /**< manages messages pushed
                                                       and/or pulled via boundary
-                                                      edges in the partition 
+                                                      edges in the partition
                                                       that hosts the destination
-                                                      vertex 
+                                                      vertex
                                                       TODO(Abdullah): change the
-                                                      name to something more 
+                                                      name to something more
                                                       meaningful */
   grooves_box_table_t inbox[MAX_PARTITION_COUNT]; /**< manages messages pushed
                                                      and/or pulled via boundary
-                                                     edges in the partition 
+                                                     edges in the partition
                                                      that hosts the destination
-                                                     vertex 
+                                                     vertex
                                                      TODO(Abdullah): change the
-                                                     name to something more 
+                                                     name to something more
                                                      meaningful */
   processor_t          processor;    /**< the processor this partition will be
                                         processed on. */
@@ -174,13 +174,13 @@ error_t partition_modularity(graph_t* graph, partition_set_t* partition_set,
  *                              NULL in case of failure.
  * @return SUCCESS if the partitions are assigned, FAILURE otherwise.
  */
-error_t partition_random(graph_t* graph, int partition_count, 
+error_t partition_random(graph_t* graph, int partition_count,
                          double* partition_fraction, vid_t** partition_labels,
                          totem_attr_t* attr);
 
 /**
- * Split the graph after sorting the vertices by edge degree into the specified 
- * number of partitions with the specified fractional distribution for each 
+ * Split the graph after sorting the vertices by edge degree into the specified
+ * number of partitions with the specified fractional distribution for each
  * partition.
  *
  * @param[in] graph the input graph
@@ -198,7 +198,7 @@ error_t partition_random(graph_t* graph, int partition_count,
  * @return SUCCESS if the partitions are assigned, FAILURE otherwise.
  */
 error_t partition_by_asc_sorted_degree(graph_t* graph, int partition_count,
-                                       double* partition_fraction, 
+                                       double* partition_fraction,
                                        vid_t** partition_labels,
                                        totem_attr_t* attr);
 error_t partition_by_dsc_sorted_degree(graph_t* graph, int partition_count,
@@ -210,7 +210,7 @@ error_t partition_by_dsc_sorted_degree(graph_t* graph, int partition_count,
  * The following defines the signature of a partitioning algorithm function. The
  * PARTITION_FUNC array offers a simple way to invoke a partitioning algorithm
  * given a partition_algorithm_t (enumeration defined in totem.h) variable. Note
- * that the order of the functions here must be the same as their corresponding 
+ * that the order of the functions here must be the same as their corresponding
  * entry in the enumeration.
  */
 typedef error_t(*partition_func_t)(graph_t*, int, double*, vid_t**, totem_attr_t*);
@@ -226,7 +226,7 @@ PRIVATE const partition_func_t PARTITION_FUNC[] = {
  * @param[in] dir the comm. direction for which the message size is updated
  * @param[in] msg_size the new message size
  */
-void partition_set_update_msg_size(partition_set_t* pset, 
+void partition_set_update_msg_size(partition_set_t* pset,
                                    grooves_direction_t dir, size_t msg_size);
 
 /**
@@ -246,11 +246,8 @@ void partition_set_update_msg_size(partition_set_t* pset,
  */
 error_t partition_set_initialize(graph_t* graph, vid_t* partition_labels,
                                  processor_t* partition_processor,
-                                 int partition_count, 
-                                 gpu_graph_mem_t gpu_graph_mem,
-                                 size_t push_msg_size, size_t pull_msg_size, 
-                                 partition_set_t** partition_set,
-                                 totem_attr_t* attr);
+                                 int partition_count, totem_attr_t* attr,
+                                 partition_set_t** partition_set);
 
 /**
  * De-allocates a partition set object

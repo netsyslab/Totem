@@ -219,11 +219,7 @@ class GraphPartitionTest : public TestWithParam<partition_func_t> {
     EXPECT_EQ(SUCCESS, partition_set_initialize(graph_, partitions_,
                                                 partition_processor_,
                                                 partition_count_,
-                                                GPU_GRAPH_MEM_DEVICE,
-                                                MSG_SIZE_WORD,
-                                                MSG_SIZE_ZERO,
-                                                &partition_set_,
-                                                &attr));
+                                                &attr, &partition_set_));
     TestState();
     TestCommunication();
   }
@@ -317,11 +313,8 @@ TEST_P(GraphPartitionTest , GetPartitionsSingleNodeGraph) {
                                      &partitions_, &attr));
   EXPECT_EQ(SUCCESS, partition_set_initialize(graph_, partitions_,
                                               partition_processor_,
-                                              partition_count_,
-                                              GPU_GRAPH_MEM_DEVICE,
-                                              MSG_SIZE_WORD,
-                                              MSG_SIZE_ZERO,
-                                              &partition_set_, &attr));
+                                              partition_count_, &attr,
+                                              &partition_set_));
   EXPECT_EQ(partition_set_->partition_count, 1);
   partition_t* partition = &partition_set_->partitions[0];
   EXPECT_EQ(partition->subgraph.vertex_count, (vid_t)1);
@@ -359,11 +352,7 @@ TEST_P(GraphPartitionTest, GetPartitionsImbalancedChainGraph) {
   EXPECT_EQ(SUCCESS, partition_set_initialize(graph_, partitions_,
                                               partition_processor_,
                                               partition_count_,
-                                              GPU_GRAPH_MEM_DEVICE,
-                                              MSG_SIZE_WORD,
-                                              MSG_SIZE_ZERO,
-                                              &partition_set_,
-                                              &attr));
+                                              &attr, &partition_set_));
   for (int pid = 0; pid < partition_set_->partition_count; pid++) {
     partition_t* partition = &partition_set_->partitions[pid];
     EXPECT_EQ(pid, partition->id);

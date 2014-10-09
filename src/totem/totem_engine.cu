@@ -303,11 +303,8 @@ PRIVATE void init_partition(int pcount, int gpu_count, double* shares,
 
   context.timing.engine_par = stopwatch_elapsed(&stopwatch_par);
   CALL_SAFE(partition_set_initialize(context.graph, par_labels,
-                                     processors, pcount,
-                                     context.attr.gpu_graph_mem,
-                                     context.attr.push_msg_size,
-                                     context.attr.pull_msg_size,
-                                     &context.pset, &context.attr));
+                                     processors, pcount, &context.attr,
+                                     &context.pset));
   free(par_labels);
 }
 

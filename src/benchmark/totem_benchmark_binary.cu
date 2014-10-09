@@ -27,6 +27,7 @@ const benchmark_attr_t BENCHMARKS[] = {
     "BFS",
     sizeof(cost_t),
     true,
+    false,
     1,
     MSG_SIZE_ZERO,
     NULL,
@@ -37,6 +38,7 @@ const benchmark_attr_t BENCHMARKS[] = {
     "PAGERANK",
     sizeof(rank_t),
     true,
+    false,
     MSG_SIZE_ZERO,
     sizeof(rank_t) * BITS_PER_BYTE,
     NULL,
@@ -47,6 +49,7 @@ const benchmark_attr_t BENCHMARKS[] = {
     "SSSP",
     sizeof(weight_t),
     true,
+    false,
     sizeof(weight_t) * BITS_PER_BYTE,
     MSG_SIZE_ZERO,
     NULL,
@@ -57,6 +60,7 @@ const benchmark_attr_t BENCHMARKS[] = {
     "BETWEENNESS",
     sizeof(weight_t),
     true,
+    false,
     sizeof(uint32_t) * BITS_PER_BYTE,
     sizeof(score_t) * BITS_PER_BYTE,
     NULL,
@@ -67,6 +71,7 @@ const benchmark_attr_t BENCHMARKS[] = {
     "GRAPH500",
     sizeof(bfs_tree_t),
     true,
+    false,
     (sizeof(vid_t) * BITS_PER_BYTE) + 1,
     MSG_SIZE_ZERO,
     graph500_alloc,
@@ -76,6 +81,7 @@ const benchmark_attr_t BENCHMARKS[] = {
     benchmark_clustering_coefficient,
     "CLUSTERING_COEFFICIENT",
     sizeof(weight_t),
+    false,
     false,
     MSG_SIZE_ZERO,
     MSG_SIZE_ZERO,
@@ -87,6 +93,7 @@ const benchmark_attr_t BENCHMARKS[] = {
     "BFS_STEPWISE",
     sizeof(cost_t),
     true,
+    false,
     1,
     1,
     bfs_stepwise_alloc,
@@ -96,6 +103,7 @@ const benchmark_attr_t BENCHMARKS[] = {
     benchmark_graph500_stepwise,
     "GRAPH500_STEPWISE",
     sizeof(bfs_tree_t),
+    true,
     true,
     (sizeof(vid_t) * BITS_PER_BYTE) + 1,
     1,
@@ -139,12 +147,11 @@ PRIVATE uint64_t get_traversed_edges(graph_t* graph, void* benchmark_output) {
       break;
     }
     case BENCHMARK_BETWEENNESS: {
-      // The two is for the two phases: forward and backward
+      // The two is for the two phases: forward and backward.
       trv_edges = (uint64_t)graph->edge_count * 2;
       break;
     }
     case BENCHMARK_CLUSTERING_COEFFICIENT: {
-      // Each triangle is counted three times
       trv_edges = (uint64_t)graph->edge_count;
       break;
     }
@@ -156,10 +163,8 @@ PRIVATE uint64_t get_traversed_edges(graph_t* graph, void* benchmark_output) {
   return trv_edges;
 }
 
-/**
- * Randomly picks a random source vertex, and ensures that it is connected to at
- * least one other vertex.
- */
+// Randomly picks a random source vertex, and ensures that it is connected to at
+// least one other vertex.
 PRIVATE vid_t get_random_src(graph_t* graph) {
   vid_t src = rand() % graph->vertex_count;
   while ((graph->vertices[src + 1] - graph->vertices[src] == 0)) {
@@ -242,7 +247,7 @@ PRIVATE void benchmark_run() {
                TOTEM_MEM_HOST, reinterpret_cast<void**>(&benchmark_state));
   assert(benchmark_state || (BENCHMARKS[options->benchmark].output_size == 0));
 
-  bool totem_based = BENCHMARKS[options->benchmark].has_totem;
+  bool totem_based = BENCHMARKS[options->benchmark].totem_supported;
   totem_attr_t attr = TOTEM_DEFAULT_ATTR;
   if (totem_based) {
     attr.par_algo = options->par_algo;
@@ -254,6 +259,8 @@ PRIVATE void benchmark_run() {
     attr.sorted = options->sorted;
     attr.edge_sort_by_degree = options->edge_sort_by_degree;
     attr.edge_sort_dsc = options->edge_sort_dsc;
+    attr.compressed_vertices_supported =
+        BENCHMARKS[options->benchmark].compressed_vertices_supported;
     attr.push_msg_size = BENCHMARKS[options->benchmark].push_msg_size;
     attr.pull_msg_size = BENCHMARKS[options->benchmark].pull_msg_size;
     attr.alloc_func = BENCHMARKS[options->benchmark].alloc_func;
@@ -261,7 +268,7 @@ PRIVATE void benchmark_run() {
     CALL_SAFE(totem_init(graph, &attr));
   }
 
-  // Configure OpenMP
+  // Configure OpenMP.
   omp_set_num_threads(options->thread_count);
   omp_set_schedule(options->omp_sched, 0);
   print_header(graph, totem_based);
@@ -285,7 +292,7 @@ PRIVATE void benchmark_run() {
 }
 
 void benchmark_check_configuration() {
-  if (!BENCHMARKS[options->benchmark].has_totem) {
+  if (!BENCHMARKS[options->benchmark].totem_supported) {
     if (options->platform == PLATFORM_HYBRID) {
       fprintf(stderr, "Error: No hybrid implementation for benchmark %s\n",
               BENCHMARKS[options->benchmark].name);
@@ -298,9 +305,6 @@ void benchmark_check_configuration() {
   }
 }
 
-/**
- * The main entry of the program
- */
 int main(int argc, char** argv) {
   CALL_SAFE(check_cuda_version());
   options = benchmark_cmdline_parse(argc, argv);

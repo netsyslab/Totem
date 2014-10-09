@@ -192,22 +192,23 @@ void graph500_stepwise_cpu(partition_t* par, graph500_state_t* state) {
   }
 }
 
+template<typename eid_type>
 PRIVATE __device__ inline vid_t* get_edges_array(
-    const graph_t& graph, vid_t v) {
-  vid_t* edges = graph.edges + graph.vertices[v];
+    const graph_t& graph, const eid_type* __restrict vertices, vid_t v) {
+  vid_t* edges = graph.edges + vertices[v];
   if (v >= graph.vertex_ext) {
-    edges = graph.edges_ext + (graph.vertices[v] - graph.edge_count_ext);
+    edges = graph.edges_ext + (vertices[v] - graph.edge_count_ext);
   }
   return edges;
 }
 
 // A gpu version of the Bottom-up step as a kernel.
-template<int THREADS_PER_BLOCK>
-__global__ void graph500_bu_kernel(partition_t par, graph500_state_t state) {
+template<int THREADS_PER_BLOCK, typename eid_type>
+__global__ void graph500_bu_kernel(partition_t par, graph500_state_t state,
+                                   const eid_type* __restrict vertices) {
   const int kWarpWidth = 1;
   const vid_t kVertexCount = par.subgraph.vertex_count;
   const vid_t kVerticesPerBlock = BITMAP_BITS_PER_WORD * THREADS_PER_BLOCK;
-  const eid_t* __restrict vertices = par.subgraph.vertices;
   __shared__ bool nbrs_state[kVerticesPerBlock];
 
   vid_t block_start_index = BLOCK_GLOBAL_INDEX * kVerticesPerBlock;
@@ -220,7 +221,8 @@ __global__ void graph500_bu_kernel(partition_t par, graph500_state_t state) {
     vid_t v = block_start_index + i;
     nbrs_state[i] = false;
     if (!bitmap_is_set(kVisited, v)) {
-      const vid_t* __restrict edges = get_edges_array(par.subgraph, v);
+      const vid_t* __restrict edges = get_edges_array(
+          par.subgraph, vertices, v);
       const eid_t nbr_count = vertices[v + 1] - vertices[v];
       for (eid_t e = 0; e < nbr_count && !nbrs_state[i]; e++) {
         int nbr_pid = GET_PARTITION_ID(edges[e]);
@@ -275,19 +277,23 @@ PRIVATE void graph500_bu_gpu(partition_t* par, graph500_state_t* state) {
   kernel_configure(vwarp_thread_count(par->subgraph.vertex_count,
                                       1 /* warp width */,
                                       BITMAP_BITS_PER_WORD), blocks, threads);
-  graph500_bu_kernel<threads>
-      <<<blocks, threads, 0, par->streams[1]>>>(*par, *state);
+  if (par->subgraph.compressed_vertices) {
+    graph500_bu_kernel<threads><<<blocks, threads, 0, par->streams[1]>>>
+        (*par, *state, par->subgraph.vertices_d);
+  } else {
+    graph500_bu_kernel<threads><<<blocks, threads, 0, par->streams[1]>>>
+        (*par, *state, par->subgraph.vertices);
+  }
 }
 
 // A warp-based implementation of the top-down graph500 kernel.
-template<int VWARP_WIDTH, int VWARP_BATCH>
+template<int VWARP_WIDTH, int VWARP_BATCH, typename eid_type>
 __global__ void graph500_td_kernel(partition_t par, graph500_state_t state,
+                                   const eid_type* __restrict vertices,
                                    const vid_t* __restrict frontier,
                                    vid_t count) {
   if (THREAD_GLOBAL_INDEX >=
       vwarp_thread_count(count, VWARP_WIDTH, VWARP_BATCH)) { return; }
-
-  const eid_t* __restrict vertices = par.subgraph.vertices;
 
   // This flag is used to report the finish state of a block of threads. This
   // is useful to avoid having many threads writing to the global finished
@@ -308,7 +314,7 @@ __global__ void graph500_td_kernel(partition_t par, graph500_state_t state,
   for (vid_t i = start_vertex; i < end_vertex; i++) {
     vid_t v = frontier[i];
     const eid_t nbr_count = vertices[v + 1] - vertices[v];
-    const vid_t* __restrict edges = get_edges_array(par.subgraph, v);
+    const vid_t* __restrict edges = get_edges_array(par.subgraph, vertices, v);
     for (vid_t i = warp_offset; i < nbr_count; i += VWARP_WIDTH) {
       int nbr_pid = GET_PARTITION_ID(edges[i]);
       vid_t nbr = GET_VERTEX_ID(edges[i]);
@@ -341,9 +347,13 @@ void graph500_td_launch_gpu(partition_t* par, graph500_state_t* state,
   assert(VWARP_WIDTH <= threads);
   kernel_configure(vwarp_thread_count(vertex_count, VWARP_WIDTH, BATCH_SIZE),
                    blocks, threads);
-  graph500_td_kernel<VWARP_WIDTH, BATCH_SIZE>
-      <<<blocks, threads, 0, stream>>>(*par, *state, frontier_list,
-                                       vertex_count);
+  if (par->subgraph.compressed_vertices) {
+    graph500_td_kernel<VWARP_WIDTH, BATCH_SIZE><<<blocks, threads, 0, stream>>>
+        (*par, *state, par->subgraph.vertices_d, frontier_list, vertex_count);
+  } else {
+    graph500_td_kernel<VWARP_WIDTH, BATCH_SIZE><<<blocks, threads, 0, stream>>>
+        (*par, *state, par->subgraph.vertices, frontier_list, vertex_count);
+  }
 }
 
 typedef void(*graph500_td_gpu_func_t)(partition_t*, graph500_state_t*, vid_t*,

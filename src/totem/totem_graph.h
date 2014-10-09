@@ -62,6 +62,7 @@
 //
 // Finally, to enable 64 bit edge ids, the code must be compiled: make EID=64
 typedef uint32_t vid_t;
+typedef uint32_t eid_device_t;
 #ifdef FEATURE_64BIT_EDGE_ID
 typedef uint64_t eid_t;
 #else
@@ -73,8 +74,8 @@ typedef uint32_t eid_t;
  * on sorting the vertices by edge degree.
  */
 typedef struct vdegree_s {
-  vid_t id; // vertex id
-  vid_t degree; // vertex degree
+  vid_t id;      // vertex id
+  vid_t degree;  // vertex degree
 }vdegree_t;
 
 // Specifies the maximum value an id can hold.
@@ -125,6 +126,8 @@ typedef enum {
 // in the same way as every other vertex.
 typedef struct graph_s {
   eid_t*    vertices;      // The vertices list.
+  eid_device_t* vertices_d;  // The vertices list for GPU-based partitions that
+                             // support compressed vertex list.
   vid_t*    edges;         // The edges list.
   weight_t* weights;       // Stores the weights of the edges.
   weight_t* values;        // Stores the values of the vertices.
@@ -133,6 +136,8 @@ typedef struct graph_s {
   bool      valued;        // Indicates if vertices have values.
   bool      weighted;      // Indicates if edges have weights.
   bool      directed;      // Indicates if the graph is directed.
+  bool compressed_vertices;  // Indicates if the graph supports compressed
+                             // vertex list or not.
   // The type of memory used to allocate the graph data structure of GPU-based
   // partitions.
   gpu_graph_mem_t gpu_graph_mem;
@@ -220,7 +225,8 @@ error_t graph_finalize(graph_t* graph);
  */
 error_t graph_initialize_device(const graph_t* graph_h, graph_t** graph_d,
                                 gpu_graph_mem_t gpu_graph_mem =
-                                GPU_GRAPH_MEM_DEVICE);
+                                GPU_GRAPH_MEM_DEVICE,
+                                bool compressed_vertices = false);
 
 /**
  * Free allocated device buffers associated with the graph

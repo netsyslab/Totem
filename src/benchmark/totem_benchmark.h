@@ -31,8 +31,10 @@ typedef struct benchmark_attr_s {
   void(*func)(graph_t*, void*, totem_attr_t*);  // Benchmark function.
   const char*     name;           // Benchmark name.
   size_t          output_size;    // Per-vertex output size.
-  bool            has_totem;      // true if the benchmark has a Totem-based
+  bool            totem_supported; // true if the benchmark has a Totem-based
                                   // implementation
+  bool compressed_vertices_supported;  // Indicates whether the algorithm
+                                       // supports compressed vertices or not.
   size_t          push_msg_size;  // Push message size (Totem-based alg.).
   size_t          pull_msg_size;  // Pull message size (Totem-based alg.).
   totem_cb_func_t alloc_func;     // Allocation callback function
