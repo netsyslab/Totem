@@ -51,6 +51,8 @@ typedef struct totem_attr_s {
                                         // descending instead of ascending.
   bool                  edge_sort_by_degree;  // Sorts the neighbours by degree
                                               // instead of by id.
+  bool                  separate_singletons;  // Creates a CPU partition
+                                              // to handle singletons.
   // Indicates whether the algorithm that will use this setup supports
   // compressed vertices or not.
   bool                  compressed_vertices_supported;
@@ -62,6 +64,14 @@ typedef struct totem_attr_s {
                                         // share. If this is set to zero, then
                                         // the graph is divided among all
                                         // processors equally.
+  float                 lambda;         // The percentage of edges similar
+                                        // to cpu_par_share (alpha) that will be
+                                        // assigned to the GPUs, from the
+                                        // opposite side of the workload that
+                                        // alpha assigns to the GPUs.
+                                        // This enables the placement of edge
+                                        // cases of the workload to be placed
+                                        // on the GPU partitions.
   size_t                push_msg_size;  // Push comm. message size in bits.
   size_t                pull_msg_size;  // Pull comm. message size in bits.
   totem_cb_func_t       alloc_func;     // Callback function to allocate
@@ -73,7 +83,7 @@ typedef struct totem_attr_s {
 // Default attributes: hybrid (one GPU + CPU) platform, random 50-50
 // partitioning, push message size is word and zero pull message size.
 #define TOTEM_DEFAULT_ATTR {PAR_RANDOM, PLATFORM_HYBRID, 1, \
-        GPU_GRAPH_MEM_DEVICE, false, false, false, false, false, 0.5, \
-        MSG_SIZE_WORD, MSG_SIZE_ZERO, NULL, NULL}
+        GPU_GRAPH_MEM_DEVICE, false, false, false, false, false, false, 0.5, \
+        0.0, MSG_SIZE_WORD, MSG_SIZE_ZERO, NULL, NULL}
 
 #endif  // TOTEM_ATTRIBUTES_H

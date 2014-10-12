@@ -50,7 +50,8 @@ void print_config(graph_t* graph, benchmark_options_t* options,
   printf("file:%s\tbenchmark:%s\tvertices:%llu\tedges:%llu\tpartitioning:%s\t"
          "platform:%s\talpha:%d\trepeat:%d\tgpu_count:%d\tthread_count:%d\t"
          "thread_sched:%s\tthread_bind:%s\tgpu_graph_mem:%s\t"
-         "gpu_par_randomized:%s\tsorted:%s\tedge_sort_key:%s\tedge_order:%s",
+         "gpu_par_randomized:%s\tsorted:%s\tedge_sort_key:%s\tedge_order:%s\t"
+         "separate_singletons:%s\tlambda:%d",
          options->graph_file, benchmark_name,
          (uint64_t)graph->vertex_count, (uint64_t)graph->edge_count,
          PAR_ALGO_STR[options->par_algo], PLATFORM_STR[options->platform],
@@ -61,7 +62,9 @@ void print_config(graph_t* graph, benchmark_options_t* options,
          options->gpu_par_randomized ? "true" : "false",
          options->sorted ? "true" : "false",
          options->edge_sort_by_degree ? "degree" : "id",
-         options->edge_sort_dsc ? "dsc" : "asc");
+         options->edge_sort_dsc ? "dsc" : "asc",
+         options->separate_singletons ? "true" : "false",
+         options->lambda);
   fflush(stdout);
 }
 

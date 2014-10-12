@@ -252,6 +252,7 @@ PRIVATE void benchmark_run() {
   if (totem_based) {
     attr.par_algo = options->par_algo;
     attr.cpu_par_share = static_cast<float>(options->alpha) / 100.0;
+    attr.lambda = static_cast<float>(options->lambda) / 100.0;
     attr.platform = options->platform;
     attr.gpu_count = options->gpu_count;
     attr.gpu_graph_mem = options->gpu_graph_mem;
@@ -259,6 +260,7 @@ PRIVATE void benchmark_run() {
     attr.sorted = options->sorted;
     attr.edge_sort_by_degree = options->edge_sort_by_degree;
     attr.edge_sort_dsc = options->edge_sort_dsc;
+    attr.separate_singletons = options->separate_singletons;
     attr.compressed_vertices_supported =
         BENCHMARKS[options->benchmark].compressed_vertices_supported;
     attr.push_msg_size = BENCHMARKS[options->benchmark].push_msg_size;
