@@ -55,6 +55,8 @@ typedef struct benchmark_options_s {
                                         // different runs use different seeds.
   int                   alpha;          // The percentage of edges placed on the
                                         // CPU  for hybrid platforms
+  int                   lambda;         // Amount of edges of the opposing
+                                        // degree of Alpha, placed on the GPUs.
   partition_algorithm_t par_algo;       // Partitioning algorithm.
   gpu_graph_mem_t       gpu_graph_mem;  // The type of memory used to allocate
                                         // the graph data structure of
@@ -69,6 +71,8 @@ typedef struct benchmark_options_s {
                                               // rather than by id.
   bool                  edge_sort_dsc;  // Makes the direction of edge
                                         // sorting descending order.
+  bool                  separate_singletons;  // Creates a CPU partition
+                                              // to handle singletons.
 } benchmark_options_t;
 
 /**

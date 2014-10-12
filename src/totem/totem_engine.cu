@@ -56,7 +56,7 @@ PRIVATE void superstep_launch_cpu(partition_t* par, double& cpu_time,
                                   double& cpu_scatter_time) {
   cpu_time = 0;
   cpu_scatter_time = 0;
-  if (par->subgraph.vertex_count != 0) {
+  if (par->subgraph.vertex_count != 0 && par->subgraph.edge_count != 0) {
     stopwatch_t stopwatch;
     stopwatch_start(&stopwatch);
     if ((context.config.direction == GROOVES_PUSH) &&
@@ -136,7 +136,8 @@ inline PRIVATE void superstep_execute() {
               context.config.direction); fflush(stderr);
       assert(false);
     }
-    if (par->subgraph.vertex_count == 0) continue;
+    if (par->subgraph.vertex_count == 0) { continue; }
+    if (par->subgraph.edge_count == 0) { continue; }
     // If push-based, launch communication; if pull-based, launch gather kernels
     if (context.comm_curr[par->id]) {
       if (context.config.direction == GROOVES_PUSH) {
@@ -277,7 +278,7 @@ PRIVATE void init_get_shares(int pcount, int gpu_count, bool use_cpu,
 }
 
 PRIVATE void init_get_processors(int pcount, int gpu_count, bool use_cpu,
-                                 processor_t* processors) {
+                                 processor_t* processors, totem_attr_t* attr) {
   // setup the processors' types and ids
   assert(processors);
   for (int gpu_id = 0; gpu_id < gpu_count; gpu_id++) {
@@ -285,7 +286,13 @@ PRIVATE void init_get_processors(int pcount, int gpu_count, bool use_cpu,
     processors[gpu_id].id = gpu_id;
   }
   if (use_cpu) {
+    // The last partition is the standard CPU partition.
     processors[pcount - 1].type = PROCESSOR_CPU;
+
+    // Make the second to last partition the one which handles singletons.
+    if (attr->separate_singletons) {
+      processors[pcount - 2].type = PROCESSOR_CPU;
+    }
   }
 }
 
@@ -376,9 +383,13 @@ error_t engine_init(graph_t* graph, totem_attr_t* attr) {
   bool use_cpu = true;
   init_get_platform(pcount, gpu_count, use_cpu);
   double shares[MAX_PARTITION_COUNT];
+
+  // Add an additional partition to handle singletons.
+  if (attr->separate_singletons) { pcount++; }
+
   init_get_shares(pcount, gpu_count, use_cpu, shares);
   processor_t processors[MAX_PARTITION_COUNT];
-  init_get_processors(pcount, gpu_count, use_cpu, processors);
+  init_get_processors(pcount, gpu_count, use_cpu, processors, attr);
   if (init_check_space(graph, attr, pcount, shares, processors) == FAILURE) {
     return FAILURE;
   }

@@ -306,31 +306,58 @@ error_t partition_by_sorted_degree(graph_t* graph, int partition_count,
 
   // At the beginning, assume that all vertices belong to the last partition
   for (vid_t v = 0; v < graph->vertex_count; v++) {
-    (*partition_labels)[v] = partition_count - 1;
+    // Separate singletons into a separate partition if desired.
+    if (attr->separate_singletons && vd[v].degree == 0) {
+      (*partition_labels)[vd[v].id] = partition_count - 2;
+    } else {
+      (*partition_labels)[vd[v].id] = partition_count - 1;
+    }
   }
 
-  // Assign vertices to partitions.
+  // Don't reassign to the CPU.
+  int p_offset = 1;
+  // In the case of separate singletons, also do not apply to that partition.
+  if (attr->separate_singletons) p_offset = 2;
+
+  // Assign vertices to partitions based off of a given alpha value.
   double total_elements = (double)graph->edge_count;
   vid_t index = 0;
-  for (int pid = 0; pid < partition_count - 1; pid++) {
+  for (int pid = 0; pid < partition_count - p_offset; pid++) {
     double assigned = 0;
     while ((assigned / total_elements < partition_fraction[pid]) &&
            (index < graph->vertex_count)) {
-      assigned += vd[index].degree;
-      (*partition_labels)[vd[index].id] = pid;
+      // If it is a singleton, separate it if desired.
+      if (attr->separate_singletons && vd[index].degree == 0) {
+        (*partition_labels)[vd[index].id] = partition_count - 2;
+      } else {
+        // Otherwise, assign it normally.
+        assigned += vd[index].degree;
+        (*partition_labels)[vd[index].id] = pid;
+      }
       index++;
     }
   }
 
-  // TODO(abdullah,scott): have this value set as part of the benchmark options.
-  double gamma = 0;
+  // Lambda will be split amongst the GPU partitions.
+  float lambda = (attr->lambda);
+  if (partition_count - p_offset == 0) {
+    lambda = 0.0; // No GPUs.
+  } else {
+    lambda = lambda / (partition_count - p_offset);
+  }
+  // Reassign some vertices based off of a given lambda value.
   index = graph->vertex_count - 1;
-  for (int pid = 0; pid < partition_count - 1; pid++) {
+  for (int pid = 0; pid < partition_count - p_offset; pid++) {
     double assigned = 0;
-    while ((assigned / total_elements < gamma) &&
-           (index < graph->vertex_count)) {
-      assigned += vd[index].degree;
-      (*partition_labels)[vd[index].id] = pid;
+    while ((assigned / total_elements < lambda) && (index > 0)) {
+      // If it is a singleton, separate it if desired.
+      if (attr->separate_singletons && vd[index].degree == 0) {
+        (*partition_labels)[vd[index].id] = partition_count - 2;
+      } else {
+        // Otherwise, assign it normally.
+        assigned += vd[index].degree;
+        (*partition_labels)[vd[index].id] = pid;
+      }
       index--;
     }
   }
