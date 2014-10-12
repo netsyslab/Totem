@@ -215,7 +215,7 @@ int create_graph_from_edgelist(struct packed_edge* IJ, int64_t nedge) {
   return 0;
 }
 
-int make_bfs_tree(int64_t* bfs_tree_out, int64_t* max_vtx_out,
+int make_bfs_tree(bfs_tree_t* bfs_tree_out, int64_t* max_vtx_out,
                   int64_t srcvtx) {
   totem_timing_reset();
   stopwatch_t stopwatch;

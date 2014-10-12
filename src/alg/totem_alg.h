@@ -24,7 +24,7 @@ const cost_t INF_COST = (cost_t)INFINITE;
 /**
  * A type for BFS tree type.
  */
-typedef int64_t bfs_tree_t;
+typedef vid_t bfs_tree_t;
 
 /**
  * For traversal-based algorithms, this constant determines the threshold
