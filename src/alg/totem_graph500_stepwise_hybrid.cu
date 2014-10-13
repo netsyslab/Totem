@@ -105,6 +105,8 @@ PRIVATE void graph500_td_cpu(partition_t* par, graph500_state_t* state) {
           if (nbr_pid == par->id) {
             edge_frontier_count +=
                 subgraph->vertices[nbr + 1] - subgraph->vertices[nbr];
+          } else {
+            edge_frontier_count++;
           }
           finished = false;
         }
