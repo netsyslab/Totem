@@ -32,7 +32,7 @@ inline PRIVATE double superstep_compute_synchronize() {
     max_gpu_time = time > max_gpu_time ? time : max_gpu_time;
     // TODO(abdullah): use a logging mechanism instead of ifdef
 #ifdef FEATURE_VERBOSE_TIMING
-    printf("\tGPU%d: %0.2f", par->processor.id, time);
+    printf("\tGPU%d: %0.1f", par->processor.id, time);
 #endif
   }
   // log the time of the slowest gpu
@@ -56,6 +56,7 @@ PRIVATE void superstep_launch_cpu(partition_t* par, double& cpu_time,
                                   double& cpu_scatter_time) {
   cpu_time = 0;
   cpu_scatter_time = 0;
+  double sync_time = 0;
   if (par->subgraph.vertex_count != 0 && par->subgraph.edge_count != 0) {
     stopwatch_t stopwatch;
     stopwatch_start(&stopwatch);
@@ -66,14 +67,17 @@ PRIVATE void superstep_launch_cpu(partition_t* par, double& cpu_time,
     }
     cpu_scatter_time = stopwatch_elapsed(&stopwatch);
 
+    stopwatch_start(&stopwatch);
     // Make sure that data sent/received from a GPU partition to
     // the CPU partition is available
     for (int rmt_pid = 0; rmt_pid < context.pset->partition_count;
          rmt_pid++) {
-      if (rmt_pid == par->id) continue;
       partition_t* rmt_par = &context.pset->partitions[rmt_pid];
-      CALL_CU_SAFE(cudaStreamSynchronize(rmt_par->streams[0]));
+      if (rmt_par->processor.type == PROCESSOR_GPU) {
+        CALL_CU_SAFE(cudaStreamSynchronize(rmt_par->streams[0]));
+      }
     }
+    sync_time = stopwatch_elapsed(&stopwatch);
 
     stopwatch_start(&stopwatch);
     context.config.par_kernel_func(par);
@@ -81,7 +85,7 @@ PRIVATE void superstep_launch_cpu(partition_t* par, double& cpu_time,
     context.timing.alg_cpu_comp += cpu_time;
   }
 #ifdef FEATURE_VERBOSE_TIMING
-  printf("#\tCPU: %0.2f", cpu_time);
+  printf("#\tCPU: %0.1f %0.1f", cpu_time, sync_time);
 #endif
 }
 
@@ -175,8 +179,8 @@ inline PRIVATE void superstep_execute() {
   context.timing.alg_scatter += cpu_scatter_time;
   context.timing.alg_gather += cpu_gather_time;
 #ifdef FEATURE_VERBOSE_TIMING
-  printf("\tComp: %0.2f\tComm: %0.2f\tLaunch: %0.2f\tCPUScatter: %0.2f"
-         "\tCPUGather: %0.2f\t\tTotal: %0.2f\n",
+  printf("\tComp: %0.1f\tComm: %0.1f\tLaunch: %0.1f\tCPUScatter: %0.1f"
+         "\tCPUGather: %0.1f\t\tTotal: %0.1f\n",
          comp_time, comm_time, launch_time, cpu_scatter_time, cpu_gather_time,
          total_time);
 #endif
