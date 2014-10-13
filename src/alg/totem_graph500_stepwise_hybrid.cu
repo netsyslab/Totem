@@ -460,7 +460,8 @@ __host__ void graph500_stepwise_gpu(partition_t* par, graph500_state_t* state) {
 
 // The execution phase - based off of the partition we are, launch an approach.
 PRIVATE void graph500(partition_t* par) {
-  if (par->subgraph.vertex_count == 0) { return; }
+  if (par->subgraph.vertex_count == 0 ||
+      par->subgraph.edge_count == 0) { return; }
   graph500_state_t* state =
       reinterpret_cast<graph500_state_t*>(par->algo_state);
 
@@ -551,7 +552,8 @@ __global__ void graph500_gather_gpu(partition_t par, graph500_state_t state,
 // The gather phase - apply values from the inboxes to the partitions' local
 // variables.
 PRIVATE void graph500_gather(partition_t* par) {
-  if (par->subgraph.vertex_count == 0) { return; }
+  if (par->subgraph.vertex_count == 0 ||
+      par->subgraph.edge_count == 0) { return; }
   graph500_state_t* state =
       reinterpret_cast<graph500_state_t*>(par->algo_state);
 
@@ -772,7 +774,8 @@ PRIVATE inline void graph500_init_cpu(partition_t* par) {
 
 // The init phase - Set up the memory and statuses.
 PRIVATE void graph500_init(partition_t* par) {
-  if (par->subgraph.vertex_count == 0) { return; }
+  if (par->subgraph.vertex_count == 0 ||
+      par->subgraph.edge_count == 0) { return; }
   graph500_state_t* state =
       reinterpret_cast<graph500_state_t*>(par->algo_state);
   totem_mem_t type = TOTEM_MEM_HOST;
@@ -905,6 +908,9 @@ PRIVATE inline void graph500_alloc_cpu(partition_t* par) {
   // Allocate memory for the trees.
   CALL_SAFE(totem_malloc(par->subgraph.vertex_count * sizeof(vid_t),
                          TOTEM_MEM_HOST, (void**)&(state->tree[par->id])));
+  // Reset the local tree.
+  totem_memset(state->tree[par->id], VERTEX_ID_MAX,
+               par->subgraph.vertex_count, TOTEM_MEM_HOST, par->streams[1]);
 
   // Initialize our visited bitmap.
   state->visited[par->id] = bitmap_init_cpu(par->subgraph.vertex_count);
