@@ -191,6 +191,7 @@ int create_graph_from_edgelist(struct packed_edge* IJ, int64_t nedge) {
   attr.gpu_par_randomized = b_options->gpu_par_randomized;
   attr.sorted             = b_options->sorted;
   attr.edge_sort_dsc      = b_options->edge_sort_dsc;
+  attr.separate_singletons = b_options->separate_singletons;
 
   // Create the Totem graph.
   create_graph(IJ, vertex_count, edge_count, attr.edge_sort_dsc);

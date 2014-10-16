@@ -305,6 +305,9 @@ static void run_bfs(void) {
 
     /* Re-allocate. Some systems may randomize the addres... */
     bfs_tree = xmalloc_large(nvtx_scale * sizeof(*bfs_tree));
+    // Force the allocation of the buffer by writing to all its pages (the
+    // value being written can be anything).
+    memset(bfs_tree, 1, nvtx_scale * sizeof(*bfs_tree));
     assert(bfs_root[m] < nvtx_scale);
 
     if (VERBOSE) fprintf(stderr, "Running bfs %d...", m);
