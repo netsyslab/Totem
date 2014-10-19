@@ -185,13 +185,16 @@ int create_graph_from_edgelist(struct packed_edge* IJ, int64_t nedge) {
   totem_attr_t attr = TOTEM_DEFAULT_ATTR;
   attr.par_algo           = b_options->par_algo;
   attr.cpu_par_share      = b_options->alpha / 100.0;
+  attr.lambda = static_cast<float>(b_options->lambda) / 100.0;
   attr.platform           = b_options->platform;
   attr.gpu_count          = b_options->gpu_count;
   attr.gpu_graph_mem      = b_options->gpu_graph_mem;
   attr.gpu_par_randomized = b_options->gpu_par_randomized;
   attr.sorted             = b_options->sorted;
+  attr.edge_sort_by_degree = b_options->edge_sort_by_degree;
   attr.edge_sort_dsc      = b_options->edge_sort_dsc;
   attr.separate_singletons = b_options->separate_singletons;
+  attr.compressed_vertices_supported = true;
 
   // Create the Totem graph.
   create_graph(IJ, vertex_count, edge_count, attr.edge_sort_dsc);
