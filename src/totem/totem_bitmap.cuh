@@ -156,6 +156,8 @@ __host__ __device__ inline bool bitmap_is_set(bitmap_word_t word, vid_t bit) {
 vid_t bitmap_count_cpu(bitmap_t bitmap, size_t len);
 vid_t bitmap_count_gpu(bitmap_t bitmap, size_t len, vid_t* count_d = NULL,
                        cudaStream_t stream = 0);
+void bitmap_count_gpu(bitmap_t bitmap, size_t len, vid_t* count_h,
+                      vid_t* count_d, cudaStream_t stream = 0);
 
 /**
  * Diffs the two bitmaps and stores the result back in "diff"
