@@ -597,7 +597,7 @@ error_t graph_finalize(graph_t* graph) {
 PRIVATE eid_t get_device_edge_count_limit(const graph_t* graph) {
   // TODO(abdullah): The following constants have been determined haphazardly,
   // we need a better way to set them.
-  const eid_t max_edge_count_limit = 1024 * 1024 * 1024 * 1.3;
+  const eid_t max_edge_count_limit = 1024 * 1024 * 1024 * 1.25;
   const size_t state_per_vertex = 4;
   size_t available = 0; size_t total = 0;
   CALL_CU_SAFE(cudaMemGetInfo(&available, &total));

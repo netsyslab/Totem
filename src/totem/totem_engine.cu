@@ -85,7 +85,9 @@ PRIVATE void superstep_launch_cpu(partition_t* par, double& cpu_time,
     context.timing.alg_cpu_comp += cpu_time;
   }
 #ifdef FEATURE_VERBOSE_TIMING
-  printf("#\tCPU: %0.1f %0.1f", cpu_time, sync_time);
+  if (!engine_is_singletons(par->id)) {
+    printf("#\tCPU: %0.1f %0.1f", cpu_time, sync_time);
+  }
 #endif
 }
 
