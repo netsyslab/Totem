@@ -45,6 +45,7 @@ extern const char* kReverseSubCommand;
 extern const char* kSortNeighboursSubCommand;
 extern const char* kSortVerticesSubCommand;
 extern const char* kUndirectedSubCommand;
+extern const char* kRandomWeightsSubCommand;
 
 // Create command and sub-commands.
 extern const char* kCreateCommand;
