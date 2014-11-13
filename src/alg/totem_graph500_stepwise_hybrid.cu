@@ -1085,13 +1085,6 @@ PRIVATE void graph500_rmt_tree_scatter(partition_t* par) {
       assert(false);
     }
   }
-  if (par->processor.type == PROCESSOR_GPU) {
-    CALL_CU_SAFE(cudaMemcpyAsync(state_g.tree_h[par->id], state->tree[par->id],
-                                 par->subgraph.vertex_count * sizeof(vid_t),
-                                 cudaMemcpyDefault, par->streams[1]));
-  } else {
-    state_g.tree_h[par->id] = state->tree[par->id];
-  }
 }
 
 void graph500_rmt_tree(partition_t* par) {
@@ -1102,6 +1095,18 @@ void graph500_rmt_tree(partition_t* par) {
   }
   if (par->processor.type == PROCESSOR_CPU) {
     engine_report_no_comm(par->id);
+  }
+}
+
+PRIVATE void graph500_aggregate(partition_t* par) {
+  if (!par->subgraph.vertex_count) return;
+  graph500_state_t* state = (graph500_state_t*)par->algo_state;
+  if (par->processor.type == PROCESSOR_GPU) {
+    CALL_CU_SAFE(cudaMemcpyAsync(state_g.tree_h[par->id], state->tree[par->id],
+                                 par->subgraph.vertex_count * sizeof(vid_t),
+                                 cudaMemcpyDefault, par->streams[1]));
+  } else {
+    state_g.tree_h[par->id] = state->tree[par->id];
   }
 }
 
@@ -1184,7 +1189,7 @@ error_t graph500_stepwise_hybrid(vid_t src, bfs_tree_t* tree) {
   // Do a final run for remote tree scatter.
   engine_config_t config_update_rmt_parents = {
     NULL, graph500_rmt_tree, graph500_rmt_tree_scatter, NULL, NULL,
-    NULL, NULL, GROOVES_PUSH
+    NULL, graph500_aggregate, GROOVES_PUSH
   };
   engine_config(&config_update_rmt_parents);
   engine_reset_msg_size(GROOVES_PUSH);
