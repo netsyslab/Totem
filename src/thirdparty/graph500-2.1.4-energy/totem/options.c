@@ -7,6 +7,7 @@
 #include <string.h>
 #include <errno.h>
 #include <assert.h>
+#include <stdbool.h>
 
 /* getopt should be in unistd.h */
 #if HAVE_UNISTD_H
@@ -37,6 +38,8 @@ int NBFS = NBFS_max;
 int64_t SCALE = default_SCALE;
 int64_t edgefactor = default_edgefactor;
 
+bool no_verify = false;
+
 extern void totem_set_options(const char* input_optarg, char* program_name);
 
 void get_options (int argc, char **argv) {
@@ -51,7 +54,7 @@ void get_options (int argc, char **argv) {
   if (getenv ("VERBOSE"))
     VERBOSE = 1;
 
-  while ((c = getopt (argc, argv, "v?hRs:e:A:a:B:b:C:c:D:d:Vo:r:p:t:")) != -1) {
+  while ((c = getopt(argc, argv, "v?hRs:e:A:a:B:b:C:c:D:d:Vo:r:p:t:n")) != -1) {
     switch (c) {
       case 'v':
         printf ("%s version %d\n", NAME, VERSION);
@@ -78,7 +81,9 @@ void get_options (int argc, char **argv) {
                 "  r   : Read the BFS roots from (or dump to) the named file\n"
                 "  p   : Path to the tmp directory used to dump BFS trees and\n"
                 "        possibly the edgelist\n"
-                "  t   : A string of the totem arguments (ex \"-a 50 -g 2\") "
+                "  t   : A string of the totem arguments (ex \"-a 50 -g 2\")\n"
+                "  n   : Do not verify the output tree. Should only be used for"
+                "        testing, not for a final result.\n"
                 "\n"
                 "Outputs take the form of \"key: value\", with keys:\n"
                 "  SCALE\n"
@@ -256,6 +261,9 @@ void get_options (int argc, char **argv) {
         optarg = temp_optarg;
         break;
       }
+      case 'n':
+        no_verify = true;
+        break;
       default:
         fprintf (stderr, "Unrecognized option\n");
         err = -1;

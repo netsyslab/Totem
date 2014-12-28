@@ -7,6 +7,7 @@
 #include <errno.h>
 #include <string.h>
 #include <math.h>
+#include <stdbool.h>
 
 #include <assert.h>
 
@@ -279,6 +280,14 @@ static void convert_tree(tree_t* tree, int64_t* converted_tree) {
 }
 
 void verify_all() {
+  if (no_verify) {
+    // Skip verification, use number of edges as edges traversed.
+    for (int m = 0; m < NBFS; m++) {
+      bfs_nedge[m] = nedge;
+    }
+    return;
+  }
+
   tree_t* tree = xmalloc_large(nvtx_scale * sizeof(tree_t));
   int64_t* converted_tree = xmalloc_large(nvtx_scale * sizeof(int64_t));
   for (int m = 0; m < NBFS; ++m) {
@@ -311,12 +320,11 @@ static void run_bfs(void) {
     assert(bfs_root[m] < nvtx_scale);
 
     if (VERBOSE) fprintf(stderr, "Running bfs %d...", m);
-    int err;
-    TIME(bfs_time[m], err =
-         make_bfs_tree(bfs_tree, &max_bfsvtx[m], bfs_root[m]));
+    bfs_time[m] = make_bfs_tree(bfs_tree, &max_bfsvtx[m], bfs_root[m]);
     if (VERBOSE) fprintf(stderr, "done\n");
 
-    if (err) {
+    // Check for NaN or negative time.
+    if (bfs_time[m] != bfs_time[m] || bfs_time[m] < 0.0) {
       perror("make_bfs_tree failed");
       abort();
     }

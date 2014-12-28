@@ -222,15 +222,21 @@ int create_graph_from_edgelist(struct packed_edge* IJ, int64_t nedge) {
   return 0;
 }
 
-int make_bfs_tree(bfs_tree_t* bfs_tree_out, int64_t* max_vtx_out,
-                  int64_t srcvtx) {
+double make_bfs_tree(bfs_tree_t* bfs_tree_out, int64_t* max_vtx_out,
+                     int64_t srcvtx) {
   totem_timing_reset();
   stopwatch_t stopwatch;
   stopwatch_start(&stopwatch);
   *max_vtx_out = graph->vertex_count - 1;
   CALL_SAFE(graph500_stepwise_hybrid(srcvtx, bfs_tree_out));
   print_timing(graph, stopwatch_elapsed(&stopwatch), graph->edge_count, true);
-  return 0;
+
+  // Get and return algorithm execution time as expected by Graph500.
+  const totem_timing_t* timers = totem_timing();
+  double time_solution = timers->alg_init + timers->alg_exec;
+
+  // Divide by 1000 to convert ms (Totem) to seconds (Graph500).
+  return time_solution / 1000.0;
 }
 
 void destroy_graph() {
