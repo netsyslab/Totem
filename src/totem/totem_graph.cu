@@ -597,7 +597,7 @@ error_t graph_finalize(graph_t* graph) {
 PRIVATE eid_t get_device_edge_count_limit(const graph_t* graph) {
   // TODO(abdullah): The following constants have been determined haphazardly,
   // we need a better way to set them.
-  const eid_t max_edge_count_limit = 1024 * 1024 * 1024 * 1.3;
+  const eid_t max_edge_count_limit = 1024 * 1024 * 1024 * 1.25;
   const size_t state_per_vertex = 4;
   size_t available = 0; size_t total = 0;
   CALL_CU_SAFE(cudaMemGetInfo(&available, &total));
@@ -612,8 +612,8 @@ PRIVATE eid_t get_device_edge_count_limit(const graph_t* graph) {
   return gpu_edge_count_limit;
 }
 
-PRIVATE void initialize_device_partitioned_edges(const graph_t* graph_h,
-                                                 graph_t* graph_d) {
+PRIVATE void initialize_device_partitioned_edges(
+    const graph_t* graph_h, graph_t* graph_d) {
   eid_t gpu_edge_count_limit = get_device_edge_count_limit(graph_h);
   assert(graph_h->edge_count > gpu_edge_count_limit);
 
@@ -649,7 +649,73 @@ PRIVATE void initialize_device_partitioned_edges(const graph_t* graph_h,
                        cudaMemcpyDefault));
 }
 
-PRIVATE void initialize_device(const graph_t* graph_h, graph_t* graph_d) {
+PRIVATE void initialize_device_vertices(
+    const graph_t* graph_h, graph_t* graph_d) {
+  if (graph_d->compressed_vertices) {
+    assert(graph_d->gpu_graph_mem != GPU_GRAPH_MEM_MAPPED &&
+           graph_d->gpu_graph_mem != GPU_GRAPH_MEM_MAPPED_VERTICES);
+
+    eid_device_t* vertices_h;
+    CALL_SAFE(totem_malloc((graph_h->vertex_count + 1) * sizeof(eid_device_t),
+                           TOTEM_MEM_HOST,
+                           reinterpret_cast<void**>(&vertices_h)));
+    OMP(omp parallel for)
+    for (vid_t i = 0; i < graph_h->vertex_count + 1; i++) {
+      vertices_h[i] = static_cast<eid_device_t>(graph_h->vertices[i]);
+    }
+
+    CALL_SAFE(totem_malloc((graph_h->vertex_count + 1) * sizeof(eid_device_t),
+                           TOTEM_MEM_DEVICE,
+                           reinterpret_cast<void**>(&graph_d->vertices_d)));
+    CALL_SAFE(cudaMemcpy(graph_d->vertices_d, vertices_h,
+                         (graph_h->vertex_count + 1) * sizeof(eid_device_t),
+                         cudaMemcpyDefault));
+    totem_free(vertices_h, TOTEM_MEM_HOST);
+  } else {
+    vid_t vertex_count_allocated =
+        vwarp_default_state_length(graph_d->vertex_count);
+
+    switch (graph_d->gpu_graph_mem) {
+      case GPU_GRAPH_MEM_DEVICE:
+      case GPU_GRAPH_MEM_MAPPED_EDGES:
+      case GPU_GRAPH_MEM_PARTITIONED_EDGES:
+        CALL_SAFE(totem_malloc((vertex_count_allocated + 1) * sizeof(eid_t),
+                               TOTEM_MEM_DEVICE,
+                               reinterpret_cast<void**>(&graph_d->vertices)));
+        break;
+      case GPU_GRAPH_MEM_MAPPED:
+      case GPU_GRAPH_MEM_MAPPED_VERTICES:
+        CALL_SAFE(totem_malloc((vertex_count_allocated + 1) * sizeof(eid_t),
+                               TOTEM_MEM_HOST_MAPPED,
+                               reinterpret_cast<void**>
+                               (&graph_d->mapped_vertices)));
+        CALL_CU_SAFE(cudaHostGetDevicePointer(reinterpret_cast<void**>
+                                              (&(graph_d->vertices)),
+                                              graph_d->mapped_vertices, 0));
+        break;
+      default:
+        fprintf(stderr, "Not supported graph memory type %d\n",
+                graph_d->gpu_graph_mem);
+        assert(false);
+    }
+    CALL_SAFE(cudaMemcpy(graph_d->vertices, graph_h->vertices,
+                         (graph_h->vertex_count + 1) * sizeof(eid_t),
+                         cudaMemcpyDefault));
+    // Set the index of the extra vertices to the last actual vertex. This
+    // renders the padded fake vertices with zero edges.
+    int pad_size = vwarp_default_state_length(graph_h->vertex_count) -
+        graph_h->vertex_count;
+    if (pad_size > 0) {
+      totem_memset(&(graph_d->vertices[graph_h->vertex_count + 1]),
+                   graph_h->vertices[graph_h->vertex_count], pad_size,
+                   TOTEM_MEM_DEVICE);
+    }
+  }
+}
+
+PRIVATE void initialize_device_edges(const graph_t* graph_h, graph_t* graph_d) {
+  if (graph_h->edge_count == 0) { return; }
+
   gpu_graph_mem_t gpu_graph_mem = graph_d->gpu_graph_mem;
   graph_d->vertex_ext = graph_d->vertex_count;
   if ((gpu_graph_mem == GPU_GRAPH_MEM_PARTITIONED_EDGES) &&
@@ -657,80 +723,24 @@ PRIVATE void initialize_device(const graph_t* graph_h, graph_t* graph_d) {
     gpu_graph_mem = GPU_GRAPH_MEM_DEVICE;
   }
 
-  // Vertices will be processed by each warp in batches. To avoid explicitly
-  // checking for end of array boundaries, the vertices array is padded with
-  // fake vertices so that its length is multiple of batch size. The fake
-  // vertices has no edges and they don't count in the vertex_count (much like
-  // the extra vertex we used to have which enables calculating the number of
-  // neighbors for the last vertex). Note that this padding does not affect the
-  // algorithms that do not apply the virtual warp technique.
-  vid_t vertex_count_batch_padded =
-    vwarp_default_state_length(graph_d->vertex_count);
-
   switch (gpu_graph_mem) {
     case GPU_GRAPH_MEM_DEVICE:
-      CALL_SAFE(totem_malloc((vertex_count_batch_padded + 1) * sizeof(eid_t),
+    case GPU_GRAPH_MEM_MAPPED_VERTICES:
+      CALL_SAFE(totem_malloc(graph_d->edge_count * sizeof(vid_t),
                              TOTEM_MEM_DEVICE,
-                             reinterpret_cast<void**>(&graph_d->vertices)));
-      if (graph_d->edge_count) {
-        CALL_SAFE(totem_malloc(graph_d->edge_count * sizeof(vid_t),
-                               TOTEM_MEM_DEVICE,
-                               reinterpret_cast<void**>(&graph_d->edges)));
-      }
+                             reinterpret_cast<void**>(&graph_d->edges)));
       break;
     case GPU_GRAPH_MEM_MAPPED:
-      CALL_SAFE(totem_malloc((vertex_count_batch_padded + 1) * sizeof(eid_t),
-                             TOTEM_MEM_HOST_MAPPED,
-                             reinterpret_cast<void**>
-                             (&graph_d->mapped_vertices)));
-      CALL_CU_SAFE(cudaHostGetDevicePointer(reinterpret_cast<void**>
-                                            (&(graph_d->vertices)),
-                                            graph_d->mapped_vertices, 0));
-      if (graph_d->edge_count) {
-        CALL_SAFE(totem_malloc(graph_d->edge_count * sizeof(vid_t),
-                               TOTEM_MEM_HOST_MAPPED,
-                               reinterpret_cast<void**>
-                               (&graph_d->mapped_edges)));
-        CALL_CU_SAFE(cudaHostGetDevicePointer(reinterpret_cast<void**>
-                                              (&(graph_d->edges)),
-                                              graph_d->mapped_edges, 0));
-      }
-      break;
-    case GPU_GRAPH_MEM_MAPPED_VERTICES:
-      CALL_SAFE(totem_malloc((vertex_count_batch_padded + 1) * sizeof(eid_t),
-                             TOTEM_MEM_HOST_MAPPED,
-                             reinterpret_cast<void**>
-                             (&graph_d->mapped_vertices)));
-      CALL_CU_SAFE(cudaHostGetDevicePointer(reinterpret_cast<void**>
-                                            (&(graph_d->vertices)),
-                                            graph_d->mapped_vertices, 0));
-      if (graph_d->edge_count) {
-        CALL_SAFE(totem_malloc(graph_d->edge_count * sizeof(vid_t),
-                               TOTEM_MEM_DEVICE, reinterpret_cast<void**>
-                               (&graph_d->edges)));
-      }
-      break;
     case GPU_GRAPH_MEM_MAPPED_EDGES:
-      CALL_SAFE(totem_malloc((vertex_count_batch_padded + 1) * sizeof(eid_t),
-                             TOTEM_MEM_DEVICE,
-                             reinterpret_cast<void**>(&graph_d->vertices)));
-      if (graph_d->edge_count) {
-        CALL_SAFE(totem_malloc(graph_d->edge_count * sizeof(vid_t),
-                               TOTEM_MEM_HOST_MAPPED,
-                               reinterpret_cast<void**>
-                               (&graph_d->mapped_edges)));
-        CALL_CU_SAFE(cudaHostGetDevicePointer(reinterpret_cast<void**>
-                                              (&(graph_d->edges)),
-                                              graph_d->mapped_edges, 0));
-      }
+      CALL_SAFE(totem_malloc(graph_d->edge_count * sizeof(vid_t),
+                             TOTEM_MEM_HOST_MAPPED,
+                             reinterpret_cast<void**>
+                             (&graph_d->mapped_edges)));
+      CALL_CU_SAFE(cudaHostGetDevicePointer(reinterpret_cast<void**>
+                                            (&(graph_d->edges)),
+                                            graph_d->mapped_edges, 0));
       break;
     case GPU_GRAPH_MEM_PARTITIONED_EDGES:
-      CALL_SAFE(totem_malloc((vertex_count_batch_padded + 1) * sizeof(eid_t),
-                             TOTEM_MEM_DEVICE,
-                             reinterpret_cast<void**>(&graph_d->vertices)));
-      CALL_SAFE(cudaMemcpy(graph_d->vertices, graph_h->vertices,
-                           (graph_h->vertex_count + 1) * sizeof(eid_t),
-                           cudaMemcpyDefault));
       initialize_device_partitioned_edges(graph_h, graph_d);
       return;
     default:
@@ -739,19 +749,14 @@ PRIVATE void initialize_device(const graph_t* graph_h, graph_t* graph_d) {
       assert(false);
   }
 
-  // Copy data to the GPU graph data structure.
-  CALL_SAFE(cudaMemcpy(graph_d->vertices, graph_h->vertices,
-                       (graph_h->vertex_count + 1) * sizeof(eid_t),
+  CALL_SAFE(cudaMemcpy(graph_d->edges, graph_h->edges,
+                       graph_h->edge_count * sizeof(vid_t),
                        cudaMemcpyDefault));
-  if (graph_h->edge_count) {
-    CALL_SAFE(cudaMemcpy(graph_d->edges, graph_h->edges,
-                         graph_h->edge_count * sizeof(vid_t),
-                         cudaMemcpyDefault));
-  }
 }
 
 error_t graph_initialize_device(const graph_t* graph_h, graph_t** graph_d,
-                                gpu_graph_mem_t gpu_graph_mem) {
+                                gpu_graph_mem_t gpu_graph_mem,
+                                bool compressed_vertices_supported) {
   assert(graph_h);
 
   // Allocate the graph struct that will host references to device buffers.
@@ -763,44 +768,40 @@ error_t graph_initialize_device(const graph_t* graph_h, graph_t** graph_d,
   **graph_d = *graph_h;
   (*graph_d)->gpu_graph_mem = gpu_graph_mem;
 
+  const eid_t kMaxEdgeCount =
+      (static_cast<int64_t>(4) * 1024 * 1024 * 1024) - 1;
+#ifdef FEATURE_64BIT_EDGE_ID
+  (*graph_d)->compressed_vertices = compressed_vertices_supported &&
+      (graph_h->edge_count <= kMaxEdgeCount);
+#else
+  (*graph_d)->compressed_vertices = false;
+#endif
+
   // Nothing to be done if this is an empty graph.
-  if (!graph_h->vertex_count) return SUCCESS;
-
-  // Allocate device buffers and copy data to the GPU.
-  initialize_device(graph_h, *graph_d);
-
-  // Set the index of the extra vertices to the last actual vertex. This
-  // renders the padded fake vertices with zero edges.
-  int pad_size;
-  pad_size = vwarp_default_state_length(graph_h->vertex_count) -
-    graph_h->vertex_count;
-  if (pad_size > 0) {
-    totem_memset(&((*graph_d)->vertices[graph_h->vertex_count + 1]),
-                 graph_h->vertices[graph_h->vertex_count], pad_size,
-                 TOTEM_MEM_DEVICE);
-  }
-
-  if (graph_h->weighted) {
-    CALL_SAFE(totem_malloc(graph_h->edge_count * sizeof(weight_t),
-                           TOTEM_MEM_DEVICE,
-                           reinterpret_cast<void**>(&(*graph_d)->weights)));
-    CHK_CU_SUCCESS(cudaMemcpy((*graph_d)->weights, graph_h->weights,
+  if (graph_h->vertex_count > 0) {
+    // Allocate device buffers and copy data to the GPU.
+    initialize_device_vertices(graph_h, *graph_d);
+    initialize_device_edges(graph_h, *graph_d);
+    if (graph_h->weighted) {
+      CALL_SAFE(totem_malloc(graph_h->edge_count * sizeof(weight_t),
+                             TOTEM_MEM_DEVICE,
+                             reinterpret_cast<void**>(&(*graph_d)->weights)));
+      CALL_CU_SAFE(cudaMemcpy((*graph_d)->weights, graph_h->weights,
                               graph_h->edge_count * sizeof(weight_t),
-                              cudaMemcpyDefault), err);
+                              cudaMemcpyDefault));
+    }
   }
 
   return SUCCESS;
-
- err:
-  graph_finalize_device(*graph_d);
-  return FAILURE;
 }
 
 void graph_finalize_device(graph_t* graph_d) {
   assert(graph_d);
   if (graph_d->vertex_count) {
-    if (graph_d->gpu_graph_mem == GPU_GRAPH_MEM_MAPPED ||
-        graph_d->gpu_graph_mem == GPU_GRAPH_MEM_MAPPED_VERTICES) {
+    if (graph_d->compressed_vertices) {
+      totem_free(graph_d->vertices_d, TOTEM_MEM_DEVICE);
+    } else if (graph_d->gpu_graph_mem == GPU_GRAPH_MEM_MAPPED ||
+               graph_d->gpu_graph_mem == GPU_GRAPH_MEM_MAPPED_VERTICES) {
       totem_free(graph_d->mapped_vertices, TOTEM_MEM_HOST_MAPPED);
     } else {
       totem_free(graph_d->vertices, TOTEM_MEM_DEVICE);
@@ -896,5 +897,29 @@ void graph_sort_nbrs(graph_t* graph, bool edge_sort_dsc) {
     qsort(nbrs, graph->vertices[v+1] - graph->vertices[v], sizeof(vid_t),
           edge_sort_dsc ? compare_ids_dsc : compare_ids_asc);
     // TODO(treza): Required updates for edge-weights.
+  }
+}
+
+PRIVATE graph_t* graph_g = NULL;
+PRIVATE bool edge_sort_dsc_g = false;
+PRIVATE int compare_ids_by_degree_dsc(const void* a, const void* b) {
+  vid_t v1 = *(reinterpret_cast<const vid_t*>(a));
+  vid_t v2 = *(reinterpret_cast<const vid_t*>(b));
+  vid_t v1_nbrs = graph_g->vertices[v1 + 1] - graph_g->vertices[v1];
+  vid_t v2_nbrs = graph_g->vertices[v2 + 1] - graph_g->vertices[v2];
+  if (edge_sort_dsc_g) { return v2_nbrs - v1_nbrs; }
+  return v1_nbrs - v2_nbrs;
+}
+
+void graph_sort_nbrs_by_degree(graph_t* graph, bool edge_sort_dsc) {
+  // TODO(abdullah): this function is not reentrant as it uses global shared
+  // variables, make it reentrant.
+  graph_g = graph;
+  edge_sort_dsc_g = edge_sort_dsc;
+  OMP(omp parallel for schedule(guided))
+  for (vid_t v = 0; v < graph->vertex_count; v++) {
+    vid_t* nbrs = &graph->edges[graph->vertices[v]];
+    qsort(nbrs, graph->vertices[v + 1] - graph->vertices[v], sizeof(vid_t),
+          compare_ids_by_degree_dsc);
   }
 }

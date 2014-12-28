@@ -56,12 +56,12 @@ static void allocate_graph(vid_t vertex_count, eid_t edge_count,
 }
 
 // Sorts the neighbours in ascending order.
-void sort_nbrs(graph_t* graph) {
+void sort_nbrs(graph_t* graph, bool edge_sort_dsc) {
 OMP(omp parallel for schedule(guided))
   for (vid_t v = 0; v < graph->vertex_count; v++) {
     vid_t* nbrs = &graph->edges[graph->vertices[v]];
     qsort(nbrs, graph->vertices[v+1] - graph->vertices[v], sizeof(vid_t),
-          compare_ids_asc);
+          edge_sort_dsc ? compare_ids_dsc : compare_ids_asc);
   }
 }
 
@@ -71,7 +71,7 @@ static graph_t* graph = NULL;
 
 // Creates a Totem graph from a graph500 graph.
 static void create_graph(struct packed_edge* IJ, vid_t vertex_count,
-                         eid_t edge_count) {
+                         eid_t edge_count, bool edge_sort_dsc) {
   // The graph is undirected, hence the number of edges allocated is multiplied
   // by 2 as edges in Totem's graph representation are considered directed.
   allocate_graph(vertex_count, edge_count * 2, &graph);
@@ -131,7 +131,7 @@ static void create_graph(struct packed_edge* IJ, vid_t vertex_count,
     }
   }
 
-  sort_nbrs(graph);
+  sort_nbrs(graph, edge_sort_dsc);
   free(degree);
 }
 
@@ -177,7 +177,6 @@ void totem_set_options(const char* input_optarg, char* program_name) {
 int create_graph_from_edgelist(struct packed_edge* IJ, int64_t nedge) {
   eid_t edge_count   = nedge;
   vid_t vertex_count = find_nv(IJ, nedge);
-  create_graph(IJ, vertex_count, edge_count);
 
   // Use the options specified by created benchmark options.
   benchmark_options_t* b_options = totem_benchmark_get_options();
@@ -186,11 +185,19 @@ int create_graph_from_edgelist(struct packed_edge* IJ, int64_t nedge) {
   totem_attr_t attr = TOTEM_DEFAULT_ATTR;
   attr.par_algo           = b_options->par_algo;
   attr.cpu_par_share      = b_options->alpha / 100.0;
+  attr.lambda = static_cast<float>(b_options->lambda) / 100.0;
   attr.platform           = b_options->platform;
   attr.gpu_count          = b_options->gpu_count;
   attr.gpu_graph_mem      = b_options->gpu_graph_mem;
   attr.gpu_par_randomized = b_options->gpu_par_randomized;
   attr.sorted             = b_options->sorted;
+  attr.edge_sort_by_degree = b_options->edge_sort_by_degree;
+  attr.edge_sort_dsc      = b_options->edge_sort_dsc;
+  attr.separate_singletons = b_options->separate_singletons;
+  attr.compressed_vertices_supported = true;
+
+  // Create the Totem graph.
+  create_graph(IJ, vertex_count, edge_count, attr.edge_sort_dsc);
 
   // OpenMP attributes.
   omp_set_num_threads(b_options->thread_count);
@@ -198,9 +205,9 @@ int create_graph_from_edgelist(struct packed_edge* IJ, int64_t nedge) {
 
   // Static graph500 attributes.
   attr.push_msg_size      = (sizeof(vid_t) * BITS_PER_BYTE) + 1;
-  attr.pull_msg_size      = MSG_SIZE_ZERO;
-  attr.alloc_func         = graph500_alloc;
-  attr.free_func          = graph500_free;
+  attr.pull_msg_size      = 1;
+  attr.alloc_func         = graph500_stepwise_alloc;
+  attr.free_func          = graph500_stepwise_free;
 
   // Free the edge list to free up space for creating Totem's partitined graph.
   free(IJ);
@@ -215,15 +222,21 @@ int create_graph_from_edgelist(struct packed_edge* IJ, int64_t nedge) {
   return 0;
 }
 
-int make_bfs_tree(int64_t* bfs_tree_out, int64_t* max_vtx_out,
-                  int64_t srcvtx) {
+double make_bfs_tree(bfs_tree_t* bfs_tree_out, int64_t* max_vtx_out,
+                     int64_t srcvtx) {
   totem_timing_reset();
   stopwatch_t stopwatch;
   stopwatch_start(&stopwatch);
   *max_vtx_out = graph->vertex_count - 1;
-  CALL_SAFE(graph500_hybrid(srcvtx, bfs_tree_out));
+  CALL_SAFE(graph500_stepwise_hybrid(srcvtx, bfs_tree_out));
   print_timing(graph, stopwatch_elapsed(&stopwatch), graph->edge_count, true);
-  return 0;
+
+  // Get and return algorithm execution time as expected by Graph500.
+  const totem_timing_t* timers = totem_timing();
+  double time_solution = timers->alg_init + timers->alg_exec;
+
+  // Divide by 1000 to convert ms (Totem) to seconds (Graph500).
+  return time_solution / 1000.0;
 }
 
 void destroy_graph() {

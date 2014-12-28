@@ -24,6 +24,7 @@ extern int NBFS;
 
 extern int64_t SCALE;
 extern int64_t edgefactor;
+extern bool no_verify;
 
 void get_options (int argc, char **argv);
 

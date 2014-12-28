@@ -198,14 +198,20 @@ static const int hybrid_configurations_count = STATIC_ARRAY_COUNT(totem_attrs);
 typedef struct {
   totem_attr_t* attr;  // Attributes for totem-based implementations.
   void*         func;  // The algorithm function to be tested.
+  totem_cb_func_t hybrid_alloc;  // Allocates state for totem-based versions.
+  totem_cb_func_t hybrid_free;  // Frees state for totem-based versions.
 } test_param_t;
 
 // Adds a test parameter to the passed vector of parameters.
 static void PushParam(std::vector<test_param_t>* params_vector,
-                      totem_attr_t* attr, void* func) {
+                      totem_attr_t* attr, void* func,
+                      totem_cb_func_t hybrid_alloc = NULL,
+                      totem_cb_func_t hybrid_free = NULL) {
   test_param_t param;
   param.attr = attr;
   param.func = func;
+  param.hybrid_alloc = hybrid_alloc;
+  param.hybrid_free = hybrid_free;
   params_vector->push_back(param);
 }
 
@@ -213,7 +219,9 @@ static void PushParam(std::vector<test_param_t>* params_vector,
 // to be tested.
 static test_param_t** GetParameters(test_param_t** params, int params_count,
                                     void** vanilla_funcs, int vanilla_count,
-                                    void** hybrid_funcs, int hybrid_count) {
+                                    void** hybrid_funcs, int hybrid_count,
+                                    totem_cb_func_t* hybrid_alloc_funcs = NULL,
+                                    totem_cb_func_t* hybrid_free_funcs = NULL) {
   // When this function is passed as a parameter to "ValuesIn" in the context of
   // INSTANTIATE_TEST_CASE_P macro, it gets invoked more than once within
   // the macro; therefore, the following hack is used to ensure that
@@ -234,7 +242,9 @@ static test_param_t** GetParameters(test_param_t** params, int params_count,
   for (int i = 0; i < hybrid_count; i++) {
     // Add the different configurations of the hybrid implementation.
     for (uint32_t j = 0; j < hybrid_configurations_count; j++) {
-      PushParam(&params_vector, &totem_attrs[j], hybrid_funcs[i]);
+      PushParam(&params_vector, &totem_attrs[j], hybrid_funcs[i],
+                hybrid_alloc_funcs ? hybrid_alloc_funcs[i] : NULL,
+                hybrid_free_funcs ? hybrid_free_funcs[i] : NULL);
     }
   }
 

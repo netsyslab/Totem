@@ -1,5 +1,5 @@
 /**
- * A thread-safe bitmap implementation 
+ * A thread-safe bitmap implementation
  *
  *  Created on: 2012-07-06
  *  Author: Abdullah Gharaibeh
@@ -43,14 +43,16 @@ __device__ __host__ inline size_t bitmap_bits_to_words(vid_t len) {
  * @return an initialized bitmap
 */
 inline bitmap_t bitmap_init_cpu(size_t len) {
-  bitmap_t map = (bitmap_t)calloc(bitmap_bits_to_bytes(len), 1);
+  bitmap_t map = reinterpret_cast<bitmap_t>(
+      calloc(bitmap_bits_to_bytes(len), 1));
   assert(map);
   return map;
 }
 
 inline bitmap_t bitmap_init_gpu(size_t len) {
   bitmap_t map = NULL;
-  CALL_CU_SAFE(cudaMalloc((void**)&(map), bitmap_bits_to_bytes(len)));
+  CALL_CU_SAFE(cudaMalloc(reinterpret_cast<void**>(&map),
+                          bitmap_bits_to_bytes(len)));
   CALL_CU_SAFE(cudaMemset(map, 0, bitmap_bits_to_bytes(len)));
   return map;
 }
@@ -70,14 +72,14 @@ inline void bitmap_finalize_gpu(bitmap_t map) {
 }
 
 /**
- * Clears all the bits 
+ * Clears all the bits
  * @param[in] bitmap bitmap to be reset
 */
 inline void bitmap_reset_cpu(bitmap_t map, size_t len) {
   memset(map, 0, bitmap_bits_to_bytes(len));
 }
 
-inline void bitmap_reset_gpu(bitmap_t map, size_t len, 
+inline void bitmap_reset_gpu(bitmap_t map, size_t len,
                              cudaStream_t stream = 0) {
   CALL_CU_SAFE(cudaMemsetAsync(map, 0, bitmap_bits_to_bytes(len), stream));
 }
@@ -89,14 +91,15 @@ inline void bitmap_reset_gpu(bitmap_t map, size_t len,
  * @return true if the bit is set, false if it was already set
 */
 inline bool bitmap_set_cpu(bitmap_t map, vid_t bit) {
-  bitmap_word_t mask = bitmap_bit_mask(bit);
-  return !(__sync_fetch_and_or(&(map[bit / BITMAP_BITS_PER_WORD]), 
-                               mask) & mask);
+  vid_t word = bit / BITMAP_BITS_PER_WORD;
+  bitmap_word_t mask = (bitmap_word_t)1 << (bit - word * BITMAP_BITS_PER_WORD);
+  return !(__sync_fetch_and_or(&(map[word]), mask) & mask);
 }
 
 __device__ inline bool bitmap_set_gpu(bitmap_t map, vid_t bit) {
-  bitmap_word_t mask = bitmap_bit_mask(bit);
-  return !(atomicOr(&(map[bit / BITMAP_BITS_PER_WORD]), mask) & mask);
+  vid_t word = bit / BITMAP_BITS_PER_WORD;
+  bitmap_word_t mask = (bitmap_word_t)1 << (bit - word * BITMAP_BITS_PER_WORD);
+  return !(atomicOr(&(map[word]), mask) & mask);
 }
 
 /**
@@ -106,14 +109,15 @@ __device__ inline bool bitmap_set_gpu(bitmap_t map, vid_t bit) {
  * @return true if the bit is unset, false if it was already unset
 */
 inline bool bitmap_unset_cpu(bitmap_t map, vid_t bit) {
-  bitmap_word_t mask = bitmap_bit_mask(bit);
-  return (__sync_fetch_and_and(&(map[bit / BITMAP_BITS_PER_WORD]), 
-                               ~mask) & mask);
+  vid_t word = bit / BITMAP_BITS_PER_WORD;
+  bitmap_word_t mask = (bitmap_word_t)1 << (bit - word * BITMAP_BITS_PER_WORD);
+  return (__sync_fetch_and_and(&(map[word]), ~mask) & mask);
 }
 
 __device__ inline bool bitmap_unset_gpu(bitmap_t map, vid_t bit) {
-  bitmap_word_t mask = bitmap_bit_mask(bit);
-  return (atomicAnd(&(map[bit / BITMAP_BITS_PER_WORD]), ~mask) & mask);
+  vid_t word = bit / BITMAP_BITS_PER_WORD;
+  bitmap_word_t mask = (bitmap_word_t)1 << (bit - word * BITMAP_BITS_PER_WORD);
+  return (atomicAnd(&(map[word]), ~mask) & mask);
 }
 
 /**
@@ -123,7 +127,9 @@ __device__ inline bool bitmap_unset_gpu(bitmap_t map, vid_t bit) {
  * @return true if the bit is set, false if not
 */
 __host__ __device__ inline bool bitmap_is_set(bitmap_t map, vid_t bit) {
-  return (map[bit / BITMAP_BITS_PER_WORD] & bitmap_bit_mask(bit));
+  vid_t word = bit / BITMAP_BITS_PER_WORD;
+  bitmap_word_t mask = (bitmap_word_t)1 << (bit - word * BITMAP_BITS_PER_WORD);
+  return (map[word] & mask);
 }
 
 /**
@@ -148,20 +154,22 @@ __host__ __device__ inline bool bitmap_is_set(bitmap_word_t word, vid_t bit) {
  * @return the number of set bits
 */
 vid_t bitmap_count_cpu(bitmap_t bitmap, size_t len);
-vid_t bitmap_count_gpu(bitmap_t bitmap, size_t len, vid_t* count_d = NULL, 
+vid_t bitmap_count_gpu(bitmap_t bitmap, size_t len, vid_t* count_d = NULL,
                        cudaStream_t stream = 0);
+void bitmap_count_gpu(bitmap_t bitmap, size_t len, vid_t* count_h,
+                      vid_t* count_d, cudaStream_t stream = 0);
 
 /**
  * Diffs the two bitmaps and stores the result back in "diff"
  * @param[in] cur the current visited state bitmap
- * @param[in/out] diff at entry, represents the bitmap of last visited round, 
- *                when the function returns, it will represent the diff 
+ * @param[in/out] diff at entry, represents the bitmap of last visited round,
+ *                when the function returns, it will represent the diff
  *                between the current and last visited bitmaps.
  * @param[in] len the length of the bitmaps
  * @param[in] stream the stream within which this computation will be launched
 */
 void bitmap_diff_cpu(bitmap_t cur, bitmap_t diff, size_t len);
-void bitmap_diff_gpu(bitmap_t cur, bitmap_t diff, size_t len, 
+void bitmap_diff_gpu(bitmap_t cur, bitmap_t diff, size_t len,
                      cudaStream_t stream = 0);
 
 /**
@@ -172,17 +180,17 @@ void bitmap_diff_gpu(bitmap_t cur, bitmap_t diff, size_t len,
  * @param[in] stream the stream within which this computation will be launched
 */
 void bitmap_copy_cpu(bitmap_t src, bitmap_t dst, size_t len);
-void bitmap_copy_gpu(bitmap_t src, bitmap_t dst, size_t len, 
+void bitmap_copy_gpu(bitmap_t src, bitmap_t dst, size_t len,
                      cudaStream_t stream = 0);
 
 /**
  * A multi-purpose function that is motivated by traversal-based algorithms
  * to create the frontier bitmap. This function does two things: first, cur and
- * diff are xor-ed and the result is stored back in diff (i.e., diffing cur and 
+ * diff are xor-ed and the result is stored back in diff (i.e., diffing cur and
  * the old value in diff); second, copy cur bitmap to "copy".
  * @param[in] cur the current visited state bitmap
- * @param[in/out] diff at entry, represents the bitmap of last visited round, 
- *                when the function returns, it will represent the diff 
+ * @param[in/out] diff at entry, represents the bitmap of last visited round,
+ *                when the function returns, it will represent the diff
  *                between the current and last visited bitmaps (i.e., the
  *                frontier).
  * @param[out] copy used to backup the cur bitmap
@@ -198,13 +206,13 @@ void bitmap_diff_copy_cpu(bitmap_t cur, bitmap_t diff, bitmap_t copy,
 /**
  * A multi-purpose function that is motivated by traversal-based algorithms
  * to create the frontier bitmap and get the number of vertices in the frontier.
- * This function does three things: first, cur and diff are xor-ed and the 
+ * This function does three things: first, cur and diff are xor-ed and the
  * result is stored back in diff (i.e., diffing cur and the old value in diff);
  * second, count the number of set bits in diff after the diffing; finally,
  * copy cur bitmap to "copy".
  * @param[in] cur the current visited state bitmap
- * @param[in/out] diff at entry, represents the bitmap of last visited round, 
- *                when the function returns, it will represent the diff 
+ * @param[in/out] diff at entry, represents the bitmap of last visited round,
+ *                when the function returns, it will represent the diff
  *                between the current and last visited bitmaps (i.e., the
  *                frontier).
  * @param[out] copy used to backup the cur bitmap
@@ -217,10 +225,10 @@ void bitmap_diff_copy_cpu(bitmap_t cur, bitmap_t diff, bitmap_t copy,
  * @return the number of set bits in diff
 */
 vid_t bitmap_diff_copy_count_gpu(bitmap_t cur, bitmap_t diff, bitmap_t copy,
-                                 size_t len, vid_t* count_d = NULL, 
+                                 size_t len, vid_t* count_d = NULL,
                                  cudaStream_t stream = 0);
 vid_t bitmap_diff_copy_count_cpu(bitmap_t cur, bitmap_t diff, bitmap_t copy,
                                  size_t len);
 
 
-#endif // TOTEM_BITMAP_H
+#endif  // TOTEM_BITMAP_H

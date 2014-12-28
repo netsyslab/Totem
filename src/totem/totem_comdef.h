@@ -249,7 +249,7 @@ inline double stopwatch_elapsed(stopwatch_t* stopwatch) {
     stopwatch_t stopwatch;                                              \
     stopwatch_start(&stopwatch);                                        \
     func;                                                               \
-    printf("%s\t%f\n", #func, stopwatch_elapsed(&stopwatch)/1000.0);    \
+    printf("%s\t%f\n", #func, stopwatch_elapsed(&stopwatch));    \
     fflush(stdout);                                                     \
   } while (0)
 
