@@ -3,6 +3,8 @@
  * search algorithm using the totem framework. This is a modified version that
  * performs the algorithm in a Bottom Up fashion.
  *
+ * This implementation is modified to output a tree for the Graph500 spec.
+ *
  * This implementation only works for undirected graphs.
  *
  * Based off of the work by Scott Beamer et al.
@@ -22,8 +24,9 @@
 #include "totem_engine.cuh"
 
 // Per-partition specific state.
-typedef struct bfs_state_s {
-  cost_t*   cost;     // One slot per vertex in the partition.
+typedef struct graph500_state_s {
+  vid_t*   tree[MAX_PARTITION_COUNT];    // A list of trees, one for each
+                                         // remote partition.
   bitmap_t  visited[MAX_PARTITION_COUNT];   // A list of bitmaps, one for each
                                             // remote partition.
   bitmap_t  frontier[MAX_PARTITION_COUNT];  // A list of bitmaps, one for each
@@ -32,43 +35,37 @@ typedef struct bfs_state_s {
   cost_t    level;             // Current level to process by the partition.
   frontier_state_t frontier_state;   // Frontier management state.
   bool      skip_gather;      // Whether to skip the gather in the round.
-  vid_t*    permutation_map;  // Used to locally permute the result such that
-                              // the final aggregate loop performs sequential
-                              // memory accesses.
-  cost_t*   permuted_cost;    // Used to store the permuted local result in
-                              // each partition.
-} bfs_state_t;
+  vid_t*   local_to_global[MAX_PARTITION_COUNT];    // Local to global id map.
+} graph500_state_t;
 
 // State shared between all partitions.
-typedef struct bfs_global_state_s {
-  cost_t* cost;     // Final output buffer.
+typedef struct graph500_global_state_s {
+  bfs_tree_t*   tree;     // Final tree output buffer.
   vid_t   src;      // Source vertex id. (The id after partitioning.)
   bool    bu_step;  // Whether or not to perform a bottom up step.
-  vid_t*  map;      // Maps global id space to local space after the cost has
-                    // been permuted.
-  bool    map_allocated;  // Keeps track of the allocation status of the map.
-  cost_t* cost_h[MAX_PARTITION_COUNT];  // Used as a temporary buffer to receive
+  double    switch_parameter;    // Used to determine when to switch from
+                                 // top-down.
+  vid_t*  tree_h[MAX_PARTITION_COUNT];  // Used as a temporary buffer to receive
                                         // the final result copied back from GPU
                                         // partitions before being copied again
                                         // to the final output buffer.
-  double    switch_parameter;    // Used to determine when to switch from
-                                 // top-down.
-} bfs_global_state_t;
-PRIVATE bfs_global_state_t state_g = {NULL, 0, false, NULL, false};
+} graph500_global_state_t;
+PRIVATE graph500_global_state_t state_g = {NULL, 0, false, 0};
 
 // Checks for input parameters and special cases. This is invoked at the
 // beginning of public interfaces (GPU and CPU)
-PRIVATE error_t check_special_cases(vid_t src, cost_t* cost, bool* finished) {
+PRIVATE error_t check_special_cases(vid_t src, bfs_tree_t* tree,
+                                    bool* finished) {
   *finished = true;
-  if ((src >= engine_vertex_count()) || (cost == NULL)) {
+  if ((src >= engine_vertex_count()) || (tree == NULL)) {
     return FAILURE;
   } else if (engine_vertex_count() == 1) {
-    cost[0] = 0;
+    tree[0] = src;
     return SUCCESS;
   } else if (engine_edge_count() == 0) {
-    // Initialize cost to INFINITE.
-    totem_memset(cost, INF_COST, engine_vertex_count(), TOTEM_MEM_HOST);
-    cost[src] = 0;
+    // Initialize tree to INFINITE.
+    totem_memset(tree, (bfs_tree_t)(-1), engine_vertex_count(), TOTEM_MEM_HOST);
+    tree[src] = src;
     return SUCCESS;
   }
   *finished = false;
@@ -77,9 +74,11 @@ PRIVATE error_t check_special_cases(vid_t src, cost_t* cost, bool* finished) {
 
 // A step that iterates across the frontier of vertices and adds their
 // neighbours to the next frontier.
-PRIVATE void bfs_td_cpu(partition_t* par, bfs_state_t* state) {
+PRIVATE void graph500_td_cpu(partition_t* par, graph500_state_t* state) {
   graph_t* subgraph = &par->subgraph;
   bool finished = true;
+
+  const vid_t* local_to_global = state->local_to_global[par->id];
 
   // Iterate across all of our vertices.
   vid_t edge_frontier_count = 0;
@@ -98,11 +97,16 @@ PRIVATE void bfs_td_cpu(partition_t* par, bfs_state_t* state) {
       // Add the neighbour we are exploring to the next frontier.
       if (!bitmap_is_set(state->visited[nbr_pid], nbr)) {
         if (bitmap_set_cpu(state->visited[nbr_pid], nbr)) {
-          // Increment the level of this vertex.
+          // Locate the tree corresponding to the neighbour.
+          vid_t* tree = state->tree[nbr_pid];
+
+          // Add the vertex to the tree.
+          tree[nbr] = local_to_global[vertex_id];
           if (nbr_pid == par->id) {
-            state->cost[nbr] = state->level + 1;
             edge_frontier_count +=
                 subgraph->vertices[nbr + 1] - subgraph->vertices[nbr];
+          } else {
+            edge_frontier_count++;
           }
           finished = false;
         }
@@ -118,10 +122,13 @@ PRIVATE void bfs_td_cpu(partition_t* par, bfs_state_t* state) {
 
 // A step that iterates across unvisited vertices and determines
 // their status in the next frontier.
-PRIVATE void bfs_bu_cpu(partition_t* par, bfs_state_t* state) {
+PRIVATE void graph500_bu_cpu(partition_t* par, graph500_state_t* state) {
   graph_t* subgraph = &par->subgraph;
   bool finished = true;
   bitmap_t visited = state->visited[par->id];
+
+  // Locate the tree corresponding to our partition.
+  vid_t* tree = state->tree[par->id];
 
   // Iterate across all of our vertices.
   OMP(omp parallel for schedule(runtime) reduction(& : finished))
@@ -141,8 +148,9 @@ PRIVATE void bfs_bu_cpu(partition_t* par, bfs_state_t* state) {
         // Add the vertex we are exploring to the next frontier.
         bitmap_set_cpu(visited, vertex_id);
 
-        // Increment the level of this vertex.
-        state->cost[vertex_id] = state->level + 1;
+        // Add the vertex to the tree.
+        const vid_t* local_to_global = state->local_to_global[nbr_pid];
+        tree[vertex_id] = local_to_global[nbr];
         finished = false;
         break;
       }
@@ -155,14 +163,14 @@ PRIVATE void bfs_bu_cpu(partition_t* par, bfs_state_t* state) {
 
 // This is a CPU version of the Bottom-up/Top-down BFS algorithm.
 // See file header for full details.
-void bfs_stepwise_cpu(partition_t* par, bfs_state_t* state) {
+void graph500_stepwise_cpu(partition_t* par, graph500_state_t* state) {
   // Update the frontier.
   frontier_update_bitmap_cpu(&state->frontier_state, state->visited[par->id]);
   state->frontier[par->id] = state->frontier_state.current;
 
   if (state_g.bu_step) {
     // Execute a bottom up step.
-    bfs_bu_cpu(par, state);
+    graph500_bu_cpu(par, state);
   } else {
     // Copy the current state of the remote vertices bitmap.
     for (int pid = 0; pid < engine_partition_count(); pid++) {
@@ -173,7 +181,7 @@ void bfs_stepwise_cpu(partition_t* par, bfs_state_t* state) {
     }
 
     // Execute a top down step.
-    bfs_td_cpu(par, state);
+    graph500_td_cpu(par, state);
 
     // Diff the remote vertices bitmaps so that only the vertices who got set
     // in this round are notified.
@@ -186,22 +194,23 @@ void bfs_stepwise_cpu(partition_t* par, bfs_state_t* state) {
   }
 }
 
+template<typename eid_type>
 PRIVATE __device__ inline vid_t* get_edges_array(
-    const graph_t& graph, vid_t v) {
-  vid_t* edges = graph.edges + graph.vertices[v];
+    const graph_t& graph, const eid_type* __restrict vertices, vid_t v) {
+  vid_t* edges = graph.edges + vertices[v];
   if (v >= graph.vertex_ext) {
-    edges = graph.edges_ext + (graph.vertices[v] - graph.edge_count_ext);
+    edges = graph.edges_ext + (vertices[v] - graph.edge_count_ext);
   }
   return edges;
 }
 
 // A gpu version of the Bottom-up step as a kernel.
-template<int THREADS_PER_BLOCK>
-__global__ void bfs_bu_kernel(partition_t par, bfs_state_t state) {
+template<int THREADS_PER_BLOCK, typename eid_type>
+__global__ void graph500_bu_kernel(partition_t par, graph500_state_t state,
+                                   const eid_type* __restrict vertices) {
   const int kWarpWidth = 1;
   const vid_t kVertexCount = par.subgraph.vertex_count;
   const vid_t kVerticesPerBlock = BITMAP_BITS_PER_WORD * THREADS_PER_BLOCK;
-  const eid_t* __restrict vertices = par.subgraph.vertices;
   __shared__ bool nbrs_state[kVerticesPerBlock];
 
   vid_t block_start_index = BLOCK_GLOBAL_INDEX * kVerticesPerBlock;
@@ -214,12 +223,18 @@ __global__ void bfs_bu_kernel(partition_t par, bfs_state_t state) {
     vid_t v = block_start_index + i;
     nbrs_state[i] = false;
     if (!bitmap_is_set(kVisited, v)) {
-      const vid_t* __restrict edges = get_edges_array(par.subgraph, v);
+      const vid_t* __restrict edges = get_edges_array(
+          par.subgraph, vertices, v);
       const eid_t nbr_count = vertices[v + 1] - vertices[v];
       for (eid_t e = 0; e < nbr_count && !nbrs_state[i]; e++) {
         int nbr_pid = GET_PARTITION_ID(edges[e]);
         vid_t nbr = GET_VERTEX_ID(edges[e]);
-        nbrs_state[i] = bitmap_is_set(state.frontier[nbr_pid], nbr);
+        if (bitmap_is_set(state.frontier[nbr_pid], nbr)) {
+          nbrs_state[i] = true;
+          vid_t* tree = state.tree[par.id];
+          const vid_t* local_to_global = state.local_to_global[nbr_pid];
+          tree[v] = local_to_global[nbr];
+        }
       }
     }
   }
@@ -233,20 +248,19 @@ __global__ void bfs_bu_kernel(partition_t par, bfs_state_t state) {
   }
 
   vid_t start_vertex =
-      vwarp_block_start_vertex(kWarpWidth, BITMAP_BITS_PER_WORD) +
+      vwarp_block_start_vertex(kWarpWidth, BITMAP_BITS_PER_WORD,
+                               THREADS_PER_BLOCK) +
       vwarp_warp_start_vertex(kWarpWidth, BITMAP_BITS_PER_WORD);
   vid_t batch_size = vwarp_warp_batch_size(
-      kVertexCount, kWarpWidth, BITMAP_BITS_PER_WORD);
+      kVertexCount, kWarpWidth, BITMAP_BITS_PER_WORD, THREADS_PER_BLOCK);
 
   const bool* my_nbrs = &nbrs_state[THREAD_BLOCK_INDEX * BITMAP_BITS_PER_WORD];
   bitmap_t visited = state.visited[par.id];
   bitmap_word_t word = visited[start_vertex / BITMAP_BITS_PER_WORD];
   for (vid_t k = 0; k < batch_size; k++) {
-    vid_t v = start_vertex + k;
     bitmap_word_t mask = (bitmap_word_t)1 << k;
     if (my_nbrs[k]) {
       word |= mask;
-      state.cost[v] = state.level + 1;
       finished_block = false;
     }
   }
@@ -257,27 +271,31 @@ __global__ void bfs_bu_kernel(partition_t par, bfs_state_t state) {
   if (!finished_block && THREAD_BLOCK_INDEX == 0) *state.finished = false;
 }
 
-PRIVATE void bfs_bu_gpu(partition_t* par, bfs_state_t* state) {
+PRIVATE void graph500_bu_gpu(partition_t* par, graph500_state_t* state) {
   // The batch size is fixed at BITMAP_BITS_PER_WORD. This is necessary to avoid
   // using atomic operations when setting the visited bitmap.
-  const int threads = MAX_THREADS_PER_BLOCK;
+  const int threads = DEFAULT_THREADS_PER_BLOCK;
   dim3 blocks;
   kernel_configure(vwarp_thread_count(par->subgraph.vertex_count,
                                       1 /* warp width */,
                                       BITMAP_BITS_PER_WORD), blocks, threads);
-  bfs_bu_kernel<threads>
-      <<<blocks, threads, 0, par->streams[1]>>>(*par, *state);
+  if (par->subgraph.compressed_vertices) {
+    graph500_bu_kernel<threads><<<blocks, threads, 0, par->streams[1]>>>
+        (*par, *state, par->subgraph.vertices_d);
+  } else {
+    graph500_bu_kernel<threads><<<blocks, threads, 0, par->streams[1]>>>
+        (*par, *state, par->subgraph.vertices);
+  }
 }
 
-// A warp-based implementation of the top-down BFS kernel.
-template<int VWARP_WIDTH, int VWARP_BATCH>
-__global__ void bfs_td_kernel(partition_t par, bfs_state_t state,
-                              const vid_t* __restrict frontier,
-                              vid_t count) {
+// A warp-based implementation of the top-down graph500 kernel.
+template<int VWARP_WIDTH, int VWARP_BATCH, typename eid_type>
+__global__ void graph500_td_kernel(partition_t par, graph500_state_t state,
+                                   const eid_type* __restrict vertices,
+                                   const vid_t* __restrict frontier,
+                                   vid_t count) {
   if (THREAD_GLOBAL_INDEX >=
       vwarp_thread_count(count, VWARP_WIDTH, VWARP_BATCH)) { return; }
-
-  const eid_t* __restrict vertices = par.subgraph.vertices;
 
   // This flag is used to report the finish state of a block of threads. This
   // is useful to avoid having many threads writing to the global finished
@@ -293,19 +311,20 @@ __global__ void bfs_td_kernel(partition_t par, bfs_state_t state,
     vwarp_warp_batch_size(count, VWARP_WIDTH, VWARP_BATCH);
   int warp_offset = vwarp_thread_index(VWARP_WIDTH);
 
+  const vid_t* local_to_global = state.local_to_global[par.id];
+
   for (vid_t i = start_vertex; i < end_vertex; i++) {
     vid_t v = frontier[i];
     const eid_t nbr_count = vertices[v + 1] - vertices[v];
-    const vid_t* __restrict edges = get_edges_array(par.subgraph, v);
+    const vid_t* __restrict edges = get_edges_array(par.subgraph, vertices, v);
     for (vid_t i = warp_offset; i < nbr_count; i += VWARP_WIDTH) {
       int nbr_pid = GET_PARTITION_ID(edges[i]);
       vid_t nbr = GET_VERTEX_ID(edges[i]);
       bitmap_t visited = state.visited[nbr_pid];
       if (!bitmap_is_set(visited, nbr)) {
         if (bitmap_set_gpu(visited, nbr)) {
-          if (nbr_pid == par.id) {
-            state.cost[nbr] = state.level + 1;
-          }
+          vid_t* tree = state.tree[nbr_pid];
+          tree[nbr] = local_to_global[v];
           finished_block = false;
         }
       }
@@ -322,36 +341,41 @@ PRIVATE __host__ __device__
 #else
 PRIVATE __host__
 #endif  // FEATURE_SM35
-void bfs_td_launch_gpu(partition_t* par, bfs_state_t* state,
-                       vid_t* frontier_list, vid_t vertex_count,
-                       cudaStream_t stream) {
+void graph500_td_launch_gpu(partition_t* par, graph500_state_t* state,
+                            vid_t* frontier_list, vid_t vertex_count,
+                            cudaStream_t stream) {
   const int threads = MAX_THREADS_PER_BLOCK;
   dim3 blocks;
   assert(VWARP_WIDTH <= threads);
   kernel_configure(vwarp_thread_count(vertex_count, VWARP_WIDTH, BATCH_SIZE),
                    blocks, threads);
-  bfs_td_kernel<VWARP_WIDTH, BATCH_SIZE>
-      <<<blocks, threads, 0, stream>>>(*par, *state, frontier_list,
-                                       vertex_count);
+  if (par->subgraph.compressed_vertices) {
+    graph500_td_kernel<VWARP_WIDTH, BATCH_SIZE><<<blocks, threads, 0, stream>>>
+        (*par, *state, par->subgraph.vertices_d, frontier_list, vertex_count);
+  } else {
+    graph500_td_kernel<VWARP_WIDTH, BATCH_SIZE><<<blocks, threads, 0, stream>>>
+        (*par, *state, par->subgraph.vertices, frontier_list, vertex_count);
+  }
 }
 
-typedef void(*bfs_td_gpu_func_t)(partition_t*, bfs_state_t*, vid_t*, vid_t,
-                                 cudaStream_t);
+typedef void(*graph500_td_gpu_func_t)(partition_t*, graph500_state_t*, vid_t*,
+                                      vid_t, cudaStream_t);
 
 #ifdef FEATURE_SM35
 PRIVATE __global__
-void bfs_td_launch_at_boundary_gpu(partition_t par, bfs_state_t state) {
+void graph500_td_launch_at_boundary_gpu(
+    partition_t par, graph500_state_t state) {
   if (THREAD_GLOBAL_INDEX > 0 || (*state.frontier_state.count == 0)) {
     return;
   }
-  const bfs_td_gpu_func_t BFS_GPU_FUNC[] = {
-    bfs_td_launch_gpu<1,   2>,   // (0) < 8
-    bfs_td_launch_gpu<8,   8>,   // (1) > 8    && < 32
-    bfs_td_launch_gpu<32,  32>,   // (2) > 32   && < 128
-    bfs_td_launch_gpu<128, 32>,   // (3) > 128  && < 256
-    bfs_td_launch_gpu<256, 32>,   // (4) > 256  && < 1K
-    bfs_td_launch_gpu<512, 32>,   // (5) > 1K   && < 2K
-    bfs_td_launch_gpu<MAX_THREADS_PER_BLOCK, 8>,  // (6) > 2k
+  const graph500_td_gpu_func_t graph500_GPU_FUNC[] = {
+    graph500_td_launch_gpu<1,   2>,   // (0) < 8
+    graph500_td_launch_gpu<8,   8>,   // (1) > 8    && < 32
+    graph500_td_launch_gpu<32,  32>,   // (2) > 32   && < 128
+    graph500_td_launch_gpu<128, 32>,   // (3) > 128  && < 256
+    graph500_td_launch_gpu<256, 32>,   // (4) > 256  && < 1K
+    graph500_td_launch_gpu<512, 32>,   // (5) > 1K   && < 2K
+    graph500_td_launch_gpu<MAX_THREADS_PER_BLOCK, 8>,  // (6) > 2k
   };
 
   int64_t end = *(state.frontier_state.count);
@@ -361,7 +385,7 @@ void bfs_td_launch_at_boundary_gpu(partition_t par, bfs_state_t state) {
     if (count > 0) {
       cudaStream_t s;
       cudaStreamCreateWithFlags(&s, cudaStreamNonBlocking);
-      BFS_GPU_FUNC[i](&par, &state, state.frontier_state.list + start,
+      graph500_GPU_FUNC[i](&par, &state, state.frontier_state.list + start,
                       count, s);
       end = start;
     }
@@ -369,39 +393,40 @@ void bfs_td_launch_at_boundary_gpu(partition_t par, bfs_state_t state) {
 }
 #endif  // FEATURE_SM35
 
-PRIVATE void bfs_td_gpu(partition_t* par, bfs_state_t* state) {
+PRIVATE void graph500_td_gpu(partition_t* par, graph500_state_t* state) {
 #ifdef FEATURE_SM35
   if (engine_sorted()) {
     frontier_update_list_gpu(&state->frontier_state, par->streams[1]);
     frontier_update_boundaries_gpu(&state->frontier_state, &par->subgraph,
                                    par->streams[1]);
-    bfs_td_launch_at_boundary_gpu<<<1, 1, 0, par->streams[1]>>>(*par, *state);
+    graph500_td_launch_at_boundary_gpu<<<1, 1, 0, par->streams[1]>>>
+        (*par, *state);
     CALL_CU_SAFE(cudaGetLastError());
     return;
   }
 #endif  // FEATURE_SM35
 
-  // Call the BFS kernel.
-  const bfs_td_gpu_func_t BFS_GPU_FUNC[] = {
+  // Call the graph500 kernel.
+  const graph500_td_gpu_func_t graph500_GPU_FUNC[] = {
     // RANDOM algorithm
-    bfs_td_launch_gpu<VWARP_MEDIUM_WARP_WIDTH, VWARP_MEDIUM_BATCH_SIZE>,
+    graph500_td_launch_gpu<VWARP_MEDIUM_WARP_WIDTH, VWARP_MEDIUM_BATCH_SIZE>,
     // HIGH partitioning
-    bfs_td_launch_gpu<VWARP_MEDIUM_WARP_WIDTH, VWARP_MEDIUM_BATCH_SIZE>,
+    graph500_td_launch_gpu<VWARP_MEDIUM_WARP_WIDTH, VWARP_MEDIUM_BATCH_SIZE>,
     // LOW partitioning
-    bfs_td_launch_gpu<MAX_THREADS_PER_BLOCK, VWARP_MEDIUM_BATCH_SIZE>
+    graph500_td_launch_gpu<MAX_THREADS_PER_BLOCK, VWARP_MEDIUM_BATCH_SIZE>
   };
   int par_alg = engine_partition_algorithm();
   vid_t count = frontier_count_gpu(&state->frontier_state, par->streams[1]);
   if (count == 0) { return; }
   frontier_update_list_gpu(&state->frontier_state, par->streams[1]);
-  BFS_GPU_FUNC[par_alg](par, state, state->frontier_state.list, count,
+  graph500_GPU_FUNC[par_alg](par, state, state->frontier_state.list, count,
                         par->streams[1]);
   CALL_CU_SAFE(cudaGetLastError());
 }
 
-// This is a GPU version of the Bottom-up/Top-down BFS algorithm.
+// This is a GPU version of the Bottom-up/Top-down graph500 algorithm.
 // See file header for full details.
-__host__ void bfs_stepwise_gpu(partition_t* par, bfs_state_t* state) {
+__host__ void graph500_stepwise_gpu(partition_t* par, graph500_state_t* state) {
   // Update the frontier.
   frontier_update_bitmap_gpu(
       &state->frontier_state, state->visited[par->id], par->streams[1]);
@@ -409,7 +434,7 @@ __host__ void bfs_stepwise_gpu(partition_t* par, bfs_state_t* state) {
 
   if (state_g.bu_step) {
     // Execute a bottom up step.
-    bfs_bu_gpu(par, state);
+    graph500_bu_gpu(par, state);
   } else {
     // Copy the current state of the remote vertices bitmap.
     for (int pid = 0; pid < engine_partition_count(); pid++) {
@@ -420,7 +445,7 @@ __host__ void bfs_stepwise_gpu(partition_t* par, bfs_state_t* state) {
     }
 
     // Execute a top down step.
-    bfs_td_gpu(par, state);
+    graph500_td_gpu(par, state);
 
     // Diff the remote vertices bitmaps so that only the vertices who got set
     // in this round are notified.
@@ -434,9 +459,11 @@ __host__ void bfs_stepwise_gpu(partition_t* par, bfs_state_t* state) {
 }
 
 // The execution phase - based off of the partition we are, launch an approach.
-PRIVATE void bfs(partition_t* par) {
-  bfs_state_t* state = reinterpret_cast<bfs_state_t*>(par->algo_state);
-  if (par->subgraph.vertex_count == 0) { return; }
+PRIVATE void graph500(partition_t* par) {
+  if (par->subgraph.vertex_count == 0 ||
+      par->subgraph.edge_count == 0) { return; }
+  graph500_state_t* state =
+      reinterpret_cast<graph500_state_t*>(par->algo_state);
 
   // Ignore the first round - this allows us to communicate the frontier with
   // an updated visited status of the source vertex.
@@ -448,7 +475,7 @@ PRIVATE void bfs(partition_t* par) {
 
   // The switching thresholds has been determined empirically. Consider looking
   // at them again if they did not work for specific workloads.
-  if ((state_g.switch_parameter >= 1 && state_g.bu_step == false) ||
+  if ((state_g.switch_parameter >= 2 && state_g.bu_step == false) ||
       (engine_superstep() == 5 && state_g.bu_step)) {
     state->skip_gather = true;
     return;
@@ -456,9 +483,9 @@ PRIVATE void bfs(partition_t* par) {
 
   // Launch the processor specific algorithm.
   if (par->processor.type == PROCESSOR_CPU) {
-    bfs_stepwise_cpu(par, state);
+    graph500_stepwise_cpu(par, state);
   } else if (par->processor.type == PROCESSOR_GPU) {
-    bfs_stepwise_gpu(par, state);
+    graph500_stepwise_gpu(par, state);
   } else {
     assert(false);
   }
@@ -467,8 +494,8 @@ PRIVATE void bfs(partition_t* par) {
   state->level++;
 }
 
-PRIVATE void bfs_gather_cpu(partition_t* par, bfs_state_t* state,
-                            grooves_box_table_t* inbox) {
+PRIVATE void graph500_gather_cpu(partition_t* par, graph500_state_t* state,
+                                 grooves_box_table_t* inbox) {
   const vid_t words = bitmap_bits_to_words(inbox->count);
   bitmap_t bitmap = reinterpret_cast<bitmap_t>(inbox->pull_values);
 
@@ -491,8 +518,8 @@ PRIVATE void bfs_gather_cpu(partition_t* par, bfs_state_t* state,
 
 // Gather for the GPU bitmap to inbox.
 template<int THREADS_PER_BLOCK>
-__global__ void bfs_gather_gpu(partition_t par, bfs_state_t state,
-                               grooves_box_table_t inbox) {
+__global__ void graph500_gather_gpu(partition_t par, graph500_state_t state,
+                                    grooves_box_table_t inbox) {
   __shared__ bool active[BITMAP_BITS_PER_WORD * THREADS_PER_BLOCK];
   const vid_t kVerticesPerBlock = THREADS_PER_BLOCK * BITMAP_BITS_PER_WORD;
   vid_t block_start_index = BLOCK_GLOBAL_INDEX * kVerticesPerBlock;
@@ -524,10 +551,11 @@ __global__ void bfs_gather_gpu(partition_t par, bfs_state_t state,
 
 // The gather phase - apply values from the inboxes to the partitions' local
 // variables.
-PRIVATE void bfs_gather(partition_t* par) {
-  bfs_state_t* state = reinterpret_cast<bfs_state_t*>(par->algo_state);
-
-  if (par->subgraph.vertex_count == 0) { return; }
+PRIVATE void graph500_gather(partition_t* par) {
+  if (par->subgraph.vertex_count == 0 ||
+      par->subgraph.edge_count == 0) { return; }
+  graph500_state_t* state =
+      reinterpret_cast<graph500_state_t*>(par->algo_state);
 
   // Skip the communication on the final transitional round.
   if (state->skip_gather) { return; }
@@ -542,12 +570,12 @@ PRIVATE void bfs_gather(partition_t* par) {
 
     // Select a method based off of our processor type.
     if (par->processor.type == PROCESSOR_CPU) {
-      bfs_gather_cpu(par, state, inbox);
+      graph500_gather_cpu(par, state, inbox);
     } else if (par->processor.type == PROCESSOR_GPU) {
       dim3 blocks;
       const int threads = DEFAULT_THREADS_PER_BLOCK;
       kernel_configure(bitmap_bits_to_words(inbox->count), blocks, threads);
-      bfs_gather_gpu<threads><<<blocks, threads, 0, par->streams[1]>>>
+      graph500_gather_gpu<threads><<<blocks, threads, 0, par->streams[1]>>>
           (*par, *state, *inbox);
     } else {
       assert(false);
@@ -556,14 +584,16 @@ PRIVATE void bfs_gather(partition_t* par) {
 }
 
 // This is a scatter for CPU - copied from the original bfs_hybrid algorithm.
-PRIVATE inline void bfs_scatter_cpu(partition_t* par) {
-  bfs_state_t* state = reinterpret_cast<bfs_state_t*>(par->algo_state);
+PRIVATE inline void graph500_scatter_cpu(partition_t* par) {
+  graph500_state_t* state =
+      reinterpret_cast<graph500_state_t*>(par->algo_state);
   bitmap_t visited = state->visited[par->id];
   for (int rmt_pid = 0; rmt_pid < engine_partition_count(); rmt_pid++) {
     if (rmt_pid == par->id) { continue; }
     grooves_box_table_t* inbox = &par->inbox[rmt_pid];
     if (!inbox->count) { continue; }
     bitmap_t remotely_visited = (bitmap_t)inbox->push_values;
+    vid_t* tree = state->tree[par->id];
     OMP(omp parallel for schedule(runtime))
     for (vid_t word_index = 0; word_index < bitmap_bits_to_words(inbox->count);
          word_index++) {
@@ -575,7 +605,8 @@ PRIVATE inline void bfs_scatter_cpu(partition_t* par) {
             vid_t vid = inbox->rmt_nbrs[bit_index];
             if (!bitmap_is_set(visited, vid)) {
               bitmap_set_cpu(visited, vid);
-              state->cost[vid] = state->level;
+              tree[vid] = SET_PARTITION_ID(GET_VERTEX_ID(VERTEX_ID_MAX),
+                                           rmt_pid);
             }
           }
         }
@@ -587,9 +618,9 @@ PRIVATE inline void bfs_scatter_cpu(partition_t* par) {
 // This is a scatter for GPU - copied from the original bfs_hybrid algorithm.
 template<int VWARP_WIDTH, int BATCH_SIZE, int THREADS_PER_BLOCK>
 __global__ void
-bfs_scatter_kernel(const bitmap_t __restrict rmt_visited,
+graph500_scatter_kernel(const bitmap_t __restrict rmt_visited,
                    const vid_t* __restrict rmt_nbrs, vid_t word_count,
-                   bitmap_t visited, cost_t* cost, cost_t level) {
+                   bitmap_t visited, vid_t* tree, int rmt_pid) {
   if (THREAD_GLOBAL_INDEX >=
       vwarp_thread_count(word_count, VWARP_WIDTH, BATCH_SIZE)) { return; }
   vid_t start_word = vwarp_warp_start_vertex(VWARP_WIDTH, BATCH_SIZE) +
@@ -607,15 +638,16 @@ bfs_scatter_kernel(const bitmap_t __restrict rmt_visited,
         vid_t vid = rmt_nbrs[start_vertex + i];
         if (!bitmap_is_set(visited, vid)) {
           bitmap_set_gpu(visited, vid);
-          cost[vid] = level;
+          tree[vid] = SET_PARTITION_ID(GET_VERTEX_ID(VERTEX_ID_MAX), rmt_pid);
         }
       }
     }
   }
 }
 
-PRIVATE void bfs_scatter_gpu(partition_t* par) {
-  bfs_state_t* state = reinterpret_cast<bfs_state_t*>(par->algo_state);
+PRIVATE void graph500_scatter_gpu(partition_t* par) {
+  graph500_state_t* state =
+      reinterpret_cast<graph500_state_t*>(par->algo_state);
   for (int rmt_pid = 0; rmt_pid < engine_partition_count(); rmt_pid++) {
     if (rmt_pid == par->id) { continue; }
     grooves_box_table_t* inbox = &par->inbox[rmt_pid];
@@ -626,60 +658,35 @@ PRIVATE void bfs_scatter_gpu(partition_t* par) {
     const int threads = DEFAULT_THREADS_PER_BLOCK;
     kernel_configure(vwarp_thread_count(word_count, warp_size, batch_size),
                      blocks, threads);
-    bfs_scatter_kernel<warp_size, batch_size, threads>
+    graph500_scatter_kernel<warp_size, batch_size, threads>
         <<<blocks, threads, 0, par->streams[1]>>>
         ((bitmap_t)inbox->push_values, inbox->rmt_nbrs, word_count,
-         state->visited[par->id], state->cost, state->level);
+         state->visited[par->id], state->tree[par->id], rmt_pid);
     CALL_CU_SAFE(cudaGetLastError());
   }
 }
 
 // The main scatter function, used in the top down phases.
-PRIVATE void bfs_scatter(partition_t* par) {
+PRIVATE void graph500_scatter(partition_t* par) {
   if (par->processor.type == PROCESSOR_CPU) {
-    bfs_scatter_cpu(par);
+    graph500_scatter_cpu(par);
   } else if (par->processor.type == PROCESSOR_GPU) {
-    bfs_scatter_gpu(par);
+    graph500_scatter_gpu(par);
   } else {
     assert(false);
   }
 }
 
-PRIVATE __global__ void permute_kernel(partition_t par, bfs_state_t state) {
-  vid_t index = THREAD_GLOBAL_INDEX;
-  if (index >= par.subgraph.vertex_count) { return; }
-  state.permuted_cost[index] = state.cost[state.permutation_map[index]];
-}
-
-PRIVATE void bfs_permute(partition_t* par) {
-  if (!par->subgraph.vertex_count) { return; }
-  bfs_state_t* state = reinterpret_cast<bfs_state_t*>(par->algo_state);
-  if (par->processor.type == PROCESSOR_GPU) {
-    const int threads = MAX_THREADS_PER_BLOCK;
-    dim3 blocks;
-    kernel_configure(par->subgraph.vertex_count, blocks, threads);
-    permute_kernel<<<blocks, threads, 0, par->streams[1]>>>(*par, *state);
-    CALL_CU_SAFE(cudaMemcpyAsync(state_g.cost_h[par->id], state->permuted_cost,
-                                 par->subgraph.vertex_count * sizeof(cost_t),
-                                 cudaMemcpyDefault, par->streams[1]));
-  } else {
-    OMP(omp parallel for schedule(static))
-    for (vid_t i = 0; i < par->subgraph.vertex_count; i++) {
-      state->permuted_cost[i] = state->cost[state->permutation_map[i]];
-    }
-    state_g.cost_h[par->id] = state->permuted_cost;
-  }
-}
-
 // A simple kernel that sets the source vertex to visited on the GPU.
-__global__ void bfs_init_source_kernel(bitmap_t visited, vid_t src) {
+__global__ void graph500_init_source_kernel(bitmap_t visited, vid_t src) {
   if (THREAD_GLOBAL_INDEX != 0) { return; }
   bitmap_set_gpu(visited, src);
 }
 
 // Initialize the GPU memory - bitmaps and frontier.
-PRIVATE inline void bfs_init_gpu(partition_t* par) {
-  bfs_state_t* state = reinterpret_cast<bfs_state_t*>(par->algo_state);
+PRIVATE inline void graph500_init_gpu(partition_t* par) {
+  graph500_state_t* state =
+      reinterpret_cast<graph500_state_t*>(par->algo_state);
 
   // Reset the visited bitmap.
   bitmap_reset_gpu(state->visited[par->id], par->subgraph.vertex_count,
@@ -687,18 +694,19 @@ PRIVATE inline void bfs_init_gpu(partition_t* par) {
 
   // Initialize other partitions frontier bitmaps.
   for (int pid = 0; pid < engine_partition_count(); pid++) {
+    vid_t count = par->outbox[pid].count;
     // Assign the outboxes to our frontier bitmap pointers.
-    if (pid != par->id && par->outbox[pid].count != 0) {
+    if (pid != par->id && count != 0) {
       state->frontier[pid] =
         reinterpret_cast<bitmap_t>(par->outbox[pid].pull_values);
 
-      // Allocate the visited bitmaps for other partitions.
-      bitmap_reset_gpu(state->visited[pid], par->outbox[pid].count,
-                       par->streams[1]);
+      // Reset the visited bitmaps of other partitions.
+      bitmap_reset_gpu(state->visited[pid], count, par->streams[1]);
 
       // Clear the outboxes (push values).
       bitmap_reset_gpu(reinterpret_cast<bitmap_t>(par->outbox[pid].push_values),
-                       par->outbox[pid].count, par->streams[1]);
+                       count, par->streams[1]);
+
     }
 
     // Clear the inboxes (pull values), and also their shadows.
@@ -716,32 +724,34 @@ PRIVATE inline void bfs_init_gpu(partition_t* par) {
 
   // Set the source vertex as visited, if it is in our partition.
   if (GET_PARTITION_ID(state_g.src) == par->id) {
-    bfs_init_source_kernel<<<1, 1, 0, par->streams[1]>>>
+    graph500_init_source_kernel<<<1, 1, 0, par->streams[1]>>>
         (state->visited[par->id], GET_VERTEX_ID(state_g.src));
     CALL_CU_SAFE(cudaGetLastError());
   }
 }
 
 // Initialize the CPU memory - bitmaps and frontier.
-PRIVATE inline void bfs_init_cpu(partition_t* par) {
-  bfs_state_t* state = reinterpret_cast<bfs_state_t*>(par->algo_state);
+PRIVATE inline void graph500_init_cpu(partition_t* par) {
+  graph500_state_t* state =
+      reinterpret_cast<graph500_state_t*>(par->algo_state);
 
   // Clear the visited bitmap.
   bitmap_reset_cpu(state->visited[par->id], par->subgraph.vertex_count);
 
   // Initialize other partitions bitmaps.
   for (int pid = 0; pid < engine_partition_count(); pid++) {
+    vid_t count = par->outbox[pid].count;
     // Assign the outboxes to our frontier bitmap pointers.
-    if (pid != par->id && par->outbox[pid].count != 0) {
+    if (pid != par->id && count != 0) {
       state->frontier[pid] =
-        reinterpret_cast<bitmap_t>(par->outbox[pid].pull_values);
+          reinterpret_cast<bitmap_t>(par->outbox[pid].pull_values);
 
       // Reset the visited bitmaps of other partitions.
-      bitmap_reset_cpu(state->visited[pid], par->outbox[pid].count);
+      bitmap_reset_cpu(state->visited[pid], count);
 
       // Clear the push values.
-      bitmap_reset_cpu(reinterpret_cast<bitmap_t>(par->outbox[pid].push_values),
-                       par->outbox[pid].count);
+      bitmap_reset_cpu(
+          reinterpret_cast<bitmap_t>(par->outbox[pid].push_values), count);
     }
 
     // Clear the inboxes, and also their shadows.
@@ -749,8 +759,7 @@ PRIVATE inline void bfs_init_cpu(partition_t* par) {
       bitmap_reset_cpu(reinterpret_cast<bitmap_t>(par->inbox[pid].pull_values),
                        par->inbox[pid].count);
       bitmap_reset_cpu(reinterpret_cast<bitmap_t>
-                       (par->inbox[pid].pull_values_s),
-                       par->inbox[pid].count);
+                       (par->inbox[pid].pull_values_s), par->inbox[pid].count);
     }
   }
 
@@ -763,134 +772,31 @@ PRIVATE inline void bfs_init_cpu(partition_t* par) {
   }
 }
 
-PRIVATE vid_t* map_g = NULL;
-PRIVATE bool compare_global_ids_asc(const vid_t& id1, const vid_t& id2) {
-  return map_g[id1] < map_g[id2];
-}
-
-PRIVATE inline vid_t* bfs_alloc_prepare_permutation_map(partition_t* par) {
-  vid_t* permutation_map;
-  CALL_SAFE(totem_malloc(par->subgraph.vertex_count * sizeof(vid_t),
-                         TOTEM_MEM_HOST,
-                         reinterpret_cast<void**>(&permutation_map)));
-  OMP(omp parallel for schedule(static))
-  for (vid_t i = 0; i < par->subgraph.vertex_count; i++) {
-    permutation_map[i] = i;
-  }
-
-  map_g = par->map;
-  tbb::parallel_sort(permutation_map,
-                     permutation_map + par->subgraph.vertex_count,
-                     compare_global_ids_asc);
-
-  OMP(omp parallel for schedule(static))
-  for (vid_t i = 0; i < par->subgraph.vertex_count; i++) {
-    state_g.map[par->map[permutation_map[i]]] = SET_PARTITION_ID(i, par->id);
-  }
-
-  return permutation_map;
-}
-
-// Allocate the GPU memory - bitmaps and frontier.
-PRIVATE inline void bfs_alloc_gpu(partition_t* par) {
-  bfs_state_t* state = reinterpret_cast<bfs_state_t*>(par->algo_state);
-
-  // Allocate memory for the cost array, and set it to INFINITE cost.
-  CALL_SAFE(totem_malloc(par->subgraph.vertex_count * sizeof(cost_t),
-                         TOTEM_MEM_DEVICE,
-                         reinterpret_cast<void**>(&(state->cost))));
-
-  // Initialize our visited bitmap.
-  state->visited[par->id] = bitmap_init_gpu(par->subgraph.vertex_count);
-
-  // Initialize other partitions frontier bitmaps.
-  for (int pid = 0; pid < engine_partition_count(); pid++) {
-    // Assign the outboxes to our frontier bitmap pointers.
-    if (pid != par->id && par->outbox[pid].count != 0) {
-      // Allocate the visited bitmaps for other partitions.
-      state->visited[pid] = bitmap_init_gpu(par->outbox[pid].count);
-    }
-  }
-
-  // Allocate our local frontier.
-  frontier_init_gpu(&state->frontier_state, par->subgraph.vertex_count);
-
-  // Allocate the host pinned buffer that will received the final output
-  // from the GPU.
-  CALL_SAFE(totem_malloc(par->subgraph.vertex_count * sizeof(cost_t),
-                         TOTEM_MEM_HOST_PINNED,
-                         reinterpret_cast<void**>(&state_g.cost_h[par->id])));
-
-  CALL_SAFE(totem_malloc(par->subgraph.vertex_count * sizeof(cost_t),
-                         TOTEM_MEM_DEVICE,
-                         reinterpret_cast<void**>(&(state->permuted_cost))));
-  vid_t* permutation_map;
-  CALL_SAFE(totem_malloc(par->subgraph.vertex_count * sizeof(vid_t),
-                         TOTEM_MEM_HOST_MAPPED, reinterpret_cast<void**>(
-                             &(permutation_map))));
-  CALL_CU_SAFE(cudaHostGetDevicePointer(reinterpret_cast<void**>
-                                        (&(state->permutation_map)),
-                                        permutation_map, 0));
-  permutation_map = bfs_alloc_prepare_permutation_map(par);
-  cudaMemcpy(state->permutation_map, permutation_map,
-             par->subgraph.vertex_count * sizeof(vid_t),
-             cudaMemcpyDefault);
-  totem_free(permutation_map, TOTEM_MEM_HOST);
-}
-
-// Allocate the CPU memory - bitmaps and frontier.
-PRIVATE inline void bfs_alloc_cpu(partition_t* par) {
-  bfs_state_t* state = reinterpret_cast<bfs_state_t*>(par->algo_state);
-
-  // Allocate memory for the cost array, and set it to INFINITE cost.
-  CALL_SAFE(totem_malloc(par->subgraph.vertex_count * sizeof(cost_t),
-                         TOTEM_MEM_HOST,
-                         reinterpret_cast<void**>(&(state->cost))));
-
-  // Initialize our visited bitmap.
-  state->visited[par->id] = bitmap_init_cpu(par->subgraph.vertex_count);
-
-  // Initialize other partitions bitmaps.
-  for (int pid = 0; pid < engine_partition_count(); pid++) {
-    // Assign the outboxes to our frontier bitmap pointers.
-    if (pid != par->id && par->outbox[pid].count != 0) {
-      // Allocate the visited bitmaps for other partitions.
-      state->visited[pid] = bitmap_init_cpu(par->outbox[pid].count);
-    }
-  }
-
-  // Initialize our local frontier.
-  frontier_init_cpu(&state->frontier_state, par->subgraph.vertex_count);
-  state_g.cost_h[par->id] = state->cost;
-
-  CALL_SAFE(totem_malloc(par->subgraph.vertex_count * sizeof(cost_t),
-                         TOTEM_MEM_HOST,
-                         reinterpret_cast<void**>(&(state->permuted_cost))));
-  state->permutation_map = bfs_alloc_prepare_permutation_map(par);
-}
-
 // The init phase - Set up the memory and statuses.
-PRIVATE void bfs_init(partition_t* par) {
-  if (par->subgraph.vertex_count == 0) { return; }
-
-  bfs_state_t* state = reinterpret_cast<bfs_state_t*>(par->algo_state);
+PRIVATE void graph500_init(partition_t* par) {
+  if (par->subgraph.vertex_count == 0 ||
+      par->subgraph.edge_count == 0) { return; }
+  graph500_state_t* state =
+      reinterpret_cast<graph500_state_t*>(par->algo_state);
   totem_mem_t type = TOTEM_MEM_HOST;
   if (par->processor.type == PROCESSOR_CPU) {
-    bfs_init_cpu(par);
+    graph500_init_cpu(par);
   } else if (par->processor.type == PROCESSOR_GPU) {
     type = TOTEM_MEM_DEVICE;
-    bfs_init_gpu(par);
+    graph500_init_gpu(par);
   } else {
     assert(false);
   }
 
-  totem_memset(state->cost, INF_COST, par->subgraph.vertex_count, type,
-               par->streams[1]);
+  // Reset the local tree.
+  totem_memset(state->tree[par->id], VERTEX_ID_MAX, par->subgraph.vertex_count,
+               type, par->streams[1]);
 
   if (GET_PARTITION_ID(state_g.src) == par->id) {
-    // For the source vertex, initialize cost.
-    totem_memset(&((state->cost)[GET_VERTEX_ID(state_g.src)]), (cost_t)0, 1,
-                 type, par->streams[1]);
+    // For the source vertex, initialize tree.
+    totem_memset(&((state->tree[par->id])[GET_VERTEX_ID(state_g.src)]),
+                 engine_vertex_id_local_to_global(state_g.src), 1, type,
+                 par->streams[1]);
   }
 
   // Set level 0 to start, and finished pointer.
@@ -899,28 +805,152 @@ PRIVATE void bfs_init(partition_t* par) {
   state_g.switch_parameter = 0;
 }
 
-void bfs_stepwise_alloc(partition_t* par) {
-  if (par->subgraph.vertex_count == 0) { return; }
-  // Initialize based off of our processor type.
-  par->algo_state = calloc(1, sizeof(bfs_state_t));
-  assert(par->algo_state);
-  if (!state_g.map_allocated) {
-    state_g.map_allocated = true;
-    CALL_SAFE(totem_malloc(engine_vertex_count() * sizeof(vid_t),
-                           TOTEM_MEM_HOST,
-                           reinterpret_cast<void**>(&(state_g.map))));
-  }
-  if (par->processor.type == PROCESSOR_CPU) {
-    bfs_alloc_cpu(par);
+PRIVATE void graph500_aggregate(partition_t* par) {
+  if (!par->subgraph.vertex_count) { return; }
+  graph500_state_t* state =
+      reinterpret_cast<graph500_state_t*>(par->algo_state);
+  if (par->processor.type == PROCESSOR_GPU) {
+    CALL_CU_SAFE(cudaMemcpyAsync(state_g.tree_h[par->id], state->tree[par->id],
+                                 par->subgraph.vertex_count * sizeof(vid_t),
+                                 cudaMemcpyDefault, par->streams[1]));
   } else {
-    bfs_alloc_gpu(par);
+    state_g.tree_h[par->id] = state->tree[par->id];
   }
 }
 
-// The finalize phase - clean up.
-void bfs_stepwise_free(partition_t* par) {
+PRIVATE void graph500_alloc_prepare_maps(partition_t* par) {
+  graph500_state_t* state =
+      reinterpret_cast<graph500_state_t*>(par->algo_state);
+  if (par->processor.type == PROCESSOR_CPU) {
+    state->local_to_global[par->id] = par->map;
+  } else {
+    CALL_SAFE(totem_malloc(par->subgraph.vertex_count * sizeof(vid_t),
+                           TOTEM_MEM_DEVICE,
+                           (void**)&(state->local_to_global[par->id])));
+    CALL_CU_SAFE(cudaMemcpyAsync(state->local_to_global[par->id], par->map,
+                                 par->subgraph.vertex_count * sizeof(vid_t),
+                                 cudaMemcpyDefault, par->streams[1]));
+  }
+
+  for (int pid = 0; pid < engine_partition_count(); pid++) {
+    if (pid == par->id) { continue; }
+    vid_t* local_to_global;
+    if (par->processor.type == PROCESSOR_CPU) {
+      local_to_global = par->outbox[pid].rmt_nbrs;
+    } else {
+      CALL_SAFE(totem_malloc(par->outbox[pid].count * sizeof(vid_t),
+                             TOTEM_MEM_HOST, (void**)&(local_to_global)));
+      CALL_CU_SAFE(cudaMemcpyAsync(local_to_global,
+                                   par->outbox[pid].rmt_nbrs,
+                                   par->outbox[pid].count * sizeof(vid_t),
+                                   cudaMemcpyDefault, par->streams[1]));
+      CALL_CU_SAFE(cudaStreamSynchronize(par->streams[1]));
+    }
+
+    for (vid_t i = 0; i < par->outbox[pid].count; i++) {
+      local_to_global[i] = engine_vertex_id_local_to_global(
+          SET_PARTITION_ID(local_to_global[i], pid));
+    }
+
+    if (par->processor.type == PROCESSOR_GPU) {
+      CALL_CU_SAFE(cudaMemcpyAsync(par->outbox[pid].rmt_nbrs,
+                                   local_to_global,
+                                   par->outbox[pid].count * sizeof(vid_t),
+                                   cudaMemcpyDefault, par->streams[1]));
+      CALL_CU_SAFE(cudaStreamSynchronize(par->streams[1]));
+      totem_free(local_to_global, TOTEM_MEM_HOST);
+    }
+    state->local_to_global[pid] = par->outbox[pid].rmt_nbrs;
+  }
+}
+
+// Allocate the GPU memory - bitmaps and frontier.
+PRIVATE inline void graph500_alloc_gpu(partition_t* par) {
+  graph500_state_t* state =
+      reinterpret_cast<graph500_state_t*>(par->algo_state);
+
+  // Allocate memory for the trees.
+  CALL_SAFE(totem_malloc(par->subgraph.vertex_count * sizeof(vid_t),
+                         TOTEM_MEM_DEVICE, (void**)&(state->tree[par->id])));
+
+  // Initialize our visited bitmap.
+  state->visited[par->id] = bitmap_init_gpu(par->subgraph.vertex_count);
+
+  // Initialize other partitions frontier bitmaps.
+  for (int pid = 0; pid < engine_partition_count(); pid++) {
+    vid_t count = par->outbox[pid].count;
+    // Assign the outboxes to our frontier bitmap pointers.
+    if (pid != par->id && count != 0) {
+      // Allocate the visited bitmaps for other partitions.
+      state->visited[pid] = bitmap_init_gpu(count);
+      // Allocate the tree.
+      bitmap_t rmt_bitmap = (bitmap_t)par->outbox[pid].push_values;
+      state->tree[pid] = (vid_t*)(&rmt_bitmap[bitmap_bits_to_words(count)]);
+    }
+  }
+
+  // Allocate our local frontier.
+  frontier_init_gpu(&state->frontier_state, par->subgraph.vertex_count);
+
+  // Allocate the host pinned buffer that will received the final output
+  // from the GPU.
+  CALL_SAFE(totem_malloc(par->subgraph.vertex_count * sizeof(vid_t),
+                         TOTEM_MEM_HOST_PINNED,
+                         reinterpret_cast<void**>(&state_g.tree_h[par->id])));
+
+}
+
+// Allocate the CPU memory - bitmaps and frontier.
+PRIVATE inline void graph500_alloc_cpu(partition_t* par) {
+  graph500_state_t* state =
+      reinterpret_cast<graph500_state_t*>(par->algo_state);
+
+  // Allocate memory for the trees.
+  CALL_SAFE(totem_malloc(par->subgraph.vertex_count * sizeof(vid_t),
+                         TOTEM_MEM_HOST, (void**)&(state->tree[par->id])));
+  // Reset the local tree.
+  totem_memset(state->tree[par->id], VERTEX_ID_MAX,
+               par->subgraph.vertex_count, TOTEM_MEM_HOST, par->streams[1]);
+
+  // Initialize our visited bitmap.
+  state->visited[par->id] = bitmap_init_cpu(par->subgraph.vertex_count);
+
+  // Initialize other partitions bitmaps.
+  for (int pid = 0; pid < engine_partition_count(); pid++) {
+    vid_t count = par->outbox[pid].count;
+    // Assign the outboxes to our frontier bitmap pointers.
+    if (pid != par->id && count != 0) {
+      // Allocate the visited bitmaps for other partitions.
+      state->visited[pid] = bitmap_init_cpu(count);
+      // Allocate the tree.
+      bitmap_t rmt_bitmap = (bitmap_t)par->outbox[pid].push_values;
+      state->tree[pid] = (vid_t*)(&rmt_bitmap[bitmap_bits_to_words(count)]);
+    }
+  }
+
+  // Initialize our local frontier.
+  frontier_init_cpu(&state->frontier_state, par->subgraph.vertex_count);
+  state_g.tree_h[par->id] = state->tree[par->id];
+}
+
+void graph500_stepwise_alloc(partition_t* par) {
   if (par->subgraph.vertex_count == 0) { return; }
-  bfs_state_t* state = reinterpret_cast<bfs_state_t*>(par->algo_state);
+  // Initialize based off of our processor type.
+  par->algo_state = calloc(1, sizeof(graph500_state_t));
+  assert(par->algo_state);
+  if (par->processor.type == PROCESSOR_CPU) {
+    graph500_alloc_cpu(par);
+  } else {
+    graph500_alloc_gpu(par);
+  }
+  graph500_alloc_prepare_maps(par);
+}
+
+// The finalize phase - clean up.
+void graph500_stepwise_free(partition_t* par) {
+  if (par->subgraph.vertex_count == 0) { return; }
+  graph500_state_t* state =
+      reinterpret_cast<graph500_state_t*>(par->algo_state);
   totem_mem_t type = TOTEM_MEM_HOST;
 
   // Finalize frontiers.
@@ -931,7 +961,6 @@ void bfs_stepwise_free(partition_t* par) {
       if ((par->id == pid) || (par->outbox[pid].count == 0)) { continue; }
       bitmap_finalize_cpu(state->visited[pid]);
     }
-    totem_free(state->permutation_map, type);
   } else if (par->processor.type == PROCESSOR_GPU) {
     bitmap_finalize_gpu(state->visited[par->id]);
     type = TOTEM_MEM_DEVICE;
@@ -940,52 +969,117 @@ void bfs_stepwise_free(partition_t* par) {
       if ((par->id == pid) || (par->outbox[pid].count == 0)) { continue; }
       bitmap_finalize_gpu(state->visited[pid]);
     }
-    totem_free(state_g.cost_h[par->id], TOTEM_MEM_HOST_PINNED);
-    totem_free(state->permutation_map, TOTEM_MEM_HOST_MAPPED);
+    totem_free(state_g.tree_h[par->id], TOTEM_MEM_HOST_PINNED);
   } else {
     assert(false);
   }
 
-  if (state_g.map_allocated) {
-    state_g.map_allocated = false;
-    totem_free(state_g.map, TOTEM_MEM_HOST);
-  }
-
-  totem_free(state->cost, type);
-  totem_free(state->permuted_cost, type);
+  totem_free(state->tree[par->id], type);
   free(state);
   par->algo_state = NULL;
 }
 
-PRIVATE void bfs_final_aggregation() {
-  OMP(omp parallel for schedule(static))
-  for (vid_t v = 0; v < engine_vertex_count(); v++) {
-    vid_t local = state_g.map[v];
-    cost_t* cost = state_g.cost_h[GET_PARTITION_ID(local)];
-    state_g.cost[v] = cost[GET_VERTEX_ID(local)];
+PRIVATE inline void graph500_rmt_tree_scatter_cpu(grooves_box_table_t* inbox,
+                                               vid_t* tree, int rmt_pid) {
+  bitmap_t rmt_bitmap = (bitmap_t)inbox->push_values;
+  vid_t* rmt_tree = (vid_t*)(&rmt_bitmap[bitmap_bits_to_words(inbox->count)]);
+  OMP(omp parallel for schedule(runtime))
+  for (vid_t index = 0; index < inbox->count; index++) {
+    vid_t vid = inbox->rmt_nbrs[index];
+    if ((GET_VERTEX_ID(tree[vid]) == GET_VERTEX_ID(VERTEX_ID_MAX)) &&
+        (GET_PARTITION_ID(tree[vid]) == rmt_pid)) {
+      tree[vid] = rmt_tree[index];
+    }
   }
 }
 
-// The launch point for the algorithm - set up engine, cost, and launch.
-error_t bfs_stepwise_hybrid(vid_t src, cost_t* cost) {
+PRIVATE __global__ void
+graph500_rmt_tree_scatter_kernel(const vid_t* __restrict rmt_nbrs, vid_t count,
+                                 const vid_t* __restrict rmt_tree, vid_t* tree,
+                                 int rmt_pid) {
+  vid_t index = THREAD_GLOBAL_INDEX;
+  if (index >= count) return;
+  vid_t vid = rmt_nbrs[index];
+  if ((GET_VERTEX_ID(tree[vid]) == GET_VERTEX_ID(VERTEX_ID_MAX)) &&
+      (GET_PARTITION_ID(tree[vid]) == rmt_pid)) {
+    tree[vid] = rmt_tree[index];
+  }
+}
+
+PRIVATE void graph500_rmt_tree_scatter(partition_t* par) {
+  if (!par->subgraph.vertex_count) return;
+  graph500_state_t* state = (graph500_state_t*)par->algo_state;
+  for (int rmt_pid = 0; rmt_pid < engine_partition_count(); rmt_pid++) {
+    if (rmt_pid == par->id) continue;
+    grooves_box_table_t* inbox = &par->inbox[rmt_pid];
+    if (!inbox->count) continue;
+    if (par->processor.type == PROCESSOR_CPU) {
+      graph500_rmt_tree_scatter_cpu(inbox, state->tree[par->id], rmt_pid);
+    } else if (par->processor.type == PROCESSOR_GPU) {
+      const int threads = DEFAULT_THREADS_PER_BLOCK;
+      dim3 blocks;
+      kernel_configure(inbox->count, blocks, threads);
+      bitmap_t rmt_bitmap = (bitmap_t)inbox->push_values;
+      vid_t* rmt_tree =
+        (vid_t*)(&rmt_bitmap[bitmap_bits_to_words(inbox->count)]);
+      graph500_rmt_tree_scatter_kernel<<<blocks, threads, 0, par->streams[1]>>>
+        (inbox->rmt_nbrs, inbox->count, rmt_tree, state->tree[par->id],
+         rmt_pid);
+      CALL_CU_SAFE(cudaGetLastError());
+    } else {
+      assert(false);
+    }
+  }
+}
+
+void graph500_rmt_tree(partition_t* par) {
+  if (engine_superstep() == 1) {
+    engine_report_not_finished();
+  } else {
+    engine_report_no_comm(par->id);
+  }
+}
+
+PRIVATE void graph500_final_aggregation() {
+  vid_t* map = engine_vertex_id_in_partition();
+  OMP(omp parallel for schedule(static))
+  for (vid_t v = 0; v < engine_vertex_count(); v++) {
+    vid_t local = map[v];
+    vid_t* tree = state_g.tree_h[GET_PARTITION_ID(local)];
+    vid_t parent = tree[GET_VERTEX_ID(local)];
+    if (parent != VERTEX_ID_MAX) {
+      state_g.tree[v] = parent;
+    } else {
+      state_g.tree[v] = (bfs_tree_t)-1;
+    }
+  }
+}
+
+// The launch point for the algorithm - set up engine, tree, and launch.
+error_t graph500_stepwise_hybrid(vid_t src, bfs_tree_t* tree) {
   // Check for special cases.
   bool finished = false;
-  error_t rc = check_special_cases(src, cost, &finished);
+  error_t rc = check_special_cases(src, tree, &finished);
   if (finished) { return rc; }
 
   // Initialize the global state.
-  state_g.cost = cost;
+  state_g.tree = tree;
   state_g.src  = engine_vertex_id_in_partition(src);
 
   // Initialize the engines - one for the first top down step, and a second
   // to complete the algorithm with bottom up steps.
   // TODO(scott): Modify the swapping to flip back and forth simpler.
 
+  // During the main execution cycles, only one bit of communication per remote
+  // neighbour is needed.
+  engine_update_msg_size(GROOVES_PUSH, 1);
+
   // Begin by executing with top down steps.
   state_g.switch_parameter = 0;
   state_g.bu_step = false;
   engine_config_t config_td = {
-    NULL, bfs, bfs_scatter, NULL, bfs_init, NULL, NULL, GROOVES_PUSH
+    NULL, graph500, graph500_scatter, NULL, graph500_init,
+    NULL, NULL, GROOVES_PUSH
   };
   engine_config(&config_td);
   engine_execute();
@@ -993,7 +1087,8 @@ error_t bfs_stepwise_hybrid(vid_t src, cost_t* cost) {
   // Continue execution with bottom up steps.
   state_g.bu_step = true;
   engine_config_t config_bu = {
-    NULL, bfs, NULL, bfs_gather, NULL, NULL, NULL, GROOVES_PULL
+    NULL, graph500, NULL, graph500_gather, NULL,
+    NULL, NULL, GROOVES_PULL
   };
   engine_config(&config_bu);
   engine_execute();
@@ -1002,13 +1097,23 @@ error_t bfs_stepwise_hybrid(vid_t src, cost_t* cost) {
   state_g.switch_parameter = 0;
   state_g.bu_step = false;
   engine_config_t config_td2 = {
-    NULL, bfs, bfs_scatter, NULL, NULL, NULL, bfs_permute, GROOVES_PUSH
+    NULL, graph500, graph500_scatter, NULL, NULL,
+    NULL, NULL, GROOVES_PUSH
   };
   engine_config(&config_td2);
   engine_execute();
 
-  // Aggregate the result from the local cost arrays to the global one.
-  bfs_final_aggregation();
+  // Do a final run for remote tree scatter.
+  engine_config_t config_update_rmt_parents = {
+    NULL, graph500_rmt_tree, graph500_rmt_tree_scatter, NULL, NULL,
+    NULL, graph500_aggregate, GROOVES_PUSH
+  };
+  engine_config(&config_update_rmt_parents);
+  engine_reset_msg_size(GROOVES_PUSH);
+  engine_execute();
+
+  // Aggregate the result from the local tree arrays to the global one.
+  graph500_final_aggregation();
 
   return SUCCESS;
 }

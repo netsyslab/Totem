@@ -60,6 +60,12 @@ error_t check_cuda_version();
 int get_gpu_count();
 
 /**
+ * Returns the total amount of global memory available on device 0 in bytes.
+ * @return amount of global memory in bytes
+ */
+size_t get_gpu_device_memory();
+
+/**
  * Compares two vertex ids, used by the qsort function.
  * @return 0 if equal; 1, if *a > *b; and -1, if *b > *a
  */

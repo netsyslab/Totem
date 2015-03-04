@@ -109,9 +109,9 @@ __global__ void scatter_max(grooves_box_table_t inbox, T* dst) {
   _REDUCE_ENTRY_MAX(&inbox, index, dst);
 }
 
-// TODO (abdullah): There is a lot of repeated control code in the following 
-// template functions. We could have a single private template function that 
-// receives the operation as parameter and the other functions min, max, add, 
+// TODO (abdullah): There is a lot of repeated control code in the following
+// template functions. We could have a single private template function that
+// receives the operation as parameter and the other functions min, max, add,
 // etc would invoke it.
 template<typename T>
 void engine_scatter_inbox_add(uint32_t pid, T* dst) {
@@ -227,7 +227,7 @@ void engine_set_outbox(uint32_t pid, T value) {
       // TOD0(treza): Following memset function is not compatible with several
       // algorithms as it only accepts byte values. Use of asynchronous memset
       // requires more investigation.
-      //cudaMemsetAsync(values, value, outbox->count * sizeof(T), 
+      //cudaMemsetAsync(values, value, outbox->count * sizeof(T),
       //                par->streams[1]);
     } else {
       assert(par->processor.type == PROCESSOR_CPU);
@@ -271,7 +271,7 @@ inline bool* engine_get_finished_ptr() {
 inline bool* engine_get_finished_ptr(int pid) {
   bool* finished = context.finished;
   if (context.pset->partitions[pid].processor.type == PROCESSOR_GPU) {
-    CALL_CU_SAFE(cudaHostGetDevicePointer((void **)&(finished), 
+    CALL_CU_SAFE(cudaHostGetDevicePointer((void **)&(finished),
                                           (void *)context.finished, 0));
   }
   return finished;
@@ -315,6 +315,26 @@ inline int engine_get_comm_prev(int pid) {
 
 inline int engine_get_comm_curr(int pid) {
   return context.comm_curr[pid];
+}
+
+inline processor_type_t engine_get_processor_type(int pid) {
+  return context.pset->partitions[pid].processor.type;
+}
+
+inline bool engine_is_singletons(int pid) {
+  return (context.attr.separate_singletons &&
+          (pid == engine_partition_count() - 2));
+}
+
+inline vid_t engine_get_processor_vertex_count(processor_type_t type) {
+  partition_t* partitions = context.pset->partitions;
+  vid_t vertex_count = 0;
+  for (int pid = 0; pid < engine_partition_count(); pid++) {
+    if (partitions[pid].processor.type == type) {
+      vertex_count += partitions[pid].subgraph.vertex_count;
+    }
+  }
+  return vertex_count;
 }
 
 #endif  // TOTEM_ENGINE_INTERNAL_CUH

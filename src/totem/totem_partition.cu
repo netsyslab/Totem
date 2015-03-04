@@ -11,7 +11,7 @@
 #include "totem_partition.h"
 #include "totem_util.h"
 
-// TODO (scott): Non global variables
+// TODO(scott): Non global variables
 vid_t* map_g[MAX_PARTITION_COUNT] = {NULL};
 vid_t* id_in_partition_g = NULL;
 
@@ -24,8 +24,8 @@ vid_t* id_in_partition_g = NULL;
  *                     (Should be larger than 1)
  */
 PRIVATE void randomize_across_gpus(graph_t* graph, vid_t* partitions,
-                                   int gpu_count){
-  if (gpu_count < 2) return; // Nothing to do
+                                   int gpu_count) {
+  if (gpu_count < 2) { return; }  // Nothing to do
 
   uint32_t seed = GLOBAL_SEED;
 
@@ -55,7 +55,7 @@ PRIVATE void randomize_across_gpus(graph_t* graph, vid_t* partitions,
 PRIVATE error_t map_vertices_by_degree(graph_t* graph, int partition_count,
                                        vid_t* partitions,
                                        bool partition_random,
-                                       bool asc, vdegree_t* vd){
+                                       bool asc, vdegree_t* vd) {
   vid_t partition_vertex_count[MAX_PARTITION_COUNT];
   totem_memset(partition_vertex_count, (vid_t)0, MAX_PARTITION_COUNT,
                TOTEM_MEM_HOST);
@@ -90,7 +90,7 @@ PRIVATE error_t map_vertices_by_degree(graph_t* graph, int partition_count,
 
 // Overloaded for random partitioning. (Ascending, no vertex-degree array.)
 PRIVATE error_t map_vertices_by_degree(graph_t* graph, int partition_count,
-                                       vid_t* partitions){
+                                       vid_t* partitions) {
   map_vertices_by_degree(graph, partition_count, partitions,
                          true, /* Partitioning by random flag set.     */
                          true, /* No effect, ascending is fine.        */
@@ -100,7 +100,7 @@ PRIVATE error_t map_vertices_by_degree(graph_t* graph, int partition_count,
 // Overloaded for ordered calls.
 PRIVATE error_t map_vertices_by_degree(graph_t* graph, int partition_count,
                                        vid_t* partitions, bool asc,
-                                       vdegree_t* vd){
+                                       vdegree_t* vd) {
   map_vertices_by_degree(graph, partition_count, partitions,
                          false, /* Not partitioning randomly. */
                          asc, vd);
@@ -195,7 +195,7 @@ PRIVATE error_t partition_random(graph_t* graph, int partition_count,
   }
   *partition_labels = partitions;
 
-  if (attr->sorted){
+  if (attr->sorted) {
     map_vertices_by_degree(graph, partition_count, partitions);
   }
 
@@ -252,10 +252,12 @@ error_t partition_random(graph_t* graph, int partition_count,
 }
 
 PRIVATE bool compare_degrees_asc(const vdegree_t &a, const vdegree_t &b) {
+  if (a.degree == b.degree) { return (a.id < b.id); }
   return (a.degree < b.degree);
 }
 
 PRIVATE bool compare_degrees_dsc(const vdegree_t &a, const vdegree_t &b) {
+  if (a.degree == b.degree) { return (a.id < b.id); }
   return (a.degree > b.degree);
 }
 
@@ -304,26 +306,66 @@ error_t partition_by_sorted_degree(graph_t* graph, int partition_count,
 
   // At the beginning, assume that all vertices belong to the last partition
   for (vid_t v = 0; v < graph->vertex_count; v++) {
-    (*partition_labels)[v] = partition_count - 1;
+    // Separate singletons into a separate partition if desired.
+    if (attr->separate_singletons && vd[v].degree == 0) {
+      (*partition_labels)[vd[v].id] = partition_count - 2;
+    } else {
+      (*partition_labels)[vd[v].id] = partition_count - 1;
+    }
   }
 
-  // Assign vertices to partitions.
+  // Don't reassign to the CPU.
+  int p_offset = 1;
+  // In the case of separate singletons, also do not apply to that partition.
+  if (attr->separate_singletons) p_offset = 2;
+
+  // Assign vertices to partitions based off of a given alpha value.
   double total_elements = (double)graph->edge_count;
   vid_t index = 0;
-  for (int pid = 0; pid < partition_count - 1; pid++) {
+  for (int pid = 0; pid < partition_count - p_offset; pid++) {
     double assigned = 0;
     while ((assigned / total_elements < partition_fraction[pid]) &&
            (index < graph->vertex_count)) {
-      assigned += vd[index].degree;
-      (*partition_labels)[vd[index].id] = pid;
+      // If it is a singleton, separate it if desired.
+      if (attr->separate_singletons && vd[index].degree == 0) {
+        (*partition_labels)[vd[index].id] = partition_count - 2;
+      } else {
+        // Otherwise, assign it normally.
+        assigned += vd[index].degree;
+        (*partition_labels)[vd[index].id] = pid;
+      }
       index++;
     }
   }
 
-  if (attr->gpu_par_randomized){
+  // Lambda will be split amongst the GPU partitions.
+  float lambda = (attr->lambda);
+  if (partition_count - p_offset == 0) {
+    lambda = 0.0; // No GPUs.
+  } else {
+    lambda = lambda / (partition_count - p_offset);
+  }
+  // Reassign some vertices based off of a given lambda value.
+  index = graph->vertex_count - 1;
+  for (int pid = 0; pid < partition_count - p_offset; pid++) {
+    double assigned = 0;
+    while ((assigned / total_elements < lambda) && (index > 0)) {
+      // If it is a singleton, separate it if desired.
+      if (attr->separate_singletons && vd[index].degree == 0) {
+        (*partition_labels)[vd[index].id] = partition_count - 2;
+      } else {
+        // Otherwise, assign it normally.
+        assigned += vd[index].degree;
+        (*partition_labels)[vd[index].id] = pid;
+      }
+      index--;
+    }
+  }
+
+  if (attr->gpu_par_randomized) {
     randomize_across_gpus(graph, (*partition_labels), attr->gpu_count);
   }
-  if (attr->sorted){
+  if (attr->sorted) {
     map_vertices_by_degree(graph, partition_count, (*partition_labels),
                             asc, vd);
   }
@@ -364,7 +406,7 @@ PRIVATE error_t init_allocate_struct_space(graph_t* graph, int pcount,
   (*pset)->partitions = (partition_t*)calloc(pcount, sizeof(partition_t));
   assert((*pset)->partitions);
 
-  // TODO (scott): can we simplify this to not need the attribute?
+  // TODO(scott): can we simplify this to not need the attribute?
   // Assign the location for mapping id's to partitions.
   if (attr->sorted) {
     (*pset)->id_in_partition = id_in_partition_g;
@@ -408,9 +450,9 @@ PRIVATE void init_allocate_partitions_space(partition_set_t* pset,
           (eid_t*)malloc(sizeof(eid_t) * (subgraph->vertex_count + 1));
       assert(subgraph->vertices);
 
-      //TODO (scott): can we simplify this to not need the attribute?
+      // TODO(scott): can we simplify this to not need the attribute?
       // Assign the partition map.
-      if (attr->sorted){
+      if (attr->sorted) {
         partition->map = map_g[pid];
       } else {
         partition->map = (vid_t*)calloc(subgraph->vertex_count, sizeof(vid_t));
@@ -505,10 +547,10 @@ PRIVATE void init_build_partitions(partition_set_t* pset, vid_t* plabels,
   // partition will be renamed so that the ids are contiguous from 0 to
   // partition->subgraph.vertex_count - 1.
 
-  // TODO (scott): can we simplify this to not need the attribute?
+  // TODO(scott): can we simplify this to not need the attribute?
   // The init function is unnecessary if the vertex degree is mapped sorted,
   // it is taken care of before the partitions are built.
-  if(!attr->sorted) {
+  if (!attr->sorted) {
     init_build_map(pset, plabels);
   }
 
@@ -528,7 +570,8 @@ PRIVATE void init_sort_nbrs(partition_set_t* pset, totem_attr_t* attr) {
 }
 
 PRIVATE void init_build_partitions_gpu(partition_set_t* pset,
-                                       gpu_graph_mem_t gpu_graph_mem) {
+                                       gpu_graph_mem_t gpu_graph_mem,
+                                       bool supports_compressed_vertices) {
   uint32_t pcount = pset->partition_count;
   for (uint32_t pid = 0; pid < pcount; pid++) {
     partition_t* partition = &pset->partitions[pid];
@@ -542,8 +585,8 @@ PRIVATE void init_build_partitions_gpu(partition_set_t* pset,
     assert(subgraph_h);
     memcpy(subgraph_h, &partition->subgraph, sizeof(graph_t));
     graph_t* subgraph_d = NULL;
-    CALL_SAFE(graph_initialize_device(subgraph_h, &subgraph_d,
-                                      gpu_graph_mem));
+    CALL_SAFE(graph_initialize_device(
+        subgraph_h, &subgraph_d, gpu_graph_mem, supports_compressed_vertices));
     graph_finalize(subgraph_h);
     memcpy(&partition->subgraph, subgraph_d, sizeof(graph_t));
     free(subgraph_d);
@@ -552,15 +595,19 @@ PRIVATE void init_build_partitions_gpu(partition_set_t* pset,
 
 error_t partition_set_initialize(graph_t* graph, vid_t* plabels,
                                  processor_t* pproc, int pcount,
-                                 gpu_graph_mem_t gpu_graph_mem,
-                                 size_t push_msg_size, size_t pull_msg_size,
-                                 partition_set_t** pset, totem_attr_t* attr) {
+                                 totem_attr_t* attr, partition_set_t** pset) {
   assert(graph && plabels && pproc);
   if (pcount > MAX_PARTITION_COUNT) return FAILURE;
 
+  // Sort neighbours of each vertex by degree if specified (improves access
+  // locality of specific algorithms like stepwise BFS).
+  if (attr->edge_sort_by_degree) {
+    graph_sort_nbrs_by_degree(graph, attr->edge_sort_dsc);
+  }
+
   // Setup space and initialize the partition set data structure
-  CHK_SUCCESS(init_allocate_struct_space(graph, pcount, push_msg_size,
-                                         pull_msg_size, pset, attr), err);
+  CHK_SUCCESS(init_allocate_struct_space(graph, pcount, attr->push_msg_size,
+                                         attr->pull_msg_size, pset, attr), err);
 
   // Get the partition sizes
   init_compute_partitions_sizes(*pset, plabels);
@@ -571,14 +618,17 @@ error_t partition_set_initialize(graph_t* graph, vid_t* plabels,
   // Build the state of each partition
   init_build_partitions(*pset, plabels, attr);
 
-  // Sort nbrs of each each vertex to improve access locality
-  init_sort_nbrs(*pset, attr);
+  // Sort nbrs of each vertex by id (improves access locality).
+  if (!attr->edge_sort_by_degree) {
+    init_sort_nbrs(*pset, attr);
+  }
 
   // Initialize grooves' inbox and outbox state
   grooves_initialize(*pset);
 
   // Build the state on the GPU(s) for GPU residing partitions
-  init_build_partitions_gpu(*pset, gpu_graph_mem);
+  init_build_partitions_gpu(*pset, attr->gpu_graph_mem,
+                            attr->compressed_vertices_supported);
 
   return SUCCESS;
  err:
@@ -599,7 +649,9 @@ error_t partition_set_finalize(partition_set_t* pset) {
       CALL_CU_SAFE(cudaEventDestroy(partition->event_end));
       // TODO(abdullah): use graph_finalize instead of manually
       // freeing the buffers
-      if (subgraph->gpu_graph_mem == GPU_GRAPH_MEM_MAPPED ||
+      if (subgraph->compressed_vertices) {
+        totem_free(subgraph->vertices_d, TOTEM_MEM_DEVICE);
+      } else if (subgraph->gpu_graph_mem == GPU_GRAPH_MEM_MAPPED ||
           subgraph->gpu_graph_mem == GPU_GRAPH_MEM_MAPPED_VERTICES) {
         totem_free(subgraph->mapped_vertices, TOTEM_MEM_HOST_MAPPED);
       } else {
@@ -621,8 +673,9 @@ error_t partition_set_finalize(partition_set_t* pset) {
         }
       }
 
-      if (subgraph->weighted && subgraph->weights)
+      if (subgraph->weighted && subgraph->weights) {
         CALL_CU_SAFE(cudaFree(subgraph->weights));
+      }
     } else {
       assert(partition->processor.type == PROCESSOR_CPU);
       if (subgraph->vertices) free(subgraph->vertices);
@@ -631,7 +684,7 @@ error_t partition_set_finalize(partition_set_t* pset) {
         free(subgraph->weights);
       }
     }
-    if (subgraph->vertices) free(partition->map);
+    if (subgraph->vertices) { free(partition->map); }
   }
   grooves_finalize(pset);
   free(pset->partitions);
