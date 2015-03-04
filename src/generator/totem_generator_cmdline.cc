@@ -30,6 +30,7 @@ const char* kRemoveSingletonsSubCommand = "REMOVE-SINGLETONS";
 const char* kSortNeighboursSubCommand = "SORT-NBRS";
 const char* kSortVerticesSubCommand = "SORT-VERTICES";
 const char* kUndirectedSubCommand = "UNDIRECTED";
+const char* kRandomWeightsSubCommand = "RANDOM-WEIGHTS";
 
 const char* kCreateCommand = "CREATE";
 const char* kRmatSubCommand = "RMAT";
@@ -41,7 +42,8 @@ PRIVATE const std::map<std::string, std::set<std::string> > commands = {
   {kAnalyzeCommand, {kSummarySubCommand, kDegreeDistributionSubCommand}},
   {kAlterCommand, {kBinarySubCommand, kPermuteSubCommand, kReverseSubCommand,
                    kRemoveSingletonsSubCommand, kSortNeighboursSubCommand,
-                   kSortVerticesSubCommand, kUndirectedSubCommand}},
+                   kSortVerticesSubCommand, kUndirectedSubCommand,
+                   kRandomWeightsSubCommand}},
   {kCreateCommand, {kRmatSubCommand, kUniformSubCommand}}
 };
 
@@ -94,6 +96,10 @@ const std::map<std::string, std::string> help_map = {
     kUndirectedSubCommand,
     "\tGenerates a new undirected graph from the given one.\n"
   },
+  {
+    kRandomWeightsSubCommand,
+    "\tGenerates a new graph with random weights attached to its edgs.\n"
+  },
 
   // "Create" command and sub-commands handlers.
   {
@@ -124,7 +130,7 @@ PRIVATE void display_help(char* exe_name, int exit_err,
          "\nCommands:\n"
          "ANALYZE {%s | %s} <graph file>\n"
          "ALTER {%s | %s | %s | %s | %s |\n"
-         "       %s | %s} <graph file>\n"
+         "       %s | %s | %s} <graph file>\n"
          "CREATE {%s | %s} [options] <graph file>\n"
          "\nOptions (the applicable command is indicated between <>):\n"
          "  -sNUM   <CREATE> Scale of the number of vertices (default 20)\n"
@@ -146,8 +152,8 @@ PRIVATE void display_help(char* exe_name, int exit_err,
          kSummarySubCommand, kDegreeDistributionSubCommand, kBinarySubCommand,
          kPermuteSubCommand, kRemoveSingletonsSubCommand, kReverseSubCommand,
          kSortNeighboursSubCommand, kSortVerticesSubCommand,
-         kUndirectedSubCommand, kRmatSubCommand, kUniformSubCommand,
-         exe_basename.c_str());
+         kUndirectedSubCommand, kRandomWeightsSubCommand, kRmatSubCommand,
+         kUniformSubCommand, exe_basename.c_str());
 
   if (exit_err == 0) {
     printf("\n\nDetailed descriptions of commands:\n");

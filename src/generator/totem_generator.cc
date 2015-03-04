@@ -769,6 +769,20 @@ PRIVATE error_t alter_sort_neighbours_handler(
   return SUCCESS;
 }
 
+PRIVATE error_t alter_random_weights_handler(
+    generator_config_t* config, graph_t* graph, graph_t** weighted_graph) {
+  if (graph->weighted) { return FAILURE; }
+  graph->weighted = true;
+  graph->weights =
+      reinterpret_cast<weight_t*>(malloc(graph->edge_count * sizeof(weight_t)));
+  for (eid_t e = 0; e < graph->edge_count; e++) {
+    // weights are chosen from the range [0, vertex_count].
+    graph->weights[e] = drand48() * graph->vertex_count;
+  }
+  *weighted_graph = graph;
+  return SUCCESS;
+}
+
 // TODO(abdullah): Take weights into consideration.
 void alter_handler(generator_config_t* config) {
   graph_t* graph;
@@ -787,6 +801,7 @@ void alter_handler(generator_config_t* config) {
     {kSortNeighboursSubCommand, alter_sort_neighbours_handler},
     {kSortVerticesSubCommand, alter_sort_vertices_handler},
     {kUndirectedSubCommand, alter_undirected_handler},
+    {kRandomWeightsSubCommand, alter_random_weights_handler},
   };
 
   // Maps each alter sub-command with the extension to be used to store
@@ -799,6 +814,7 @@ void alter_handler(generator_config_t* config) {
     {kSortNeighboursSubCommand, ".sortedNbrs"},
     {kSortVerticesSubCommand, ".sortedVertices"},
     {kUndirectedSubCommand, ".undirected"},
+    {kRandomWeightsSubCommand, ".randWeights"},
   };
 
   assert(dispatch_map.find(config->sub_command) != dispatch_map.end());
