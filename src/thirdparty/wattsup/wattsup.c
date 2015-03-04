@@ -9,7 +9,7 @@
  *
  *	Compiled with:
  *
- *	gcc -O2 -Wall -o wattsup wattsup.c 
+ *	gcc -O2 -Wall -o wattsup wattsup.c
  *
  */
 
@@ -79,11 +79,11 @@ struct wu_data {
   unsigned int cost;
   unsigned int mo_kWh;
   unsigned int mo_cost;
-  unsigned int max_watts;  
+  unsigned int max_watts;
   unsigned int max_volts;
   unsigned int max_amps;
   unsigned int min_watts;
-  unsigned int min_volts;  
+  unsigned int min_volts;
   unsigned int min_amps;
   unsigned int power_factor;
   unsigned int duty_cycle;
@@ -95,7 +95,7 @@ struct wu_options {
   int   shortopt;
   int   param;
   int   flag;
-  char* value;  
+  char* value;
   char* descr;
   char* option;
   char* format;
@@ -105,7 +105,7 @@ struct wu_options {
 
 enum {
   wu_option_help = 0,
-  wu_option_version,  
+  wu_option_version,
   wu_option_debug,
   wu_option_count,
   wu_option_final,
@@ -119,7 +119,7 @@ enum {
   wu_option_header,
   wu_option_interval,
   wu_option_mode,
-  wu_option_user,  
+  wu_option_user,
   wu_option_info_all,
   wu_option_no_data,
   wu_option_set_only,
@@ -132,7 +132,7 @@ static char * wu_option_value(unsigned int index);
 enum {
   wu_field_watts = 0,
   wu_field_volts,
-  wu_field_amps,  
+  wu_field_amps,
   wu_field_watt_hours,
   wu_field_cost,
   wu_field_mo_kwh,
@@ -159,82 +159,82 @@ static struct wu_field wu_fields[wu_num_fields] = {
     .name	= "watts",
     .descr	= "Watt Consumption",
   },
-  
+
   [wu_field_min_watts] = {
     .name	= "min-watts",
     .descr	= "Minimum Watts Consumed",
   },
-  
+
   [wu_field_max_watts] = {
     .name	= "max-watts",
     .descr	= "Maxium Watts Consumed",
   },
-  
+
   [wu_field_volts] = {
     .name          = "volts",
     .descr         = "Volts Consumption",
   },
-  
+
   [wu_field_min_volts] = {
     .name = "max-volts",
     .descr = "Minimum Volts Consumed",
   },
-  
+
   [wu_field_max_volts] = {
     .name = "min-volts",
     .descr = "Maximum Volts Consumed",
   },
-  
+
   [wu_field_amps] = {
     .name = "amps",
     .descr = "Amp Consumption",
   },
-  
+
   [wu_field_min_amps] = {
     .name = "min-amps",
     .descr = "Minimum Amps Consumed",
   },
-  
+
   [wu_field_max_amps] = {
     .name = "max-amps",
     .descr = "Maximum Amps Consumed",
   },
-  
+
   [wu_field_watt_hours] = {
     .name = "kwh",
     .descr = "Average KWH",
   },
-  
+
   [wu_field_mo_kwh] = {
     .name	= "mo-kwh",
     .descr	= "Average monthly KWH",
   },
-  
+
   [wu_field_cost] = {
     .name  = "cost",
     .descr = "Cost per watt",
   },
-  
+
   [wu_field_mo_cost] = {
     .name = "mo-cost",
     .descr = "Monthly Cost",
   },
-  
+
   [wu_field_power_factor] = {
     .name = "power-factor",
     .descr = "Ratio of Watts vs. Volt Amps",
   },
-  
+
   [wu_field_duty_cycle] = {
     .name = "duty-cycle",
     .descr = "Percent of the Time On vs. Time Off",
   },
-  
+
   [wu_field_power_cycle] = {
     .name = "power-cycle",
     .descr = "Indication of power cycle",
   },
-  
+
 };
 
 
@@ -251,7 +251,7 @@ static void msg_end(void) {
 }
 
 static void msg(const char * fmt, ...) {
-  va_list ap; 
+  va_list ap;
   va_start(ap, fmt);
   vprintf(fmt, ap);
   va_end(ap);
@@ -259,7 +259,7 @@ static void msg(const char * fmt, ...) {
 }
 
 static void dbg(const char * fmt, ...) {
-  va_list ap;  
+  va_list ap;
   if (wu_debug) {
     va_start(ap, fmt);
     msg_start("%s: [debug] ", prog_name);
@@ -270,7 +270,7 @@ static void dbg(const char * fmt, ...) {
 }
 
 static void err(const char * fmt, ...) {
-  va_list ap; 
+  va_list ap;
   va_start(ap, fmt);
   fprintf(stderr, "%s: [error] ", prog_name);
   vfprintf(stderr, fmt, ap);
@@ -281,7 +281,7 @@ static void err(const char * fmt, ...) {
 static void perr(const char* fmt, ...) {
   char buf[1024];
   int n;
-  va_list ap;  
+  va_list ap;
   va_start(ap, fmt);
   n = sprintf(buf, "%s: [error] ", prog_name);
   vsnprintf(buf + n, sizeof(buf) - n, fmt, ap);
@@ -295,7 +295,7 @@ static int ret_err(int err) {
 }
 
 
-static void print_packet(struct wu_packet* p, char* str) {  
+static void print_packet(struct wu_packet* p, char* str) {
   if (!wu_suppress)
     msg_start("Watts Up? %s\n", str);
   for(int i = 0; i < p->count; i++) {
@@ -312,30 +312,29 @@ static void print_packet(struct wu_packet* p, char* str) {
 static void print_time(void) {
   time_t t;
   struct tm * tm;
-  
+
   if (wu_localtime || wu_gmtime) {
     time(&t);
-    
+
     if (wu_localtime)
       tm = localtime(&t);
     else
       tm = gmtime(&t);
-    
-    msg("[%02d:%02d:%02d] ", 
+
+    msg("[%02d:%02d:%02d] ",
         tm->tm_hour, tm->tm_min, tm->tm_sec);
   }
 }
 
-static void print_packet_filter(struct wu_packet * p, 
+static void print_packet_filter(struct wu_packet * p,
                                 int (*filter_ok)(struct wu_packet * p, int i, char * str)) {
   char buf[256];
-  int printed;
-  
+
   print_time();
   for(int i = 0, printed = 0; i < p->count; i++) {
     if (!filter_ok(p, i, buf))
       continue;
-    
+
     if (printed++)
       msg("%s", wu_newline ? "\n" : wu_delim);
     if (wu_label)
@@ -353,68 +352,68 @@ static int open_device(char * device_name, int * dev_fd) {
   struct stat s;
   int ret;
   int cur_fd;
-  
+
   cur_fd = open(".", O_RDONLY);
   if (cur_fd < 0) {
     perr("Could not open current directory.");
     return cur_fd;
   }
-  
+
   ret = chdir(sysfs_path_start);
   if (ret) {
     perr(sysfs_path_start);
     return ret;
   }
-  
+
   /*
    * First, check if /sys/class/tty/<name>/ exists.
    */
-  
+
   dbg("Checking sysfs path: %s/%s", sysfs_path_start, device_name);
-  
+
   ret = stat(device_name, &s);
   if (ret < 0) {
     perr(device_name);
     goto Done;
   }
-  
+
   if (!S_ISDIR(s.st_mode)) {
     errno = -ENOTDIR;
     err("%s is not a TTY device.", device_name);
     goto Done;
   }
-  
+
   dbg("%s is a registered TTY device", device_name);
-  
+
   fchdir(cur_fd);
-  
-  
+
+
   /*
    * Check if device node exists and is writable
    */
   chdir("/dev");
-  
+
   ret = stat(device_name, &s);
   if (ret < 0) {
     perr("/dev/%s (device node)", device_name);
     goto Done;
   }
-  
+
   if (!S_ISCHR(s.st_mode)) {
     errno = -ENOTTY;
     ret = -1;
     err("%s is not a TTY character device.", device_name);
     goto Done;
   }
-  
+
   dbg("%s has a device node", device_name);
-  
+
   ret = access(device_name, R_OK | W_OK);
   if (ret) {
     perr("%s: Not writable?", device_name);
     goto Done;
   }
-  
+
   ret = open(device_name, O_RDWR | O_NONBLOCK);
   if (ret < 0) {
     perr("Could not open %s");
@@ -432,24 +431,24 @@ static int open_device(char * device_name, int * dev_fd) {
 static int setup_serial_device(int dev_fd) {
   struct termios t;
   int ret;
-  
+
   ret = tcgetattr(dev_fd, &t);
   if (ret) return ret;
-  
+
   cfmakeraw(&t);
   cfsetispeed(&t, B115200);
   cfsetospeed(&t, B115200);
   tcflush(dev_fd, TCIFLUSH);
-  
+
   t.c_iflag |= IGNPAR;
   t.c_cflag &= ~CSTOPB;
   ret = tcsetattr(dev_fd, TCSANOW, &t);
-  
+
   if (ret) {
     perr("setting terminal attributes");
     return ret;
   }
-  
+
   return 0;
 }
 
@@ -458,12 +457,12 @@ static int wu_write(int fd, struct wu_packet* p) {
   int ret;
   int n;
   char * s = p->buf;
-  
+
   memset(p->buf, 0, sizeof(p->buf));
   n = sprintf(p->buf, "#%c,%c,%d", p->cmd, p->sub_cmd, p->count);
   p->len = n;
   s = p->buf + n;
-  
+
   for(int i = 0; i < p->count; i++) {
     if ((p->len + strlen(p->field[i]) + 4) >= sizeof(p->buf)) {
       err("Overflowed command string");
@@ -474,34 +473,34 @@ static int wu_write(int fd, struct wu_packet* p) {
     p->len += n;
   }
   p->buf[p->len++] = ';';
-  
-  dbg("Writing '%s' (strlen = %d) (len = %d) to device", 
+
+  dbg("Writing '%s' (strlen = %d) (len = %d) to device",
       p->buf, strlen(p->buf), p->len);
   ret = write(fd, p->buf, p->len);
   if (ret != p->len)
     perr("Writing to device");
-  
+
   return ret >= 0 ? 0 : ret;
 }
 
 
-static void dump_packet(struct wu_packet* p) {  
-  dbg("Packet - Command '%c' %d parameters", p->cmd, p->count);  
-  for(int i = 0; i < p->count; i++) 
+static void dump_packet(struct wu_packet* p) {
+  dbg("Packet - Command '%c' %d parameters", p->cmd, p->count);
+  for(int i = 0; i < p->count; i++)
     dbg("[%2d] [%20s] = \"%s\"", i, p->label[i], p->field[i]);
 }
 
 
 static int parse_packet(struct wu_packet * p) {
   char * s, *next;
-  
+
   p->buf[p->len] = '\0';
-  
-  dbg("Parsing Packet, Raw buffer is (%d bytes) [%s]", 
+
+  dbg("Parsing Packet, Raw buffer is (%d bytes) [%s]",
       p->len, p->buf);
-  
+
   s = p->buf;
-  
+
   /*
    * First character should be '#'
    */
@@ -517,7 +516,7 @@ static int parse_packet(struct wu_packet * p) {
     dbg("Invalid packet");
     return ret_err(EFAULT);
   }
-  
+
   /*
    * Command character is first
    */
@@ -529,10 +528,10 @@ static int parse_packet(struct wu_packet * p) {
     dbg("Invalid Command field [%s]", s);
     return ret_err(EFAULT);
   }
-  
+
   /*
    * Next character is the subcommand, and should be '-'
-   * Though, it doesn't matter, because we just 
+   * Though, it doesn't matter, because we just
    * discard it anyway.
    */
   next = strchr(s, ',');
@@ -543,9 +542,9 @@ static int parse_packet(struct wu_packet * p) {
     dbg("Invalid 2nd field");
     return ret_err(EFAULT);
   }
-  
+
   /*
-   * Next is the number of parameters, 
+   * Next is the number of parameters,
    * which should always be > 0.
    */
   next = strchr(s, ',');
@@ -557,17 +556,17 @@ static int parse_packet(struct wu_packet * p) {
     dbg("Couldn't determine number of parameters");
     return ret_err(EFAULT);
   }
-  
-  dbg("Have %d parameter%s (cmd = '%c')", 
+
+  dbg("Have %d parameter%s (cmd = '%c')",
       p->count, p->count > 1 ? "s" : "", p->cmd);
-  
+
   /*
    * Now, we loop over the rest of the string,
    * storing a pointer to each in p->field[].
    *
    * The last character was originally a ';', but may have been
    * overwritten with a '\0', so we make sure to catch
-   * that when converting the last parameter. 
+   * that when converting the last parameter.
    */
   for(int i = 0; i < p->count; i++) {
     next = strpbrk(s, ",;");
@@ -579,7 +578,7 @@ static int parse_packet(struct wu_packet * p) {
         return ret_err(EFAULT);
       }
     }
-    
+
     /*
      * Skip leading white space in fields
      */
@@ -800,7 +799,7 @@ static int wu_clear(int fd)
     perr("Clearing memory");
   else
     sleep(2);
- 
+
   /*
    * Dummy read
    */
@@ -840,7 +839,7 @@ static int wu_read_data(int fd)
 
   i = 0;
   while (1) {
-  
+
     ret = wu_read(fd, &p);
     if (ret) {
       if (++retry < wu_max_retry) {
@@ -865,9 +864,9 @@ static int wu_read_data(int fd)
     num_read++;
     print_packet_filter(&p, filter_data);
 
-    if (wu_count && (++i == wu_count)) 
+    if (wu_count && (++i == wu_count))
       break;
-  
+
     sleep(wu_interval);
   }
   return 0;
@@ -887,7 +886,7 @@ static int wu_show_interval(int fd)
     },
   };
   int ret;
- 
+
   ret = wu_write(fd, &p);
   if (ret) {
     perr("Requesting interval");
@@ -905,7 +904,7 @@ static int wu_show_interval(int fd)
   return 0;
 }
 
-static int wu_write_interval(int fd, unsigned int seconds, 
+static int wu_write_interval(int fd, unsigned int seconds,
                              unsigned int interval)
 {
   char str_seconds[wu_param_len];
@@ -985,7 +984,7 @@ static int wu_write_mode(int fd, int mode)
     },
   };
   int ret;
- 
+
   snprintf(str_mode, wu_param_len, "%ud", mode);
   ret = wu_write(fd, &p);
   if (ret)
@@ -1043,7 +1042,7 @@ static int wu_show_user(int fd)
 }
 
 
-static int wu_write_user(int fd, unsigned int kwh_cost, 
+static int wu_write_user(int fd, unsigned int kwh_cost,
                          unsigned int second_tier_cost,
                          unsigned int second_tier_threshold,
                          unsigned int duty_cycle_threshold)
@@ -1067,11 +1066,11 @@ static int wu_write_user(int fd, unsigned int kwh_cost,
   int ret;
 
   snprintf(str_kwh_cost, wu_param_len, "%ud", kwh_cost);
-  snprintf(str_2nd_tier_cost, wu_param_len, "%ud", 
+  snprintf(str_2nd_tier_cost, wu_param_len, "%ud",
            second_tier_cost);
-  snprintf(str_2nd_tier_threshold, wu_param_len, "%ud", 
+  snprintf(str_2nd_tier_threshold, wu_param_len, "%ud",
            second_tier_threshold);
-  snprintf(str_duty_cycle_threshold, wu_param_len, "%ud", 
+  snprintf(str_duty_cycle_threshold, wu_param_len, "%ud",
            duty_cycle_threshold);
 
   ret = wu_write(fd, &p);
@@ -1185,7 +1184,7 @@ static int wu_show_version(int);
 static int wu_store_count(int unused) {
   char * s = wu_option_value(wu_option_count);
   char * end;
-  
+
   if (s) {
     wu_count = strtol(s, &end, 0);
     if (*end) {
@@ -1203,7 +1202,7 @@ static int wu_store_debug(int unused) {
 
 static int wu_store_delim(int unused) {
   char * s = wu_option_value(wu_option_delim);
- 
+
   if (s)
     wu_delim = s;
   return 0;
@@ -1390,7 +1389,7 @@ static struct wu_options wu_options[] = {
    * W/o that parameter, they print values from the device.
    * W/ that parameter, they set that option and read data.
    *
-   * Except when the 'set-only' parameter is used, then the 
+   * Except when the 'set-only' parameter is used, then the
    * parameters are set, then re-read and printed.
    */
   [wu_option_interval] = {
@@ -1469,7 +1468,7 @@ static int wu_show_help(int unused) {
   printf("Usage: %s [<options> ... ] <device> [ <values> ... ]\n",
          prog_name);
   printf("\n");
- 
+
   printf("<device> is the serial port the device is connected at.\n");
   printf("\n");
 
@@ -1515,7 +1514,7 @@ static char * wu_option_value(unsigned int index) {
 
 static int wu_check_option_show(int index) {
   /*
-   * Return 1 if we need to print something out for 
+   * Return 1 if we need to print something out for
    * a particular option.
    */
   if (index < wu_num_options) {
@@ -1588,7 +1587,7 @@ static void make_longopt(struct option * l) {
 static void make_shortopt(char * str) {
   int i;
   char * s = str;
- 
+
   for(i = 0; i < wu_num_options; i++) {
     *s++ = wu_options[i].shortopt;
     if (wu_options[i].param)
@@ -1600,7 +1599,7 @@ static void enable_short_option(int c, char * arg) {
   int i;
 
   /*
-   * Friggin' getopt_long() will return the 
+   * Friggin' getopt_long() will return the
    * character if we get a short option (e.g. '-h'),
    * instead of returning 0 like it does when it
    * gets a long option (e.g. "--help"). Ugh.
@@ -1627,17 +1626,17 @@ static int parse_args(int argc, char ** argv) {
     int c;
     int index;
 
-    c = getopt_long(argc, argv, shortopts, 
+    c = getopt_long(argc, argv, shortopts,
                     longopts, &index);
     if (c == -1)
       break;
-  
+
     switch (c) {
       case 0:
         wu_options[index].flag = 1;
         if (optarg)
           wu_options[index].value = strdup(optarg);
-   
+
         printf("long option: val = %c, optarg = %s\n",
                wu_options[index].shortopt, optarg);
         break;
@@ -1652,7 +1651,7 @@ static int parse_args(int argc, char ** argv) {
   }
 
   /*
-   * Check for help request now and bail after 
+   * Check for help request now and bail after
    * printing it, if it's set.
    */
   if (wu_check_show(wu_option_help, 0))
@@ -1787,14 +1786,12 @@ int main(int argc, char ** argv) {
 
     if ((ret = wu_start_log()))
       goto Close;
-     
+
     wu_read_data(fd);
-  
+
     wu_stop_log();
   }
  Close:
   close(fd);
   return ret;
 }
-
-

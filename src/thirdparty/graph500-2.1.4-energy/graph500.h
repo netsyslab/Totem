@@ -18,8 +18,8 @@ extern "C" {
 int create_graph_from_edgelist(struct packed_edge* IJ, int64_t nedge);
 
 /** Create the BFS tree from a given source vertex. */
-int make_bfs_tree(tree_t* bfs_tree_out, int64_t* max_vtx_out,
-                  int64_t srcvtx);
+double make_bfs_tree(tree_t* bfs_tree_out, int64_t* max_vtx_out,
+                     int64_t srcvtx);
 
 /** Clean up. */
 void destroy_graph(void);

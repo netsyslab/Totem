@@ -1,7 +1,7 @@
 /**
  * This file contains an implementation of the breadth-first search (BFS) graph
  * search algorithm using the totem framework. This is a modified version that
- * performs the algorithm in a Bottom Up fashion.
+ * performs the algorithm with both Bottom Up and Top Down steps.
  *
  * This implementation only works for undirected graphs.
  *
@@ -10,8 +10,6 @@
  * Breadth-First Search Implementation for Graph500.
  * http://www.eecs.berkeley.edu/Pubs/TechRpts/2011/EECS-2011-117.pdf
  *
- * TODO(scott): Modify the algorithm to dynamically swap between top down and
- *              bottom up steps.
  *
  *  Created on: 2014-08-26
  *  Authors:    Scott Sallinen
@@ -979,7 +977,6 @@ error_t bfs_stepwise_hybrid(vid_t src, cost_t* cost) {
 
   // Initialize the engines - one for the first top down step, and a second
   // to complete the algorithm with bottom up steps.
-  // TODO(scott): Modify the swapping to flip back and forth simpler.
 
   // Begin by executing with top down steps.
   state_g.switch_parameter = 0;
