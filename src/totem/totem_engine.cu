@@ -32,7 +32,7 @@ inline PRIVATE double superstep_compute_synchronize() {
     max_gpu_time = time > max_gpu_time ? time : max_gpu_time;
     // TODO(abdullah): use a logging mechanism instead of ifdef
 #ifdef FEATURE_VERBOSE_TIMING
-    printf("\tGPU%d: %0.2f", par->processor.id, time);
+    printf("\tGPU%d: %0.1f", par->processor.id, time);
 #endif
   }
   // log the time of the slowest gpu
@@ -52,11 +52,12 @@ PRIVATE void superstep_launch_gpu(partition_t* par) {
   CALL_CU_SAFE(cudaEventRecord(par->event_end, par->streams[1]));
 }
 
-PRIVATE void superstep_launch_cpu(partition_t* par, double& cpu_time, 
+PRIVATE void superstep_launch_cpu(partition_t* par, double& cpu_time,
                                   double& cpu_scatter_time) {
   cpu_time = 0;
   cpu_scatter_time = 0;
-  if (par->subgraph.vertex_count != 0) {
+  double sync_time = 0;
+  if (par->subgraph.vertex_count != 0 && par->subgraph.edge_count != 0) {
     stopwatch_t stopwatch;
     stopwatch_start(&stopwatch);
     if ((context.config.direction == GROOVES_PUSH) &&
@@ -65,23 +66,26 @@ PRIVATE void superstep_launch_cpu(partition_t* par, double& cpu_time,
       context.config.par_scatter_func(par);
     }
     cpu_scatter_time = stopwatch_elapsed(&stopwatch);
-  
+
+    stopwatch_start(&stopwatch);
     // Make sure that data sent/received from a GPU partition to
     // the CPU partition is available
-    for (int rmt_pid = 0; rmt_pid < context.pset->partition_count; 
+    for (int rmt_pid = 0; rmt_pid < context.pset->partition_count;
          rmt_pid++) {
-      if (rmt_pid == par->id) continue;
       partition_t* rmt_par = &context.pset->partitions[rmt_pid];
-      CALL_CU_SAFE(cudaStreamSynchronize(rmt_par->streams[0]));
+      if (rmt_par->processor.type == PROCESSOR_GPU) {
+        CALL_CU_SAFE(cudaStreamSynchronize(rmt_par->streams[0]));
+      }
     }
-    
+    sync_time = stopwatch_elapsed(&stopwatch);
+
     stopwatch_start(&stopwatch);
     context.config.par_kernel_func(par);
     cpu_time = stopwatch_elapsed(&stopwatch);
     context.timing.alg_cpu_comp += cpu_time;
   }
 #ifdef FEATURE_VERBOSE_TIMING
-  printf("#\tCPU: %0.2f", cpu_time);
+  printf("#\tCPU: %0.1f %0.1f", cpu_time, sync_time);
 #endif
 }
 
@@ -116,7 +120,7 @@ inline PRIVATE void superstep_execute() {
         grooves_launch_communications(context.pset, pid, GROOVES_PULL);
       } else {
         assert(false);
-        fprintf(stderr, "Unsupported communication type %d\n", 
+        fprintf(stderr, "Unsupported communication type %d\n",
                 context.config.direction); fflush(stderr);
       }
     }
@@ -132,17 +136,18 @@ inline PRIVATE void superstep_execute() {
     } else if (par->processor.type == PROCESSOR_CPU) {
       superstep_launch_cpu(par, cpu_time, cpu_scatter_time);
     } else {
-      fprintf(stderr, "Unsupported processor type %d\n", 
+      fprintf(stderr, "Unsupported processor type %d\n",
               context.config.direction); fflush(stderr);
       assert(false);
     }
-    if (par->subgraph.vertex_count == 0) continue;
+    if (par->subgraph.vertex_count == 0) { continue; }
+    if (par->subgraph.edge_count == 0) { continue; }
     // If push-based, launch communication; if pull-based, launch gather kernels
     if (context.comm_curr[par->id]) {
       if (context.config.direction == GROOVES_PUSH) {
         // communication will be launched in the context of the source stream it
         // will start only after the kernel in the source partition finished
-        // execution      
+        // execution
         grooves_launch_communications(context.pset, par->id, GROOVES_PUSH);
       }
     }
@@ -174,8 +179,8 @@ inline PRIVATE void superstep_execute() {
   context.timing.alg_scatter += cpu_scatter_time;
   context.timing.alg_gather += cpu_gather_time;
 #ifdef FEATURE_VERBOSE_TIMING
-  printf("\tComp: %0.2f\tComm: %0.2f\tLaunch: %0.2f\tCPUScatter: %0.2f"
-         "\tCPUGather: %0.2f\t\tTotal: %0.2f\n",
+  printf("\tComp: %0.1f\tComm: %0.1f\tLaunch: %0.1f\tCPUScatter: %0.1f"
+         "\tCPUGather: %0.1f\t\tTotal: %0.1f\n",
          comp_time, comm_time, launch_time, cpu_scatter_time, cpu_gather_time,
          total_time);
 #endif
@@ -198,7 +203,12 @@ PRIVATE void engine_aggregate() {
       context.config.par_aggr_func(&context.pset->partitions[pid]);
     }
   }
-  context.timing.alg_aggr += stopwatch_elapsed(&stopwatch); 
+  for (int pid = 0; pid < context.pset->partition_count; pid++) {
+    partition_t* par = &context.pset->partitions[pid];
+    if (par->processor.type == PROCESSOR_CPU) { continue; }
+    CALL_CU_SAFE(cudaStreamSynchronize(par->streams[1]));
+  }
+  context.timing.alg_aggr += stopwatch_elapsed(&stopwatch);
 }
 
 error_t engine_execute() {
@@ -219,12 +229,12 @@ error_t engine_execute() {
       context.config.par_finalize_func(&context.pset->partitions[pid]);
     }
   }
-  context.timing.alg_finalize += stopwatch_elapsed(&stopwatch); 
+  context.timing.alg_finalize += stopwatch_elapsed(&stopwatch);
   return SUCCESS;
 }
 
 PRIVATE error_t init_check(graph_t* graph, totem_attr_t* attr) {
-  if (context.initialized || !graph->vertex_count || 
+  if (context.initialized || !graph->vertex_count ||
       attr->gpu_count > get_gpu_count()) {
     return FAILURE;
   }
@@ -250,7 +260,7 @@ PRIVATE void init_get_platform(int &pcount, int &gpu_count, bool &use_cpu) {
   pcount = use_cpu ? gpu_count + 1 : gpu_count;
 }
 
-PRIVATE void init_get_shares(int pcount, int gpu_count, bool use_cpu, 
+PRIVATE void init_get_shares(int pcount, int gpu_count, bool use_cpu,
                              double* shares) {
   assert(shares);
   // identify the share of each partition
@@ -260,7 +270,7 @@ PRIVATE void init_get_shares(int pcount, int gpu_count, bool use_cpu,
   if (context.attr.platform == PLATFORM_HYBRID) {
     shares[pcount - 1] = context.attr.cpu_par_share;
     // the rest is divided equally among the GPUs
-    double gpu_par_share = 
+    double gpu_par_share =
       (1.0 - context.attr.cpu_par_share) / (double)gpu_count;
     double total_share = context.attr.cpu_par_share;
     for (int gpu_id = 0; gpu_id < gpu_count - 1; gpu_id++) {
@@ -272,7 +282,7 @@ PRIVATE void init_get_shares(int pcount, int gpu_count, bool use_cpu,
 }
 
 PRIVATE void init_get_processors(int pcount, int gpu_count, bool use_cpu,
-                                 processor_t* processors) {
+                                 processor_t* processors, totem_attr_t* attr) {
   // setup the processors' types and ids
   assert(processors);
   for (int gpu_id = 0; gpu_id < gpu_count; gpu_id++) {
@@ -280,29 +290,32 @@ PRIVATE void init_get_processors(int pcount, int gpu_count, bool use_cpu,
     processors[gpu_id].id = gpu_id;
   }
   if (use_cpu) {
+    // The last partition is the standard CPU partition.
     processors[pcount - 1].type = PROCESSOR_CPU;
+
+    // Make the second to last partition the one which handles singletons.
+    if (attr->separate_singletons) {
+      processors[pcount - 2].type = PROCESSOR_CPU;
+    }
   }
 }
 
-PRIVATE void init_partition(int pcount, int gpu_count, double* shares, 
+PRIVATE void init_partition(int pcount, int gpu_count, double* shares,
                             processor_t* processors) {
   stopwatch_t stopwatch_par;
   stopwatch_start(&stopwatch_par);
   vid_t* par_labels;
   assert(context.attr.par_algo < PAR_MAX);
-  CALL_SAFE(PARTITION_FUNC[context.attr.par_algo](context.graph, pcount, 
-                                                  context.attr.platform == 
+  CALL_SAFE(PARTITION_FUNC[context.attr.par_algo](context.graph, pcount,
+                                                  context.attr.platform ==
                                                   PLATFORM_HYBRID ?
                                                   shares : NULL, &par_labels,
                                                   &context.attr));
 
   context.timing.engine_par = stopwatch_elapsed(&stopwatch_par);
   CALL_SAFE(partition_set_initialize(context.graph, par_labels,
-                                     processors, pcount, 
-                                     context.attr.gpu_graph_mem,
-                                     context.attr.push_msg_size,
-                                     context.attr.pull_msg_size,
-                                     &context.pset, &context.attr));
+                                     processors, pcount, &context.attr,
+                                     &context.pset));
   free(par_labels);
 }
 
@@ -312,7 +325,7 @@ PRIVATE void init_context(graph_t* graph, totem_attr_t* attr) {
   context.attr = *attr;
   // The global finish flag is allocated on the host using the
   // cudaHostAllocMapped option which allows GPU kernels to access it directly
-  // from within the GPU. This flag is initialized to true at the beginning of 
+  // from within the GPU. This flag is initialized to true at the beginning of
   // each superstep before the kernel callback. Any of the partitions set this
   // flag to false if it still has work to do.
   CALL_CU_SAFE(cudaHostAlloc((void **)&context.finished, sizeof(bool),
@@ -334,7 +347,7 @@ PRIVATE void init_context_partitions_state() {
     context.rmt_edge_count[pid]   = par->rmt_edge_count;
     if (par->processor.type == PROCESSOR_CPU) continue;
     uint64_t vcount = context.pset->partitions[pid].subgraph.vertex_count;
-    context.largest_gpu_par = vcount > context.largest_gpu_par ? vcount : 
+    context.largest_gpu_par = vcount > context.largest_gpu_par ? vcount :
       context.largest_gpu_par;
   }
 }
@@ -344,7 +357,7 @@ PRIVATE error_t init_check_space(graph_t* graph, totem_attr_t* attr, int pcount,
   if (attr->gpu_graph_mem != GPU_GRAPH_MEM_DEVICE) return SUCCESS;
   for (int pid = 0; pid < pcount; pid++) {
     if (processors[pid].type == PROCESSOR_GPU) {
-      size_t needed = (((double)graph->vertex_count + 
+      size_t needed = (((double)graph->vertex_count +
                         (double)graph->edge_count) *
                        shares[pid]) * sizeof(vid_t);
       CALL_CU_SAFE(cudaSetDevice(processors[pid].id));
@@ -353,7 +366,7 @@ PRIVATE error_t init_check_space(graph_t* graph, totem_attr_t* attr, int pcount,
       // Reserve at least GPU_MIN_ALG_STATE of the space for algorithm state
       available = (double)available * (1 - GPU_MIN_ALG_STATE);
       if (needed > available) {
-        fprintf(stderr, 
+        fprintf(stderr,
                 "Error: GPU out of memory. Needed:%dMB, Available:%dMB\n",
                 needed/(1024*1024), available/(1024*1024));
         return FAILURE;
@@ -374,9 +387,13 @@ error_t engine_init(graph_t* graph, totem_attr_t* attr) {
   bool use_cpu = true;
   init_get_platform(pcount, gpu_count, use_cpu);
   double shares[MAX_PARTITION_COUNT];
+
+  // Add an additional partition to handle singletons.
+  if (attr->separate_singletons) { pcount++; }
+
   init_get_shares(pcount, gpu_count, use_cpu, shares);
   processor_t processors[MAX_PARTITION_COUNT];
-  init_get_processors(pcount, gpu_count, use_cpu, processors);
+  init_get_processors(pcount, gpu_count, use_cpu, processors, attr);
   if (init_check_space(graph, attr, pcount, shares, processors) == FAILURE) {
     return FAILURE;
   }

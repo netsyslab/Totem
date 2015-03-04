@@ -5,11 +5,11 @@
  *
  * The engine interface splits the algorithm-specific from algorithm-agnostic
  * initialization code. The idea is to have the ability to initialize the engine
- * once (i.e., building the state once), and use this setup to run multiple 
- * algorithms multiple times without the need to build the algorithm-agnostic 
+ * once (i.e., building the state once), and use this setup to run multiple
+ * algorithms multiple times without the need to build the algorithm-agnostic
  * state multiple times.
  *
- * An algorithm must offer a number of callback functions that configure the 
+ * An algorithm must offer a number of callback functions that configure the
  * engine. The following is a short pseudocode of an algorithm that uses
  * this interface:
  *    algo(parameters) {
@@ -27,7 +27,7 @@
  *    }
  *
  * The algorithm above can be run multiple times as follows:
- *    totem_attr_t attrs = {partition_algorithm, platform, cpu_share, 
+ *    totem_attr_t attrs = {partition_algorithm, platform, cpu_share,
  *                          push_msg_size};
  *    engine_init(attrs);
  *    algo(par1);
@@ -81,7 +81,7 @@ typedef void(*engine_par_kernel_func_t)(partition_t*);
 typedef void(*engine_par_scatter_func_t)(partition_t*);
 
 /**
- * Callback function to gather partition-specific state to be sent to the 
+ * Callback function to gather partition-specific state to be sent to the
  * the corresponding boundary edge's source partition.
  */
 typedef void(*engine_par_gather_func_t)(partition_t*);
@@ -163,7 +163,7 @@ inline T* engine_get_src_ptr(int pid, vid_t nbr, grooves_box_table_t* outbox,
  * Initializes the state required for hybrid CPU-GPU processing. It creates a
  * set of partitions equal to the number of GPUs plus one for the CPU. Note that
  * this function initializes only algorithm-agnostic state. This function
- * corresponds to Kernel 1 (the graph construction kernel) of the Graph500 
+ * corresponds to Kernel 1 (the graph construction kernel) of the Graph500
  * benchmark specification.
  * @param[in] graph  the input graph
  * @param[in] attr   attributes to setup the engine
@@ -171,7 +171,7 @@ inline T* engine_get_src_ptr(int pid, vid_t nbr, grooves_box_table_t* outbox,
 error_t engine_init(graph_t* graph, totem_attr_t* attr);
 
 /**
- * Configures the engine to execute a specific algorithm. It sets the 
+ * Configures the engine to execute a specific algorithm. It sets the
  * algorithm-specific callback functions to be called while executing the
  * BSP phases. It can be invoked only after the engine is initialized via
  * engine_init.
@@ -193,7 +193,7 @@ void engine_finalize();
 error_t engine_execute();
 
 /**
- * Allows a partition to report that it has not finished computing. Note that 
+ * Allows a partition to report that it has not finished computing. Note that
  * it is enough for one partition to call this function to continue the BSP
  * cycle. If this is not called by any partition, the Totem terminates.
  */
@@ -267,7 +267,7 @@ partition_algorithm_t engine_partition_algorithm();
 error_t engine_update_msg_size(grooves_direction_t dir, size_t msg_size);
 
 /**
- * Resets the communication message size to the original value set at 
+ * Resets the communication message size to the original value set at
  * initialization
  */
 void engine_reset_msg_size(grooves_direction_t dir);
@@ -282,6 +282,22 @@ bool engine_sorted();
 void engine_report_no_comm(int pid);
 int engine_get_comm_prev(int pid);
 int engine_get_comm_curr(int pid);
+
+/**
+ * Returns the type of the processor, CPU or GPU, of a specific partition.
+ */
+processor_type_t engine_get_processor_type(int pid);
+
+/**
+ * Returns true if the partition is the one used to separate singletons.
+ */
+bool engine_is_singletons(int pid);
+
+/**
+ * Returns the number of vertices assigned to all partitions of a specific
+ * processor type.
+ */
+vid_t engine_get_processor_vertex_count(processor_type_t type);
 
 /**
  * Resets the timers that measure the phases of the BSP cycle

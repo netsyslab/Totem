@@ -75,18 +75,18 @@ static void dump_edgelist() {
     return;
   }
 
-  if (VERBOSE) fprintf(stderr, "Dumping edgelist to %s...", 
+  if (VERBOSE) fprintf(stderr, "Dumping edgelist to %s...",
                        get_edgelist_dumpname());
   FILE* p_file = fopen(get_edgelist_dumpname(), "wb");
   if(p_file == NULL) {
-    fprintf(stderr, "Cannot open edgelist file for write : %s\n", 
+    fprintf(stderr, "Cannot open edgelist file for write : %s\n",
             get_edgelist_dumpname());
     abort();
   }
 
   size_t edgelist_size = nedge * sizeof(*IJ);
   if (edgelist_size != fwrite(IJ, 1, edgelist_size, p_file)) {
-    fprintf(stderr, "Error dumping edgelist file: %s", 
+    fprintf(stderr, "Error dumping edgelist file: %s",
             get_edgelist_dumpname());
     abort();
   }
@@ -100,8 +100,8 @@ static void load_edgelist() {
     fprintf(stderr, "Cannot open input file : %s\n", get_edgelist_dumpname());
     abort();
   }
-  
-  if (VERBOSE) fprintf(stderr, "Loading edgelist: %s\n", 
+
+  if (VERBOSE) fprintf(stderr, "Loading edgelist: %s\n",
                        get_edgelist_dumpname());
   if (VERBOSE) fprintf(stderr, "Figuring out graph size...\n");
   fseek(p_file, 0 , SEEK_END);
@@ -110,15 +110,15 @@ static void load_edgelist() {
   IJ = xmalloc_large_ext(file_size);
   nedge = file_size / sizeof(*IJ);
   if (VERBOSE) fprintf(stderr, "done: %llu edges\n", nedge);
-  
-  if (VERBOSE) fprintf(stderr, "Reading edge list from %s...", 
+
+  if (VERBOSE) fprintf(stderr, "Reading edge list from %s...",
                        get_edgelist_dumpname());
   if (file_size != fread(IJ, 1, file_size, p_file)) {
     perror("Error reading input graph file");
     abort();
   }
   fclose(p_file);
-  if (VERBOSE) fprintf(stderr, " done.\n");  
+  if (VERBOSE) fprintf(stderr, " done.\n");
 }
 
 static void get_edgelist(int64_t desired_nedge) {
@@ -129,8 +129,8 @@ static void get_edgelist(int64_t desired_nedge) {
       IJ = xmalloc_large_ext(nedge * sizeof(*IJ));
       TIME(generation_time, rmat_edgelist(IJ, nedge, SCALE, A, B, C));
     } else {
-      TIME(generation_time, make_graph(SCALE, desired_nedge, userseed, 
-                                       userseed, &nedge, 
+      TIME(generation_time, make_graph(SCALE, desired_nedge, userseed,
+                                       userseed, &nedge,
                                        (packed_edge**)(&IJ)));
     }
     if (VERBOSE) fprintf(stderr, " done.\n");
@@ -153,7 +153,7 @@ int main(int argc, char **argv) {
   int64_t desired_nedge = nvtx_scale * edgefactor - 1;
   assert(desired_nedge >= nvtx_scale);
   assert(desired_nedge >= edgefactor);
-  
+
   get_edgelist(desired_nedge);
   dump_edgelist();
   get_roots();
@@ -238,45 +238,55 @@ static void get_roots() {
 
 const char* get_tree_dumpname(int64_t root) {
   static char tree_file_name[200];
-  sprintf(tree_file_name, "%s/scale%d-root%llu", tmp_dump_path, SCALE, 
+  sprintf(tree_file_name, "%s/scale%d-root%llu", tmp_dump_path, SCALE,
           root);
   return tree_file_name;
 }
 
-static void dump_tree(int64_t root, int64_t* tree) {
-  if (VERBOSE) fprintf(stderr, "dumping tree: %s\n", 
+static void dump_tree(int64_t root, tree_t* tree) {
+  if (VERBOSE) fprintf(stderr, "dumping tree: %s\n",
                        get_tree_dumpname(root));
   FILE* p_file = fopen(get_tree_dumpname(root), "wb");
   assert(p_file);
   size_t tree_size = sizeof(*tree) * nvtx_scale;
   if (tree_size != fwrite(tree, 1, tree_size, p_file)) {
-    fprintf(stderr, "Error dumping bfs tree file: %s", 
+    fprintf(stderr, "Error dumping bfs tree file: %s",
             get_tree_dumpname(root));
     abort();
   }
   fclose(p_file);
 }
 
-static void load_tree(int64_t root, int64_t* tree) {
-  if (VERBOSE) fprintf(stderr, "loading tree: %s\n", 
+static void load_tree(int64_t root, tree_t* tree) {
+  if (VERBOSE) fprintf(stderr, "loading tree: %s\n",
                        get_tree_dumpname(root));
-  size_t tree_size = nvtx_scale * sizeof(int64_t);
+  size_t tree_size = sizeof(*tree) * nvtx_scale;
   FILE* p_file = fopen(get_tree_dumpname(root), "rb");
   if (tree_size != fread(tree, 1, tree_size, p_file)) {
-    fprintf(stderr, "Error reading bfs tree file: %s", 
+    fprintf(stderr, "Error reading bfs tree file: %s",
             get_tree_dumpname(root));
     abort();
   }
   fclose(p_file);
+}
+
+static void convert_tree(tree_t* tree, int64_t* converted_tree) {
+  OMP("omp for")
+  for (int64_t v = 0; v < nvtx_scale; v++) {
+    converted_tree[v] = (int64_t)tree[v];
+    if (tree[v] == (tree_t)-1) { converted_tree[v] = (int64_t)-1; }
+  }
 }
 
 void verify_all() {
-  size_t tree_size = nvtx_scale * sizeof(int64_t);
-  int64_t* tree = xmalloc_large(tree_size);
+  tree_t* tree = xmalloc_large(nvtx_scale * sizeof(tree_t));
+  int64_t* converted_tree = xmalloc_large(nvtx_scale * sizeof(int64_t));
   for (int m = 0; m < NBFS; ++m) {
     load_tree(bfs_root[m], tree);
+    convert_tree(tree, converted_tree);
     if (VERBOSE) fprintf(stderr, "Verifying bfs %d...\n", m);
-    bfs_nedge[m] = verify_bfs_tree(tree, max_bfsvtx[m], bfs_root[m], IJ, nedge);
+    bfs_nedge[m] = verify_bfs_tree(converted_tree, max_bfsvtx[m], bfs_root[m],
+                                   IJ, nedge);
     if (VERBOSE) fprintf(stderr, "done\n");
     if (bfs_nedge[m] < 0) {
       fprintf(stderr,
@@ -285,20 +295,24 @@ void verify_all() {
       abort();
     }
   }
+  xfree_large(converted_tree);
   xfree_large(tree);
 }
 
 static void run_bfs(void) {
   for (int m = 0; m < NBFS; ++m) {
-    int64_t *bfs_tree;
+    tree_t* bfs_tree;
 
     /* Re-allocate. Some systems may randomize the addres... */
     bfs_tree = xmalloc_large(nvtx_scale * sizeof(*bfs_tree));
+    // Force the allocation of the buffer by writing to all its pages (the
+    // value being written can be anything).
+    memset(bfs_tree, 1, nvtx_scale * sizeof(*bfs_tree));
     assert(bfs_root[m] < nvtx_scale);
 
     if (VERBOSE) fprintf(stderr, "Running bfs %d...", m);
     int err;
-    TIME(bfs_time[m], err = 
+    TIME(bfs_time[m], err =
          make_bfs_tree(bfs_tree, &max_bfsvtx[m], bfs_root[m]));
     if (VERBOSE) fprintf(stderr, "done\n");
 
@@ -404,10 +418,10 @@ void statistics(double *out, double *data, int64_t n) {
 }
 
 void output_results(const int64_t SCALE, int64_t nvtx_scale, int64_t edgefactor,
-                    const double A, const double B, const double C, 
+                    const double A, const double B, const double C,
                     const double D, const double generation_time,
                     const double construction_time,
-                    const int NBFS, const double *bfs_time, 
+                    const int NBFS, const double *bfs_time,
                     const int64_t *bfs_nedge) {
   int k;
   int64_t sz;

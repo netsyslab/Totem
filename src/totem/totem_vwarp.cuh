@@ -25,6 +25,7 @@ const int VWARP_SHORT_WARP_WIDTH = 1;
 const int VWARP_MEDIUM_WARP_WIDTH = 32;
 const int VWARP_LONG_WARP_WIDTH = 64;
 const int VWARP_DEFAULT_WARP_WIDTH = 32;
+const int VWARP_HARDWARE_WARP_WIDTH = 32;
 
 /**
  * the size of the batch of work assigned to each virtual warp
