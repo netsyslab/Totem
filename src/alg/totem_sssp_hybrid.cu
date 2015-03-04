@@ -12,13 +12,13 @@
 
 // per-partition specific state
 typedef struct sssp_state_s {
-  // TODO(treza): Use "bitmap_t" instead of "bool" for "updated".
-  bool* updated;  // one slot per vertex in the partition
-                  // it indicates whether the corresponding vertex has been
-                  // updated and that it should try to update the distances of
-                  // its neighbours
-  bool* finished;  // points to Totem's finish flag
-  weight_t* distance;  // stores results in the partition
+
+  bitmap_t updated;  // One bit per vertex in the partition
+                     // it indicates whether the corresponding vertex has been
+                     // updated and that it should try to update the distances
+                     // of its neighbours.
+  bool* finished;    // Points to Totem's finish flag.
+  weight_t* distance;  // Stores results in the partition.
 } sssp_state_t;
 
 
@@ -58,22 +58,21 @@ void sssp_cpu(partition_t* par, sssp_state_t* state) {
 
   OMP(omp parallel for schedule(runtime) reduction(& : finished))
   for (vid_t v = 0; v < subgraph->vertex_count; v++) {
-    if (state->updated[v] == false) { continue; }
-    state->updated[v] = false;
+    if (!bitmap_is_set(state->updated, v)) { continue; }
+    bitmap_unset_cpu(state->updated, v);
 
-    for (eid_t i = subgraph->vertices[v]; i < subgraph->vertices[v + 1];
-      i++) {
+    for (eid_t i = subgraph->vertices[v]; i < subgraph->vertices[v + 1]; i++) {
       int nbr_pid = GET_PARTITION_ID(subgraph->edges[i]);
       vid_t nbr = GET_VERTEX_ID(subgraph->edges[i]);
       vid_t nbr_dst = subgraph->edges[i];
-      weight_t* dst = engine_get_dst_ptr(par->id, nbr_dst, par->outbox,
-                                         state->distance);
+      weight_t* dst = engine_get_dst_ptr(
+          par->id, nbr_dst, par->outbox, state->distance);
       weight_t new_distance = state->distance[v] + subgraph->weights[i];
-      weight_t old_distance =
-          __sync_fetch_and_min_float(dst, new_distance);
+      weight_t old_distance = *dst;
       if (new_distance < old_distance) {
-        if (nbr_pid == par->id) {
-          state->updated[nbr] = true;
+        if (old_distance == __sync_fetch_and_min_float(dst, new_distance) &&
+            nbr_pid == par->id) {
+          bitmap_set_cpu(state->updated, nbr);
         }
         finished = false;
       }
@@ -91,8 +90,8 @@ void sssp_kernel(partition_t par, sssp_state_t state) {
   finished_block = true;
   __syncthreads();
 
-  if (state.updated[v] == false) { return; }
-  state.updated[v] = false;
+  if (!bitmap_is_set(state.updated, v)) { return; }
+  bitmap_unset_gpu(state.updated, v);
 
   for (eid_t i = par.subgraph.vertices[v]; i < par.subgraph.vertices[v + 1];
       i++) {
@@ -105,7 +104,7 @@ void sssp_kernel(partition_t par, sssp_state_t state) {
     weight_t old_distance = atomicMin(dst, new_distance);
     if (new_distance < old_distance) {
       if (nbr_pid == par.id) {
-        state.updated[nbr] = true;
+        bitmap_set_gpu(state.updated, nbr);
       }
       finished_block = false;
     }
@@ -141,8 +140,8 @@ void sssp_vwarp_kernel(partition_t par, sssp_state_t state) {
     vwarp_warp_batch_size(vertex_count, VWARP_WIDTH, VWARP_BATCH);
   int warp_offset = vwarp_thread_index(VWARP_WIDTH);
   for (vid_t v = start_vertex; v < end_vertex; v++) {
-    if (state.updated[v] == true) {
-      state.updated[v] = false;
+    if (bitmap_is_set(state.updated, v)) {
+      bitmap_unset_gpu(state.updated, v);
       const eid_t nbr_count = vertices[v + 1] - vertices[v];
       vid_t* nbrs = par.subgraph.edges + vertices[v];
       weight_t* weights = par.subgraph.weights + vertices[v];
@@ -160,7 +159,7 @@ void sssp_vwarp_kernel(partition_t par, sssp_state_t state) {
         weight_t old_distance = atomicMin(dst, new_distance);
         if (new_distance < old_distance) {
           if (nbr_pid == par.id) {
-            state.updated[nbr] = true;
+            bitmap_set_gpu(state.updated, nbr);
           }
           finished_block = false;
         }
@@ -230,7 +229,7 @@ PRIVATE void sssp_scatter_cpu(grooves_box_table_t* inbox,
       inbox_values[index] : state->distance[vid];
     weight_t new_distance = state->distance[vid];
     if (old_distance > new_distance) {
-      state->updated[vid] = true;
+      bitmap_set_cpu(state->updated, vid);
     }
   }
 }
@@ -249,7 +248,7 @@ void sssp_scatter_kernel(grooves_box_table_t inbox, sssp_state_t state) {
     inbox_values[index] : state.distance[vid];
   weight_t new_distance = state.distance[vid];
   if (old_distance > new_distance) {
-    state.updated[vid] = true;
+    bitmap_set_gpu(state.updated, vid);
   }
 }
 
@@ -309,6 +308,12 @@ PRIVATE void sssp_aggregate(partition_t* par) {
   }
 }
 
+// A simple kernel that sets the source vertex to visited on the GPU.
+__global__ void sssp_init_source_kernel(bitmap_t updated, vid_t src) {
+  if (THREAD_GLOBAL_INDEX != 0) { return; }
+  bitmap_set_gpu(updated, src);
+}
+
 PRIVATE void sssp_init(partition_t* par) {
   if (par->subgraph.vertex_count == 0) { return; }
   sssp_state_t* state = reinterpret_cast<sssp_state_t*>
@@ -318,8 +323,10 @@ PRIVATE void sssp_init(partition_t* par) {
 
   totem_mem_t type;
   if (par->processor.type == PROCESSOR_CPU) {
+    state->updated = bitmap_init_cpu(par->subgraph.vertex_count);
      type = TOTEM_MEM_HOST;
   } else if (par->processor.type == PROCESSOR_GPU) {
+    state->updated = bitmap_init_gpu(par->subgraph.vertex_count);
     type = TOTEM_MEM_DEVICE;
   } else {
     assert(false);
@@ -327,9 +334,6 @@ PRIVATE void sssp_init(partition_t* par) {
 
   CALL_SAFE(totem_malloc(par->subgraph.vertex_count * sizeof(bool), type,
                          reinterpret_cast<void**>(&(state->updated))));
-  totem_memset(state->updated, false, par->subgraph.vertex_count, type,
-               par->streams[1]);
-
   CALL_SAFE(totem_malloc(par->subgraph.vertex_count * sizeof(weight_t), type,
                          reinterpret_cast<void**>(&(state->distance))));
   totem_memset(state->distance, WEIGHT_MAX, par->subgraph.vertex_count, type,
@@ -337,20 +341,15 @@ PRIVATE void sssp_init(partition_t* par) {
 
   if (GET_PARTITION_ID(state_g.src) == par->id) {
     // For the source vertex, initialize updated status.
-    // Please note that instead of simply initializing the updated status of
-    // the source using the following expression
-    // "state->updated[GET_VERTEX_ID(state_g.src)] = true", we are using
-    // "memset" becuase the source may belong to a partition which
-    // resides on the GPU.
-    totem_memset(&((state->updated)[GET_VERTEX_ID(state_g.src)]), true, 1,
-                 type, par->streams[1]);
+    if (par->processor.type == PROCESSOR_GPU) {
+      sssp_init_source_kernel<<<1, 1, 0, par->streams[1]>>>
+          (state->updated, GET_VERTEX_ID(state_g.src));
+      CALL_CU_SAFE(cudaGetLastError());
+    } else {
+      bitmap_set_cpu(state->updated, GET_VERTEX_ID(state_g.src));
+    }
 
     // For the source vertex, initialize distance.
-    // Please note that instead of simply initializing the updated status of
-    // the source using the following expression
-    // "state->distance[GET_VERTEX_ID(state_g.src)] = 0.0", we are using
-    // "memset" becuase the source may belong to a partition which
-    // resides on the GPU.
     totem_memset(&((state->distance)[GET_VERTEX_ID(state_g.src)]),
                  (weight_t)0.0, 1, type, par->streams[1]);
   }
@@ -364,12 +363,14 @@ PRIVATE void sssp_finalize(partition_t* par) {
   sssp_state_t* state = reinterpret_cast<sssp_state_t*>(par->algo_state);
   totem_mem_t type = TOTEM_MEM_HOST;
   if (par->processor.type == PROCESSOR_CPU) {
+    bitmap_finalize_cpu(state->updated);
   } else if (par->processor.type == PROCESSOR_GPU) {
+    bitmap_finalize_gpu(state->updated);
     type = TOTEM_MEM_DEVICE;
   } else {
     assert(false);
   }
-  totem_free(state->updated, type);
+  // totem_free(state->updated, type);
   totem_free(state->distance, type);
   free(state);
   par->algo_state = NULL;
