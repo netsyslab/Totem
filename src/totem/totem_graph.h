@@ -86,10 +86,10 @@ const uint32_t INFINITE = UINT32_MAX;
 
 // Specifies a type for edge weights. This is useful to allow future changes in
 // the precision and value range that edge weights can hold.
-typedef float weight_t;
+typedef uint32_t weight_t;
 
 // Specifies the maximum value a weight can hold.
-const weight_t WEIGHT_MAX = FLT_MAX;
+const weight_t WEIGHT_MAX = UINT32_MAX;
 
 // Specifies the default edge weight
 const weight_t DEFAULT_EDGE_WEIGHT =  1;

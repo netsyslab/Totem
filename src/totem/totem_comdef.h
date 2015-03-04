@@ -180,6 +180,16 @@ inline int __sync_fetch_and_min(int* address, int val) {
   return old;
 }
 
+inline uint32_t __sync_fetch_and_min_uint32(uint32_t* address, uint32_t val) {
+  uint32_t old = *address, assumed;
+  do {
+    assumed = old;
+    uint32_t min = (val < assumed) ? val : assumed;
+    old = __sync_val_compare_and_swap(address, assumed, min);
+  } while (assumed != old);
+  return old;
+}
+
 /**
  * A single precision atomic min. Atomically store the minimum of value at
  * address and val back at address and returns the old value at address.
