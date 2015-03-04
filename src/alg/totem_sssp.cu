@@ -23,8 +23,8 @@
  // into shared memory.
 typedef struct {
   // One is added to make it easy to calculate the number of neighbors of the
-  // last vertex. Another one is added to ensure 8 bytes alignment irrespective 
-  // whether sizeof(eid_t) is 4 or 8. Alignment is enforced for performance 
+  // last vertex. Another one is added to ensure 8 bytes alignment irrespective
+  // whether sizeof(eid_t) is 4 or 8. Alignment is enforced for performance
   // reasons.
   eid_t vertices[VWARP_DEFAULT_BATCH_SIZE + 2];
   weight_t distances[VWARP_DEFAULT_BATCH_SIZE];
@@ -79,16 +79,16 @@ error_t initialize_gpu(const graph_t* graph, vid_t source_id,
   CHK_SUCCESS(graph_initialize_device(graph, graph_d), err);
 
   // The distance array from the source vertex to every node in the graph.
-  CHK_SUCCESS(totem_malloc(distance_length * sizeof(weight_t), type, 
+  CHK_SUCCESS(totem_malloc(distance_length * sizeof(weight_t), type,
                            (void**)distances_d), err_free_graph);
 
   // An array that contains the newly computed array of distances.
-  CHK_SUCCESS(totem_malloc(distance_length * sizeof(weight_t), type, 
+  CHK_SUCCESS(totem_malloc(distance_length * sizeof(weight_t), type,
                            (void**)new_distances_d), err_free_distances);
 
   // An entry in this array indicate whether the corresponding vertex should
   // try to compute new distances.
-  CHK_SUCCESS(totem_malloc(distance_length * sizeof(bool), type, 
+  CHK_SUCCESS(totem_malloc(distance_length * sizeof(bool), type,
                            (void **)changed_d), err_free_new_distances);
 
   // Set all distances to infinite.
@@ -162,7 +162,7 @@ void sssp_kernel(graph_t graph, bool* to_update, weight_t* distances,
     return;
   }
   weight_t distance_to_vertex = distances[vertex_id];
-  for (eid_t i = graph.vertices[vertex_id]; 
+  for (eid_t i = graph.vertices[vertex_id];
        i < graph.vertices[vertex_id + 1]; i++) {
     const vid_t neighbor_id = graph.edges[i];
     weight_t new_distance = distance_to_vertex + graph.weights[i];
@@ -176,8 +176,8 @@ void sssp_kernel(graph_t graph, bool* to_update, weight_t* distances,
  * assumption is that the threads of a warp invoke this function to process the
  * warp's batch of work. In each iteration of the for loop, each thread
  * processes a neighbor. For example, thread 0 in the warp processes neighbors
- * at indices 0, VWARP_DEFAULT_WARP_WIDTH, (2 * VWARP_DEFAULT_WARP_WIDTH) etc. 
- * in the edges array, while thread 1 in the warp processes neighbors 1, 
+ * at indices 0, VWARP_DEFAULT_WARP_WIDTH, (2 * VWARP_DEFAULT_WARP_WIDTH) etc.
+ * in the edges array, while thread 1 in the warp processes neighbors 1,
  * (1 + VWARP_DEFAULT_WARP_WIDTH), (1 + 2 * VWARP_DEFAULT_WARP_WIDTH) and so on.
 */
 inline __device__
@@ -185,7 +185,7 @@ void vwarp_process_neighbors(vid_t warp_offset, vid_t neighbor_count,
                              vid_t* neighbors, weight_t* weights,
                              weight_t distance_to_vertex,
                              weight_t* new_distances) {
-  for(vid_t i = warp_offset; i < neighbor_count; 
+  for(vid_t i = warp_offset; i < neighbor_count;
       i += VWARP_DEFAULT_WARP_WIDTH) {
     vid_t neighbor_id = neighbors[i];
     weight_t current_distance = distance_to_vertex + weights[i];
@@ -208,14 +208,14 @@ void vwarp_sssp_kernel(graph_t graph, bool* to_update, weight_t* distances,
 
   __shared__ vwarp_mem_t shared_memory[(MAX_THREADS_PER_BLOCK
                                         / VWARP_DEFAULT_WARP_WIDTH)];
-  vwarp_mem_t* my_space = &shared_memory[THREAD_BLOCK_INDEX / 
+  vwarp_mem_t* my_space = &shared_memory[THREAD_BLOCK_INDEX /
                                          VWARP_DEFAULT_WARP_WIDTH];
 
   // copy my work to local space
   vid_t v_ = warp_id * VWARP_DEFAULT_BATCH_SIZE;
   vwarp_memcpy(my_space->distances, &distances[v_], VWARP_DEFAULT_BATCH_SIZE,
                warp_offset);
-  vwarp_memcpy(my_space->vertices, &(graph.vertices[v_]), 
+  vwarp_memcpy(my_space->vertices, &(graph.vertices[v_]),
                VWARP_DEFAULT_BATCH_SIZE + 1, warp_offset);
   vwarp_memcpy(my_space->to_update, &(to_update[v_]), VWARP_DEFAULT_BATCH_SIZE,
                warp_offset);
@@ -324,8 +324,8 @@ error_t sssp_vwarp_gpu(const graph_t* graph, vid_t source_id,
   graph_t*   graph_d;
   weight_t*  distances_d;
   weight_t*  new_distances_d;
-  CHK_SUCCESS(initialize_gpu(graph, source_id, 
-                             vwarp_default_state_length(graph->vertex_count), 
+  CHK_SUCCESS(initialize_gpu(graph, source_id,
+                             vwarp_default_state_length(graph->vertex_count),
                              &graph_d, &changed_d, &has_true_d, &distances_d,
                              &new_distances_d), err);
 
@@ -341,7 +341,7 @@ error_t sssp_vwarp_gpu(const graph_t* graph, vid_t source_id,
   while (has_true) {
     vwarp_sssp_kernel<<<block_count, threads_per_block>>>
       (*graph_d, changed_d, distances_d, new_distances_d, thread_count);
-    CHK_CU_SUCCESS(cudaMemset(changed_d, false, 
+    CHK_CU_SUCCESS(cudaMemset(changed_d, false,
                               vwarp_default_state_length(graph->vertex_count) *
                               sizeof(bool)), err_free_all);
     CHK_CU_SUCCESS(cudaMemset(has_true_d, false, sizeof(bool)), err_free_all);
@@ -399,15 +399,15 @@ __host__ error_t sssp_cpu(const graph_t* graph, vid_t source_id,
         continue;
       }
       bitmap_unset_cpu(active, vertex_id);
-      
-      for (eid_t i = graph->vertices[vertex_id]; 
+
+      for (eid_t i = graph->vertices[vertex_id];
            i < graph->vertices[vertex_id + 1]; i++) {
         const vid_t neighbor_id = graph->edges[i];
-        weight_t new_distance = shortest_distances[vertex_id] + 
+        weight_t new_distance = shortest_distances[vertex_id] +
           graph->weights[i];
         weight_t old_distance =
-          __sync_fetch_and_min_float(&(shortest_distances[neighbor_id]),
-                                       new_distance);
+          __sync_fetch_and_min_uint32(&(shortest_distances[neighbor_id]),
+                                      new_distance);
         if (new_distance < old_distance) {
           bitmap_set_cpu(active, neighbor_id);
           finished = false;
@@ -418,4 +418,3 @@ __host__ error_t sssp_cpu(const graph_t* graph, vid_t source_id,
   bitmap_finalize_cpu(active);
   return SUCCESS;
 }
-
