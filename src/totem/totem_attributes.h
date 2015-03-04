@@ -51,11 +51,11 @@ typedef struct totem_attr_s {
                                         // descending instead of ascending.
   bool                  edge_sort_by_degree;  // Sorts the neighbours by degree
                                               // instead of by id.
-  bool                  separate_singletons;  // Creates a CPU partition
-                                              // to handle singletons.
   // Indicates whether the algorithm that will use this setup supports
   // compressed vertices or not.
   bool                  compressed_vertices_supported;
+  bool                  separate_singletons;  // Creates a CPU partition
+                                              // to handle singletons.
   float                 cpu_par_share;  // The percentage of edges assigned
                                         // to the CPU partition. Note that this
                                         // value is relevant only in hybrid
@@ -83,7 +83,7 @@ typedef struct totem_attr_s {
 // Default attributes: hybrid (one GPU + CPU) platform, random 50-50
 // partitioning, push message size is word and zero pull message size.
 #define TOTEM_DEFAULT_ATTR {PAR_RANDOM, PLATFORM_HYBRID, 1, \
-        GPU_GRAPH_MEM_DEVICE, false, false, false, false, false, false, 0.5, \
-        0.0, MSG_SIZE_WORD, MSG_SIZE_ZERO, NULL, NULL}
+        GPU_GRAPH_MEM_DEVICE, false, false, false, false, false, false, 0.0, \
+        0.5, MSG_SIZE_WORD, MSG_SIZE_ZERO, NULL, NULL}
 
 #endif  // TOTEM_ATTRIBUTES_H
