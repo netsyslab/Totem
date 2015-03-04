@@ -1,4 +1,4 @@
-/* 
+/*
  * Contains unit tests for an implementation of the single source shortest path
  * (SSSP) algorithm.
  *
@@ -49,7 +49,7 @@ class SSSPTest : public TestWithParam<sssp_param_t*> {
 
   error_t TestGraph(vid_t src) {
     if (_sssp_param->attr) {
-      _sssp_param->attr->push_msg_size = sizeof(weight_t) * BITS_PER_BYTE;
+      _sssp_param->attr->push_msg_size = sizeof(weight_t) * BITS_PER_BYTE + 1;
       if (totem_init(_graph, _sssp_param->attr) == FAILURE) {
         return FAILURE;
       }
@@ -155,8 +155,8 @@ TEST_P(SSSPTest, Chain) {
   source = 199;
   EXPECT_EQ(SUCCESS, TestGraph(source));
   for (vid_t vertex = 0; vertex < _graph->vertex_count; vertex++) {
-    EXPECT_EQ((weight_t)abs((weight_t)source - (weight_t)vertex),
-      _distances[vertex]);
+    EXPECT_EQ((weight_t)labs((int64_t)source - (int64_t)vertex),
+              _distances[vertex]);
   }
 
   // Non existent vertex source
@@ -233,7 +233,7 @@ TEST_P(SSSPTest, Star) {
 }
 
 // Tests SSSP for a grid graph with 15  nodes.
-TEST_P(SSSPTest, Grid) {
+TEST_P(SSSPTest, GridDiffWeight) {
   graph_initialize(DATA_FOLDER("grid_graph_sssp_15_nodes_weight.totem"), true,
     &_graph);
   CALL_SAFE(totem_malloc(_graph->vertex_count * sizeof(weight_t), _mem_type,
