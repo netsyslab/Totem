@@ -473,7 +473,7 @@ PRIVATE void graph500(partition_t* par) {
 
   // The switching thresholds has been determined empirically. Consider looking
   // at them again if they did not work for specific workloads.
-  if ((state_g.switch_parameter >= 0.15 && state_g.bu_step == false) ||
+  if ((state_g.switch_parameter >= 2 && state_g.bu_step == false) ||
       (engine_superstep() == 5 && state_g.bu_step)) {
     state->skip_gather = true;
     return;
