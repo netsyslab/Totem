@@ -50,7 +50,7 @@ const benchmark_attr_t BENCHMARKS[] = {
     sizeof(weight_t),
     true,
     false,
-    sizeof(weight_t) * BITS_PER_BYTE,
+    sizeof(weight_t) * BITS_PER_BYTE + 1,
     MSG_SIZE_ZERO,
     NULL,
     NULL
