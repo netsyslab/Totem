@@ -56,14 +56,6 @@ typedef struct totem_attr_s {
   bool                  compressed_vertices_supported;
   bool                  separate_singletons;  // Creates a CPU partition
                                               // to handle singletons.
-  float                 cpu_par_share;  // The percentage of edges assigned
-                                        // to the CPU partition. Note that this
-                                        // value is relevant only in hybrid
-                                        // platforms. The GPUs will be assigned
-                                        // equal shares after deducting the CPU
-                                        // share. If this is set to zero, then
-                                        // the graph is divided among all
-                                        // processors equally.
   float                 lambda;         // The percentage of edges similar
                                         // to cpu_par_share (alpha) that will be
                                         // assigned to the GPUs, from the
@@ -72,6 +64,14 @@ typedef struct totem_attr_s {
                                         // This enables the placement of edge
                                         // cases of the workload to be placed
                                         // on the GPU partitions.
+  float                 cpu_par_share;  // The percentage of edges assigned
+                                        // to the CPU partition. Note that this
+                                        // value is relevant only in hybrid
+                                        // platforms. The GPUs will be assigned
+                                        // equal shares after deducting the CPU
+                                        // share. If this is set to zero, then
+                                        // the graph is divided among all
+                                        // processors equally.
   size_t                push_msg_size;  // Push comm. message size in bits.
   size_t                pull_msg_size;  // Pull comm. message size in bits.
   totem_cb_func_t       alloc_func;     // Callback function to allocate
