@@ -1,14 +1,14 @@
 /**
  *
- * Implements Label Propagation algorithm for CPU. It follows a version 
- * of the  algorithm described in [Xie 2013]. Jierui Xie; Szymanski, B.K., 
+ * Implements Label Propagation algorithm for CPU. It follows a version
+ * of the  algorithm described in [Xie 2013]. Jierui Xie; Szymanski, B.K.,
  * "LabelRank: A stabilized label propagation algorithm for community detection
- * in networks," Network Science Workshop (NSW), 2013 IEEE 2nd , vol., no., 
+ * in networks," Network Science Workshop (NSW), 2013 IEEE 2nd , vol., no.,
  * pp.138,143, April 29 2013-May 1 2013.
- * doi: 10.1109/NSW.2013.6609210 
+ * doi: 10.1109/NSW.2013.6609210
  *
  * Created on: 2014-08-08
- * Author: Tanuj Kr Aasawat 
+ * Author: Tanuj Kr Aasawat
  */
 
 // totem includes
@@ -56,16 +56,16 @@ PRIVATE error_t check_special_cases(const graph_t* graph, bool* finished,
  * to the number of vertices. Initially, each vertex in the graph is assigned
  * a unique numeric label (its own vertex ID). The algorithm consists of
  * three main steps. In the initialization step, based on its neighbours, each
- * vertex computes the probability of receiving each label. An n x m matrix P, 
- * where n is the number of vertices in the graph and m is the number of 
+ * vertex computes the probability of receiving each label. An n x m matrix P,
+ * where n is the number of vertices in the graph and m is the number of
  * labels, holds current probability of vertices observing different labels.
  * In the propagation step, each vertex broadcasts the probability distribution
  * of all the labels to its neighbours. Based on received distribution, each
- * vertex computes the new distribution of each label (sum of received 
- * distributions normalized by its vertex degree). This operation increases 
+ * vertex computes the new distribution of each label (sum of received
+ * distributions normalized by its vertex degree). This operation increases
  * probability of labels that were assigned high probability during propagation
  * at the cost of labels that in propagation received low probabilities. At any
- * given time, the label with the highest probability becomes the label of a 
+ * given time, the label with the highest probability becomes the label of a
  * vertex. The propagation phase does not always converge to a state in which
  * all vertices have the same label in successive iteration. To ensure that the
  * propagation phase terminates, we verify if the labels are being updated in
@@ -73,14 +73,14 @@ PRIVATE error_t check_special_cases(const graph_t* graph, bool* finished,
  * change for a predefined successive number of iterations, the algorithm stops
  * propagating labels and terminates. Please note that this algorithm can only
  * detect disjoint communities.
- * 
+ *
  * @param[in] graph an instance of the graph structure
  * @param[out] labels the computed labels of each vertex
  * @return generic success or failure
  *
  */
 PRIVATE void label_probability_initialisation(vid_t knumLabels, const graph_t*
-                  graph, weight_t** ProbMatrix, vid_t*
+                  graph, float** ProbMatrix, vid_t*
                   max_prb_label_not_changed_count) {
   // TODO(tanuj): Declare data types label_t and probability_t.
   OMP(omp parallel for schedule(runtime))
@@ -91,38 +91,38 @@ PRIVATE void label_probability_initialisation(vid_t knumLabels, const graph_t*
       ProbMatrix[v][l] = (v == l) ? 1.0 : 0.0;
       for (eid_t e = graph->vertices[v]; e < graph->vertices[v+1]; e++) {
         vid_t nbr = graph->edges[e];
-        ProbMatrix[v][nbr] = 1.0 / (weight_t)num_of_neighbours;
+        ProbMatrix[v][nbr] = 1.0 / (float)num_of_neighbours;
       }  // for
     }  // for
   }  // for
 }
 
-PRIVATE void label_propagation(const graph_t* graph, weight_t** ProbMatrix,
-                               weight_t** ProbMatrix_new, vid_t*
+PRIVATE void label_propagation(const graph_t* graph, float** ProbMatrix,
+                               float** ProbMatrix_new, vid_t*
                                max_prb_label_not_changed_count, vid_t
                                knumLabels) {
   OMP(omp parallel for schedule(runtime))
   for (vid_t v = 0; v < graph->vertex_count; v++) {
     vid_t num_of_neighbours = graph->vertices[v+1] - graph->vertices[v];
     for (vid_t l = 0; l < knumLabels; l++) {  // iterate over each label
-      weight_t prb_l = 0.0;
+      float prb_l = 0.0;
       for (vid_t e = graph->vertices[v]; e < graph->vertices[v+1]; e++) {
         vid_t nbr = graph->edges[e];
         prb_l+= ProbMatrix[nbr][l];  //  ProbMatrix[nbr][l] is the probability
                                      //  from the previous round
       }  //  for
       //  normalize sum of probabilities of a label by number of neighbours
-      ProbMatrix_new[v][l] = prb_l / (weight_t)num_of_neighbours;
+      ProbMatrix_new[v][l] = prb_l / (float)num_of_neighbours;
     }  //  for
   }  //  for
 }
 
-PRIVATE void update_labels(const graph_t* graph, vid_t* labels, weight_t**
-                          ProbMatrix, weight_t** ProbMatrix_new, vid_t*
+PRIVATE void update_labels(const graph_t* graph, vid_t* labels, float**
+                          ProbMatrix, float** ProbMatrix_new, vid_t*
                           max_prb_label_not_changed_count, vid_t knumLabels) {
   OMP(omp parallel for schedule(runtime))
   for (vid_t v = 0; v < graph->vertex_count; v++) {
-    weight_t max_prb = 0.0;
+    float max_prb = 0.0;
     int max_label = 0;
     for (vid_t l = 0; l < knumLabels; l++) {  // iterate over each label
       ProbMatrix[v][l] = ProbMatrix_new[v][l];
@@ -173,16 +173,16 @@ error_t label_propagation_cpu(const graph_t* graph, vid_t* labels) {
   // P is a n x m matrix, where n is the number of vertices in the graph and
   // m is the number of labels
 
-  weight_t **ProbMatrix = reinterpret_cast<weight_t**>(malloc(
-                                    graph->vertex_count * sizeof(weight_t*)));
-  weight_t **ProbMatrix_new = reinterpret_cast<weight_t**>
-                             (malloc(graph->vertex_count * sizeof(weight_t*)));
+  float **ProbMatrix = reinterpret_cast<float**>(malloc(
+                                    graph->vertex_count * sizeof(float*)));
+  float **ProbMatrix_new = reinterpret_cast<float**>
+                             (malloc(graph->vertex_count * sizeof(float*)));
 
   for (vid_t vertex_id = 0; vertex_id < graph->vertex_count; vertex_id++) {
-    ProbMatrix[vertex_id] = reinterpret_cast<weight_t *>
-                             (malloc(graph->vertex_count * sizeof(weight_t)));
-    ProbMatrix_new[vertex_id] = reinterpret_cast<weight_t *>
-                             (malloc(graph->vertex_count * sizeof(weight_t)));
+    ProbMatrix[vertex_id] = reinterpret_cast<float *>
+                             (malloc(graph->vertex_count * sizeof(float)));
+    ProbMatrix_new[vertex_id] = reinterpret_cast<float *>
+                             (malloc(graph->vertex_count * sizeof(float)));
   }
 
   // ProbMatrix_new contains the updated probabilities
