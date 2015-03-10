@@ -671,11 +671,17 @@ error_t partition_set_finalize(partition_set_t* pset) {
           totem_free(subgraph->edges, TOTEM_MEM_DEVICE);
           totem_free(subgraph->mapped_edges, TOTEM_MEM_HOST_MAPPED);
         }
+        if (subgraph->weighted) {
+          if (subgraph->gpu_graph_mem == GPU_GRAPH_MEM_MAPPED ||
+              subgraph->gpu_graph_mem == GPU_GRAPH_MEM_MAPPED_EDGES ||
+              subgraph->gpu_graph_mem == GPU_GRAPH_MEM_PARTITIONED_EDGES) {
+            totem_free(subgraph->mapped_weights, TOTEM_MEM_HOST_MAPPED);
+          } else {
+            totem_free(subgraph->weights, TOTEM_MEM_DEVICE);
+          }
+        }
       }
 
-      if (subgraph->weighted && subgraph->weights) {
-        CALL_CU_SAFE(cudaFree(subgraph->weights));
-      }
     } else {
       assert(partition->processor.type == PROCESSOR_CPU);
       if (subgraph->vertices) free(subgraph->vertices);

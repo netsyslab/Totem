@@ -151,6 +151,9 @@ typedef struct graph_s {
   // necessary when freeing the buffer. Note that in this case, "edges" will
   // maintain the pointer to the buffer in the device address space.
   eid_t*    mapped_edges;
+  // Maintains the host pointer of the weights array in case it is allocated as
+  // a memory mapped buffer for GPU-resident graphs.
+  weight_t*    mapped_weights;
   // This member is relevant to GPU-based resident graphs. in case the edge list
   // is partitioned between device memory and mapped memory on the host, this
   // array stores the part of the edge list placed on the host as memory mapped,
