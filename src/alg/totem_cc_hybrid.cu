@@ -1,6 +1,6 @@
 /**
- * This file contains an implementation of the single source shortest path
- * (SSSP) algorithm using the totem framework.
+ * This file contains an implementation of the connected components (CC)
+ * algorithm using the totem framework.
  *
  *  Created on: 2014-05-10
  *  Author: Abdullah Gharaibeh
