@@ -165,6 +165,13 @@ error_t sssp_vwarp_gpu(const graph_t* graph, vid_t src_id,
 error_t sssp_hybrid(vid_t src_id, weight_t* distance);
 
 /**
+ * Identifies the connected components in an undirected graph.
+ * @param[out] labels the id of the component the vertex belongs to.
+ * @return generic success or failure
+ */
+error_t cc_hybrid(vid_t* label);
+
+/**
  * Given a weighted graph \f$G = (V, E, w)\f$, the All Pairs Shortest Path
  * algorithm computes the distance from every vertex to every other vertex
  * in a weighted graph with no negative cycles.
