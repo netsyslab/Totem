@@ -21,6 +21,7 @@ PRIVATE void benchmark_bfs_stepwise(graph_t* graph, void* cost,
                                     totem_attr_t* attr);
 PRIVATE void benchmark_graph500_stepwise(graph_t* graph, void* tree,
                                          totem_attr_t* attr);
+PRIVATE void benchmark_cc(graph_t* graph, void* label, totem_attr_t* attr);
 const benchmark_attr_t BENCHMARKS[] = {
   {
     benchmark_bfs,
@@ -99,7 +100,7 @@ const benchmark_attr_t BENCHMARKS[] = {
     bfs_stepwise_alloc,
     bfs_stepwise_free
   },
-    {
+  {
     benchmark_graph500_stepwise,
     "GRAPH500_STEPWISE",
     sizeof(bfs_tree_t),
@@ -109,6 +110,17 @@ const benchmark_attr_t BENCHMARKS[] = {
     1,
     graph500_stepwise_alloc,
     graph500_stepwise_free
+  },
+  {
+    benchmark_cc,
+    "CC",
+    sizeof(vid_t),
+    true,
+    false,
+    sizeof(vid_t) * BITS_PER_BYTE + 1,
+    MSG_SIZE_ZERO,
+    NULL,
+    NULL
   },
 };
 
@@ -197,6 +209,13 @@ PRIVATE void benchmark_sssp(
     graph_t* graph, void* distance, totem_attr_t* attr) {
   CALL_SAFE(sssp_hybrid(get_random_src(graph),
     reinterpret_cast<weight_t*>(distance)));
+}
+
+/**
+ * Runs CC benchmark
+ */
+PRIVATE void benchmark_cc(graph_t* graph, void* label, totem_attr_t* attr) {
+  CALL_SAFE(cc_hybrid(reinterpret_cast<weight_t*>(label)));
 }
 
 // Runs Betweenness Centrality benchmark.

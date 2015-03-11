@@ -55,6 +55,7 @@ PRIVATE void display_help(char* exe_name, int exit_err) {
          "     %d: Clustering Coefficient\n"
          "     %d: BFS stepwise\n"
          "     %d: Graph500 stepwise\n"
+         "     %d: Connected Components\n"
          "  -c Creates a separate CPU partition to handle all singletons.\n"
          "     (default FALSE)\n"
          "  -d Sorts the edges by degree instead of by vertex id.\n"
@@ -96,7 +97,7 @@ PRIVATE void display_help(char* exe_name, int exit_err) {
          exe_name, BENCHMARK_BFS, BENCHMARK_PAGERANK, BENCHMARK_SSSP,
          BENCHMARK_BETWEENNESS, BENCHMARK_GRAPH500,
          BENCHMARK_CLUSTERING_COEFFICIENT, BENCHMARK_BFS_STEPWISE,
-         BENCHMARK_GRAPH500_STEPWISE, get_gpu_count(), PAR_RANDOM,
+         BENCHMARK_GRAPH500_STEPWISE, BENCHMARK_CC, get_gpu_count(), PAR_RANDOM,
          PAR_SORTED_ASC, PAR_SORTED_DSC, GPU_GRAPH_MEM_DEVICE,
          GPU_GRAPH_MEM_MAPPED, GPU_GRAPH_MEM_MAPPED_VERTICES,
          GPU_GRAPH_MEM_MAPPED_EDGES, GPU_GRAPH_MEM_PARTITIONED_EDGES,
