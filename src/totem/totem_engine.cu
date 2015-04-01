@@ -386,7 +386,7 @@ error_t engine_init(graph_t* graph, totem_attr_t* attr) {
   int gpu_count = 0;
   bool use_cpu = true;
   init_get_platform(pcount, gpu_count, use_cpu);
-  double shares[MAX_PARTITION_COUNT];
+  double shares[MAX_PARTITION_COUNT] = {0};
 
   // Add an additional partition to handle singletons.
   if (attr->separate_singletons) { pcount++; }
