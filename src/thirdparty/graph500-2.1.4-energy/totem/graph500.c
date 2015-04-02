@@ -65,7 +65,7 @@ static const char* get_edgelist_dumpname() {
     return dumpname;
   }
   static char edgelist_dumpname[200];
-  sprintf(edgelist_dumpname, "%s/edgelist%llu", tmp_dump_path, SCALE);
+  sprintf(edgelist_dumpname, "%s/edgelist%lld", tmp_dump_path, SCALE);
   return edgelist_dumpname;
 }
 
@@ -239,7 +239,7 @@ static void get_roots() {
 
 const char* get_tree_dumpname(int64_t root) {
   static char tree_file_name[200];
-  sprintf(tree_file_name, "%s/scale%d-root%llu", tmp_dump_path, SCALE,
+  sprintf(tree_file_name, "%s/scale%lld-root%lld", tmp_dump_path, SCALE,
           root);
   return tree_file_name;
 }
