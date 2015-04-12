@@ -215,7 +215,7 @@ PRIVATE void benchmark_sssp(
  * Runs CC benchmark
  */
 PRIVATE void benchmark_cc(graph_t* graph, void* label, totem_attr_t* attr) {
-  CALL_SAFE(cc_hybrid(reinterpret_cast<weight_t*>(label)));
+  CALL_SAFE(cc_hybrid(reinterpret_cast<vid_t*>(label)));
 }
 
 // Runs Betweenness Centrality benchmark.

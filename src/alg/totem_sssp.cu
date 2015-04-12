@@ -406,8 +406,8 @@ __host__ error_t sssp_cpu(const graph_t* graph, vid_t source_id,
         weight_t new_distance = shortest_distances[vertex_id] +
           graph->weights[i];
         weight_t old_distance =
-          __sync_fetch_and_min_uint32(&(shortest_distances[neighbor_id]),
-                                      new_distance);
+          __sync_fetch_and_min_float(&(shortest_distances[neighbor_id]),
+                                     new_distance);
         if (new_distance < old_distance) {
           bitmap_set_cpu(active, neighbor_id);
           finished = false;

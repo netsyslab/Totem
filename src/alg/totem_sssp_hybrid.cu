@@ -70,7 +70,7 @@ void sssp_cpu(partition_t* par, sssp_state_t* state) {
       weight_t new_distance = distance[v] + subgraph->weights[i];
       if (new_distance < old_distance) {
         if (old_distance ==
-            __sync_fetch_and_min_uint32(&nbr_distance[nbr], new_distance)) {
+            __sync_fetch_and_min_float(&nbr_distance[nbr], new_distance)) {
           bitmap_set_cpu(nbr_updated, nbr);
         }
         finished = false;
