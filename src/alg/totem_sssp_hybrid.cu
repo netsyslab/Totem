@@ -232,7 +232,7 @@ PRIVATE void sssp(partition_t* par) {
   if (par->processor.type == PROCESSOR_CPU) {
     sssp_cpu(par, state);
   } else if (par->processor.type == PROCESSOR_GPU) {
-    sssp_gpu(par, state);
+    sssp_vwarp_gpu(par, state);
   } else {
     assert(false);
   }

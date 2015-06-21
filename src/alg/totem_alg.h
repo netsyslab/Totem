@@ -46,7 +46,7 @@ const double TRV_FRONTIER_SPARSE_THRESHOLD = .1;
  * frontier array, and should iterate over all the vertices. This value has
  * been determined experimentally.
  */
-const double TRV_MAX_FRONTIER_SIZE = .03;
+const double TRV_MAX_FRONTIER_SIZE = .1;
 
 /**
  * A type for page rank. This is useful to allow changes in precision.

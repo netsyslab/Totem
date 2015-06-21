@@ -208,9 +208,9 @@ void frontier_init_gpu(frontier_state_t* state, vid_t vertex_count) {
   CALL_SAFE(totem_calloc(sizeof(vid_t), TOTEM_MEM_DEVICE,
                          reinterpret_cast<void**>(&state->count)));
   state->list_len = vertex_count;
-  vid_t list_max_len = TRV_MAX_FRONTIER_SIZE * get_gpu_device_memory() /
-      sizeof(vid_t);
-  if (state->list_len >= list_max_len) { state->list_len = list_max_len; }
+  /* vid_t list_max_len = TRV_MAX_FRONTIER_SIZE * get_gpu_device_memory() / */
+  /*     sizeof(vid_t); */
+  /* if (state->list_len >= list_max_len) { state->list_len = list_max_len; } */
   CALL_SAFE(totem_calloc(state->list_len * sizeof(vid_t), TOTEM_MEM_DEVICE,
                          reinterpret_cast<void**>(&state->list)));
 
