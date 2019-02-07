@@ -386,7 +386,7 @@ error_t stress_unweighted_cpu(const graph_t* graph,
             delta[v] += 1 + delta[u];
           }
         }
-      }
+      };
       OMP(omp parallel for)
       for (vid_t v = 0; v < graph->vertex_count; v++) {
         if (v != source && dists[v] == dist) {
